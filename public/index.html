@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LoL Draft Player Rankings</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Risk-Adjusted Player Rankings</h1>
+      <p class="sub"><span id="rowCount">–</span> rows &middot; grouped by <code id="groupCol">–</code>, valuing <code id="valueCol">–</code> &middot; most recent season: <code id="mostRecentYear">–</code></p>
+    </header>
+
+    <section class="control-panel">
+      <label for="risk">Risk-aversion weight (&lambda;)</label>
+      <div class="slider-row">
+        <input type="range" id="risk" min="0" max="3" step="0.05" value="0.5" />
+        <span id="riskValue" class="risk-value">0.50</span>
+      </div>
+      <p class="formula">adjusted average = weighted mean &minus; &lambda; &times; weighted std. dev.</p>
+
+      <label for="halfLife" class="second-control">Recency half-life (years)</label>
+      <div class="slider-row">
+        <input type="range" id="halfLife" min="0" max="6" step="0.5" value="2" />
+        <span id="halfLifeValue" class="risk-value">2.0</span>
+      </div>
+      <p class="formula" id="halfLifeFormula">weight = 0.5 ^ (years ago / half-life) &middot; 0 = no decay, all seasons count equally</p>
+    </section>
+
+    <section class="table-section">
+      <table id="statsTable">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Player</th>
+            <th>n</th>
+            <th>Mean</th>
+            <th>Std. Dev.</th>
+            <th>Adjusted Avg.</th>
+          </tr>
+        </thead>
+        <tbody id="statsBody">
+          <!-- populated by app.js -->
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      <p>Recalculates on every slider move &middot; served from <code>/api/stats</code></p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

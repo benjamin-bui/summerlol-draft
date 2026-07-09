@@ -1,0 +1,15 @@
+{
+  "name": "risk-stats-app",
+  "version": "1.0.0",
+  "description": "Group averages/std-dev/risk-adjusted average dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "ingest-csv": "node data/csv-to-sqlite.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "csv-parse": "^5.5.6",
+    "express": "^4.19.2"
+  }
+}
