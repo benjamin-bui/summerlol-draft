@@ -9,47 +9,107 @@
 <body>
   <div class="wrap">
     <header>
-      <h1>Risk-Adjusted Player Rankings</h1>
-      <p class="sub"><span id="rowCount">–</span> rows &middot; grouped by <code id="groupCol">–</code>, valuing <code id="valueCol">–</code> &middot; most recent season: <code id="mostRecentYear">–</code></p>
+      <div>
+        <h1>Risk-Adjusted Player Rankings</h1>
+      </div>
+      <button id="themeToggle" class="theme-toggle" aria-label="Toggle dark/light mode" title="Toggle dark/light mode">🌙</button>
     </header>
 
-    <section class="control-panel">
-      <label for="risk">Risk-aversion weight (&lambda;)</label>
-      <div class="slider-row">
-        <input type="range" id="risk" min="0" max="3" step="0.05" value="0.5" />
-        <span id="riskValue" class="risk-value">0.50</span>
-      </div>
-      <p class="formula">adjusted average = weighted mean &minus; &lambda; &times; weighted std. dev.</p>
-
-      <label for="halfLife" class="second-control">Recency half-life (years)</label>
-      <div class="slider-row">
-        <input type="range" id="halfLife" min="0" max="6" step="0.5" value="2" />
-        <span id="halfLifeValue" class="risk-value">2.0</span>
-      </div>
-      <p class="formula" id="halfLifeFormula">weight = 0.5 ^ (years ago / half-life) &middot; 0 = no decay, all seasons count equally</p>
+    <section class="notes-section">
+      <!--
+        Edit the content below directly to change what shows here — no
+        save button, no backend, just plain HTML. Basic tags like <p>,
+        <strong>, <em>, <ul>/<li>, <br> all work fine.
+      -->
+      <p>
+        <h3>Understanding the Stats</h3>
+        <em>Input Parameters</em>
+        <ul>
+          <li>λ: Risk aversion weight, the more variance in results, the lower the adjusted pick value. Set to 0 if you don't care.</li>
+          <li>Recency half-life: The higher this value, the higher more recent results matter. Set to 0 if you want all tournaments to count equally.</li>
+          <li>Years included: What years to include in data? Pick values will recalculate dynamically if you choose to exclude certain years.</li>
+          <li>Total N: Total number of players to calculate pick order/rank against. Set to a default of 40 (10 teams). Converts percentiles into more actionable numbers.</li>
+        </ul>
+        <em>Results</em>
+        <ul>
+          <li>Player: Player that has been draftd in the tournamnet. Captains are not calculated. If a player has been a captain, only their results as a drafted player are used.</li>
+          <li>Adjusted Pick Value: Value from -1.0 to 1.0 determining if a player has been drafted too early or too late relative to their results. The higher the value, the better their tournament placements relative to their position in the draft order. Remember, this is only trying to claim that they are being drafted in the incorrect position, not that they are an objective good/bad player.</li>
+          <li>N: Number of tournament placements given the years of data included.</li>
+          <li>Average pick percentile: What percentage of the draft, on average, are picked before this player is picked.</li>
+          <li>Estimated pick order: Given the `Total N` parameter, what placement in the draft are they picked, on average.</li>
+          <li>Average rank percentile: On average, what percentage of players/teams placed higher than this person in the tournament. A value of 0 indicates that they win every tournament. A value of 100 indicates they are last place in every tournament.</li>
+          <li>Estimated rank order: Given the `Total N` parameter, what is their average actual placement in the tournament.</li>
+        </ul>
+      </p>
     </section>
 
-    <section class="table-section">
-      <table id="statsTable">
-        <thead>
-          <tr>
-            <th>Rank</th>
-            <th>Player</th>
-            <th>n</th>
-            <th>Mean</th>
-            <th>Std. Dev.</th>
-            <th>Adjusted Avg.</th>
-          </tr>
-        </thead>
-        <tbody id="statsBody">
-          <!-- populated by app.js -->
-        </tbody>
-      </table>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="rankings">Rankings</button>
+      <button class="tab-btn" data-tab="rawdata">Raw Data</button>
+    </nav>
+
+    <!-- ================= RANKINGS TAB ================= -->
+    <section class="tab-panel active" id="tab-rankings">
+      <section class="control-panel">
+        <label for="risk">Risk-aversion weight (&lambda;)</label>
+        <div class="slider-row">
+          <input type="range" id="risk" min="0" max="3" step="0.05" value="0.5" />
+          <span id="riskValue" class="risk-value">0.50</span>
+        </div>
+
+        <label for="halfLife" class="second-control">Recency half-life (years)</label>
+        <div class="slider-row">
+          <input type="range" id="halfLife" min="0" max="6" step="0.5" value="2" />
+          <span id="halfLifeValue" class="risk-value">2.0</span>
+        </div>
+
+        <label class="second-control">Years included</label>
+        <div id="yearCheckboxes" class="year-checkboxes"><!-- populated by app.js --></div>
+
+        <label for="totalN" class="second-control">Total N players drafted (for estimated pick/rank order columns)</label>
+        <div class="slider-row">
+          <input type="number" id="totalN" min="2" max="1000" step="1" value="40" class="total-n-input" />
+        </div>
+      </section>
+
+      <section class="table-controls">
+        <button id="columnsBtn" class="columns-btn">Columns &#9662;</button>
+        <div id="columnsPanel" class="columns-panel hidden"></div>
+      </section>
+
+      <section class="table-section">
+        <table id="statsTable">
+          <thead>
+            <tr id="statsHeaderRow"></tr>
+          </thead>
+          <tbody id="statsBody">
+            <!-- populated by app.js -->
+          </tbody>
+        </table>
+      </section>
     </section>
 
-    <footer>
-      <p>Recalculates on every slider move &middot; served from <code>/api/stats</code></p>
-    </footer>
+    <!-- ================= RAW DATA TAB ================= -->
+    <section class="tab-panel" id="tab-rawdata">
+      <section class="table-controls">
+        <button id="downloadCsvBtn" class="download-btn">Download CSV</button>
+      </section>
+
+      <section class="table-section">
+        <table id="rawTable">
+          <thead>
+            <tr id="rawHeaderRow"></tr>
+          </thead>
+          <tbody id="rawBody">
+            <!-- populated by app.js -->
+          </tbody>
+        </table>
+      </section>
+
+      <footer>
+        <p><span id="rawRowCount">–</span> rows &middot; <code>id</code> column omitted &middot; served from <code>/api/raw</code></p>
+      </footer>
+    </section>
   </div>
 
   <script src="app.js"></script>

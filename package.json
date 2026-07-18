@@ -1,14 +1,21 @@
 {
-  "name": "risk-stats-app",
+  "name": "summerlol-draft",
   "version": "1.0.0",
-  "description": "Group averages/std-dev/risk-adjusted average dashboard",
+  "description": "Risk-adjusted LoL draft player rankings with Riot API identity tracking",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "ingest-csv": "node data/csv-to-sqlite.js"
+    "ingest-csv": "node data/csv-to-sqlite.js",
+    "watch-csv": "node data/watch-csv.js",
+    "bootstrap-identities": "node data/bootstrap-player-identities.js",
+    "export-pending-tags": "node data/export-pending-tags.js",
+    "import-pending-tags": "node data/import-pending-tags.js",
+    "sync-riot": "node data/run-riot-sync.js",
+    "refresh-all": "node data/refresh-all.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
+    "chokidar": "^3.6.0",
     "csv-parse": "^5.5.6",
     "express": "^4.19.2"
   }

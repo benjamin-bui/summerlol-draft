@@ -1,0 +1,29 @@
+# Example docker-compose setup. Copy to docker-compose.yml (or use as-is
+# if you're fine with the defaults) and adjust the volume path / env vars
+# for your setup.
+#
+# Usage:
+#   cp .env.example .env        # fill in RIOT_API_KEY etc.
+#   docker compose up -d --build
+#
+# Runs the container as your own host user (via UID/GID below) so files
+# in ./data — including app.db and the CSV — stay owned by you, no
+# chown/sudo dance needed to edit the CSV between runs. Export UID/GID
+# before running compose, or set them in .env:
+#   UID=$(id -u) GID=$(id -g) docker compose up -d --build
+
+services:
+  summerlol-draft:
+    build: .
+    image: summerlol-draft
+    container_name: summerlol-draft
+    restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - PORT=3000
