@@ -287,6 +287,70 @@ keeps everything owned by you — no more back-and-forth.
   reads the whole table and computes in JS — no SQL-side aggregation
   needed.
 
+## Alternative ranking methodologies (Expected ROI / Tiers tabs)
+
+Two more tabs alongside Rankings and Raw Data, each a different way of
+scoring the same underlying data. Both are unweighted (no risk-aversion
+or recency half-life) — simple averages across whichever years are
+included. **Years included** is now a page-level control (moved above
+the tabs) since it applies to every tab, not just Rankings.
+
+### Expected ROI
+Adjusted Pick Value assumes a smooth, theoretical relationship between
+draft position and expected outcome (`Pick % − Rank %`). This tab
+instead builds an **empirical curve** — for each exact pick order, the
+actual historical average placement of everyone ever picked there — then
+scores each player by `expected placement for their pick order − their
+actual placement`. Positive means they outperformed what history says
+to expect from that draft position. The curve itself is charted (hand-rolled
+inline SVG, not a library — this app has zero external/CDN dependencies
+by design, so a chart library would be the first one; the chart is
+simple enough that seemed like the wrong tradeoff for a self-hosted
+Docker app that shouldn't need outbound internet access to render a line
+chart). Verified the curve and a sample player's value against an
+independent pandas calculation from the raw CSV.
+
+### Tiers
+**Originally** tier-based (picks grouped into buckets of size = that
+season's captain count — tier 1 = round 1, tier 2 = round 2, etc.),
+each player z-scored against their tier's own average/std dev. Turned
+out to be worth simplifying: in a standard snake draft, every tier
+draws from an **identical** distribution of outcomes. Each captain
+picks exactly once per round, and placement is the captain/team's
+result — the same value across all four of that captain's picks
+regardless of which round. Verified directly against the real data:
+pooling every season's tier 1 through tier 4 rank values gave the
+literal same multiset every time (`[1.0, 2.0, 3.5, 3.5, 5.5, 5.5, 8.0,
+8.0, 8.0, 10.0]` for 2021, identical across all 4 tiers). So the tier
+grouping added computation without adding any real differentiation —
+this tab now just z-scores everyone against the single overall pooled
+placement distribution instead. Simpler code, mathematically
+equivalent result. If your draft format ever changes such that captains
+*don't* pick exactly once per round, this equivalence would break and
+tiering would become meaningful again — worth revisiting if so.
+
+### Reusable table infrastructure
+Both of these tabs are built on a new `createTabTable()` factory in
+`app.js` — column-config-driven sortable/filterable/column-toggleable
+table, reusing the same header-popover/regex-filter/inequality-filter
+machinery Rankings already established. Rankings and Raw Data predate
+this factory and weren't retrofitted onto it (each has some tab-specific
+behavior — Rankings' derived Est. Order columns, Raw Data's dynamic
+per-CSV column discovery — that made the retrofit riskier than it was
+worth for two tabs that already worked), but it's a reasonable starting
+point for any future "table of players with some computed metric" tab —
+which covers most of what this app does. Usage is basically:
+```js
+const myTable = createTabTable({
+  columns: [...],                // same column-def shape as elsewhere
+  headerRowEl, bodyEl,            // <tr> in <thead>, <tbody> element
+  columnsBtnEl, columnsPanelEl,   // the Columns ▾ button + dropdown
+  ownerKey: 'someUniqueName',     // must be unique across all tables on the page
+  defaultSortColumn: 'someKey'
+});
+myTable.setData(arrayOfRowObjects); // (re)renders, respecting current sort/filter/hidden state
+```
+
 ## Player identity tracking (Riot API)
 
 Solves the "same player, different name across seasons" problem
@@ -392,3 +456,68 @@ next check retries rather than waiting another full 14 days.
   the server. If you set `ADMIN_TOKEN`, this route requires it as an
   `X-Admin-Token` header; if unset, it's open (fine for a personal
   deployment, worth setting for anything publicly reachable).
+
+### Important: what's actually been tested here, and what hasn't
+
+`api.riotgames.com` isn't reachable from the sandbox this was built in
+(its network allowlist doesn't include Riot's domain), so **the actual
+HTTP calls to Riot have never run against the real API** — only against
+mocked responses. The test scripts that verified this during development
+(retry/backoff behavior, resolve/refresh/merge logic, the scheduler's
+due-date math) aren't shipped in this package — they were development-time
+verification, not app functionality — but what they confirmed, concretely:
+
+- Retry/backoff — respects `Retry-After` on 429s, retries 5xx up to a
+  limit, doesn't retry 404s, rejects invalid regions before making a
+  network call.
+- Resolve/refresh/merge — a successful resolve stores the PUUID and
+  clears the pending row; a failure increments the attempt counter and
+  records the error; a rename is detected and logged to `name_history`;
+  a `name_locked` player is never overwritten; **two different raw
+  aliases resolving to the same PUUID get merged into one player**, not
+  left as duplicates.
+- The full pipeline through the actual stats API (`GET /api/stats`) —
+  simulated a real merge scenario (two raw spellings of "Rlylost"
+  pointed at the same fake PUUID) and confirmed the rankings correctly
+  show ONE entry with the combined appearance count, correct merged
+  mean/std dev (cross-checked independently against a hand calculation),
+  and a working op.gg link.
+- The 14-day automatic scheduler — confirmed it correctly identifies
+  "due" vs "not due" at the 13/14/15-day boundaries, that a successful
+  sync updates the persisted timestamp while a failed one deliberately
+  doesn't (so it retries on the next check rather than waiting a full 14
+  days again), and that it no-ops cleanly with no `RIOT_API_KEY` set.
+- Graceful degradation — `/api/stats` and `/api/identity/status` both
+  behave sensibly before `bootstrap-identities` has ever been run (no
+  tables yet), and the CSV/Docker/entrypoint pipeline all still work
+  unchanged if you never touch this feature at all.
+
+**What you'll need to verify yourself**, since it requires a real key
+and real network access: that `getAccountByRiotId`/`getAccountByPuuid`
+actually parse Riot's real response shape correctly, and that the rate
+limiting behavior holds up against Riot's actual limits rather than the
+mocked 429 scenario tested here.
+
+### A note on your data
+
+Checked directly: of 111 distinct names in the current dataset, 92 now
+have a parseable `Name#Tag` (up from 7 originally) — the rest can't be
+resolved without one, since Riot's account API has no "search by display
+name only" endpoint (that was deprecated in favor of Riot ID).
+
+**Two data issues were caught and fixed while ingesting your latest
+CSV** — flagging both since they'd have silently affected results:
+- **Row `id=109`** (2022, `youn9#NA3`) was missing its `Rank` value
+  entirely — every field after `Pick Order` had shifted over by one.
+  Fully recoverable: the `Rank Percentile` field was still present, and
+  solving backward (`Rank = Rank Percentile × 9 + 1`) gave exactly
+  `3.5`, which also correctly reproduces the row's own `Pick Value` —
+  so this isn't a guess, it's derived from data already in the row.
+- **2024's captain list had 11 distinct entries instead of 10** —
+  `"SK Telecom T1#Faker"` appeared once as `"SK Telecom T1#Faker#Faker"`
+  (id=171), clearly a duplicated-tag typo confirmed by all four of that
+  captain's rows sharing the identical `Rank` (7.5). Left uncorrected,
+  this would have silently shifted the Rank Percentile denominator
+  (captains − 1) for **every player in the 2024 season**, not just this
+  one row.
+

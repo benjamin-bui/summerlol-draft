@@ -62,7 +62,7 @@ const RANKINGS_COLUMNS = [
 function formatCell(value, col) {
   if (value === null || value === undefined) return '–';
   if (col.type === 'number' && typeof value === 'number') {
-    if (col.percentage) return (value * 100).toFixed(col.decimals);
+    if (col.percentage) return (value * 100).toFixed(col.decimals) + '%';
     return value.toFixed(col.decimals);
   }
   return String(value);
@@ -516,6 +516,16 @@ function renderYearCheckboxes() {
       label.classList.toggle('checked', checkbox.checked);
       scheduleFetch();
       scheduleUrlUpdate();
+
+      // ROI/Tiers data depends on the years filter too — invalidate the
+      // lazy-load cache, and if one of those tabs is the one currently
+      // visible, refetch immediately rather than waiting for the next
+      // time it's opened.
+      roiLoaded = false;
+      tiersLoaded = false;
+      const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+      if (activeTab === 'roi') loadROIData(true);
+      if (activeTab === 'tiers') loadTiersData(true);
     });
     label.appendChild(checkbox);
     label.appendChild(document.createTextNode(String(year)));
@@ -753,6 +763,286 @@ async function loadRawData() {
 tabButtons.forEach((btn) => {
   if (btn.dataset.tab === 'rawdata') {
     btn.addEventListener('click', loadRawData);
+  }
+});
+
+// ==================== Reusable sortable/filterable/column-toggleable table ====================
+// Powers the ROI and Tiers tabs below, and is a reasonable starting
+// point for any future tab that's basically "a table of players/rows
+// with some computed metric" — which is most of what this app is.
+// Rankings and Raw Data predate this and aren't using it (they have
+// some tab-specific quirks — Rankings' derived Est. Order columns,
+// Raw Data's dynamic per-dataset column discovery — that made retrofitting
+// riskier than it was worth for two already-working tabs), but there's
+// no reason a new one couldn't.
+//
+// Usage:
+//   const table = createTabTable({
+//     columns: [...],              // same column-def shape used throughout this file
+//     headerRowEl, bodyEl,          // <tr> inside <thead>, <tbody> element
+//     columnsBtnEl, columnsPanelEl, // the Columns ▾ button + its dropdown container
+//     ownerKey: 'someUniqueName',   // tags this table's popovers for cleanup — must be
+//                                   // unique across every table on the page
+//     defaultSortColumn: 'someKey',
+//     emptyMessage: 'optional custom empty-state text'
+//   });
+//   table.setData(arrayOfRowObjects); // replaces data, re-sorts/filters/renders
+function createTabTable({
+  columns,
+  headerRowEl,
+  bodyEl,
+  columnsBtnEl,
+  columnsPanelEl,
+  ownerKey,
+  defaultSortColumn,
+  defaultSortDirection = 'desc',
+  emptyMessage = 'No rows match the active filters'
+}) {
+  const state = {
+    data: [],
+    sortColumn: defaultSortColumn,
+    sortDirection: defaultSortDirection,
+    hiddenColumns: new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key)),
+    filters: {}
+  };
+
+  columns.filter((c) => c.hideable).forEach((col) => {
+    const label = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !state.hiddenColumns.has(col.key);
+    checkbox.dataset.col = col.key;
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) state.hiddenColumns.delete(col.key);
+      else state.hiddenColumns.add(col.key);
+      rebuildHeader();
+      renderBody();
+    });
+    label.appendChild(checkbox);
+    label.appendChild(document.createTextNode(col.label));
+    columnsPanelEl.appendChild(label);
+  });
+
+  columnsBtnEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = columnsPanelEl.classList.contains('hidden');
+    closeAllPopovers();
+    columnsPanelEl.classList.toggle('hidden');
+    if (isHidden) columnsPanelEl.classList.remove('hidden');
+  });
+  columnsPanelEl.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => columnsPanelEl.classList.add('hidden'));
+
+  function visibleColumns() {
+    return columns.filter((c) => !state.hiddenColumns.has(c.key));
+  }
+
+  function updateSortIndicators() {
+    [...headerRowEl.children].forEach((th) => {
+      th.classList.remove('sorted-asc', 'sorted-desc');
+      if (th.dataset.sort === state.sortColumn) {
+        th.classList.add(state.sortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+      }
+    });
+  }
+
+  function rebuildHeader() {
+    removePopoversOwnedBy(ownerKey);
+    headerRowEl.innerHTML = '';
+    visibleColumns().forEach((col) => {
+      const th = buildHeaderCell(col, state.sortColumn, state.sortDirection, state.filters, () => {
+        renderBody();
+      }, ownerKey);
+      th.addEventListener('click', () => {
+        if (!col.sortable) return;
+        if (state.sortColumn === col.key) {
+          state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          state.sortColumn = col.key;
+          state.sortDirection = col.key === 'group' ? 'asc' : 'desc';
+        }
+        updateSortIndicators();
+        renderBody();
+      });
+      headerRowEl.appendChild(th);
+    });
+  }
+
+  function renderBody() {
+    const cols = visibleColumns();
+    const filtered = applyColumnFilters(state.data, columns, state.filters);
+    const sorted = sortRows(filtered, columns, state.sortColumn, state.sortDirection);
+
+    if (sorted.length === 0) {
+      bodyEl.innerHTML = `<tr><td colspan="${cols.length}" class="empty">${escapeHtml(emptyMessage)}</td></tr>`;
+      return;
+    }
+
+    bodyEl.innerHTML = sorted
+      .map((row, i) => {
+        const cells = cols
+          .map((col) => {
+            if (col.key === 'group') {
+              return `<td class="group-name">${renderPlayerCell(row)}</td>`;
+            }
+            const val = col.key === 'rank' ? i + 1 : row[col.key];
+            const cls = col.className ? ` class="${col.className}"` : col.key === 'rank' ? ' class="rank"' : '';
+            return `<td${cls}>${escapeHtml(formatCell(val, col))}</td>`;
+          })
+          .join('');
+        return `<tr>${cells}</tr>`;
+      })
+      .join('');
+  }
+
+  rebuildHeader(); // header only depends on columns/hidden-state, safe to build immediately
+
+  return {
+    setData(newData) {
+      state.data = newData;
+      renderBody();
+    }
+  };
+}
+
+// ==================== Expected ROI tab ====================
+
+const ROI_COLUMNS = [
+  { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
+  { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, className: 'group-name', type: 'string' },
+  { key: 'roiValue', label: 'ROI Value', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
+  { key: 'n', label: 'n', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'avgPickOrder', label: 'Avg. Pick Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 },
+  { key: 'avgRank', label: 'Avg. Rank', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 }
+];
+
+const roiTable = createTabTable({
+  columns: ROI_COLUMNS,
+  headerRowEl: document.getElementById('roiHeaderRow'),
+  bodyEl: document.getElementById('roiBody'),
+  columnsBtnEl: document.getElementById('roiColumnsBtn'),
+  columnsPanelEl: document.getElementById('roiColumnsPanel'),
+  ownerKey: 'roi',
+  defaultSortColumn: 'roiValue'
+});
+
+let roiLoaded = false;
+let roiCurveData = [];
+
+function renderROIChart() {
+  const container = document.getElementById('roiChartContainer');
+  if (roiCurveData.length === 0) {
+    container.innerHTML = '<p class="chart-empty">No data to chart for the currently included years.</p>';
+    return;
+  }
+
+  const width = 760;
+  const height = 320;
+  const padL = 56;
+  const padR = 20;
+  const padT = 16;
+  const padB = 40;
+
+  const pickOrders = roiCurveData.map((c) => c.pickOrder);
+  const ranks = roiCurveData.map((c) => c.expectedRank);
+  const minPO = Math.min(...pickOrders);
+  const maxPO = Math.max(...pickOrders);
+  const minRank = Math.min(...ranks);
+  const maxRank = Math.max(...ranks);
+  const rankSpan = maxRank - minRank || 1;
+  const poSpan = maxPO - minPO || 1;
+
+  const xScale = (po) => padL + ((po - minPO) / poSpan) * (width - padL - padR);
+  // Lower rank = better placement, mapped to the TOP of the chart (smaller
+  // y-pixel), which is the intuitive reading for "better is higher up".
+  const yScale = (rank) => padT + ((rank - minRank) / rankSpan) * (height - padT - padB);
+
+  const points = roiCurveData.map((c) => `${xScale(c.pickOrder).toFixed(1)},${yScale(c.expectedRank).toFixed(1)}`).join(' ');
+
+  const circles = roiCurveData
+    .map((c) => {
+      const cx = xScale(c.pickOrder).toFixed(1);
+      const cy = yScale(c.expectedRank).toFixed(1);
+      return `<circle cx="${cx}" cy="${cy}" r="3" style="fill:var(--accent)">
+        <title>Pick ${c.pickOrder}: avg. rank ${c.expectedRank} (n=${c.n})</title>
+      </circle>`;
+    })
+    .join('');
+
+  container.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" class="roi-chart-svg" role="img" aria-label="Expected rank by pick order">
+      <line x1="${padL}" y1="${height - padB}" x2="${width - padR}" y2="${height - padB}" style="stroke:var(--border)" />
+      <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${height - padB}" style="stroke:var(--border)" />
+      <polyline points="${points}" fill="none" style="stroke:var(--accent)" stroke-width="2" />
+      ${circles}
+      <text x="${padL}" y="${height - padB + 22}" font-size="11" style="fill:var(--muted)">Pick ${minPO}</text>
+      <text x="${width - padR}" y="${height - padB + 22}" font-size="11" style="fill:var(--muted)" text-anchor="end">Pick ${maxPO}</text>
+      <text x="${padL - 8}" y="${padT + 4}" font-size="11" style="fill:var(--muted)" text-anchor="end">${minRank.toFixed(1)} (best)</text>
+      <text x="${padL - 8}" y="${height - padB}" font-size="11" style="fill:var(--muted)" text-anchor="end">${maxRank.toFixed(1)} (worst)</text>
+      <text x="${(padL + width - padR) / 2}" y="${height - 6}" font-size="12" style="fill:var(--text)" text-anchor="middle">Pick Order</text>
+      <text x="16" y="${(padT + height - padB) / 2}" font-size="12" style="fill:var(--text)" text-anchor="middle" transform="rotate(-90 16 ${(padT + height - padB) / 2})">Expected Rank</text>
+    </svg>`;
+}
+
+async function loadROIData(forceRefresh) {
+  if (roiLoaded && !forceRefresh) return;
+  const yearsParam = allYears.length > 0 && selectedYears.size < allYears.length
+    ? `?years=${[...selectedYears].join(',')}`
+    : '';
+  const res = await fetch(`/api/roi${yearsParam}`);
+  const data = await res.json();
+  roiCurveData = data.curve;
+  roiTable.setData(data.players);
+  renderROIChart();
+  roiLoaded = true;
+}
+
+tabButtons.forEach((btn) => {
+  if (btn.dataset.tab === 'roi') {
+    btn.addEventListener('click', () => loadROIData(false));
+  }
+});
+
+// ==================== Tiers tab ====================
+
+const TIERS_COLUMNS = [
+  { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
+  { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, className: 'group-name', type: 'string' },
+  { key: 'zScore', label: 'Z-Score', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
+  { key: 'n', label: 'n', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 }
+];
+
+const tiersTable = createTabTable({
+  columns: TIERS_COLUMNS,
+  headerRowEl: document.getElementById('tiersHeaderRow'),
+  bodyEl: document.getElementById('tiersBody'),
+  columnsBtnEl: document.getElementById('tiersColumnsBtn'),
+  columnsPanelEl: document.getElementById('tiersColumnsPanel'),
+  ownerKey: 'tiers',
+  defaultSortColumn: 'zScore'
+});
+
+let tiersLoaded = false;
+const tiersOverallStatsLine = document.getElementById('tiersOverallStatsLine');
+
+async function loadTiersData(forceRefresh) {
+  if (tiersLoaded && !forceRefresh) return;
+  const yearsParam = allYears.length > 0 && selectedYears.size < allYears.length
+    ? `?years=${[...selectedYears].join(',')}`
+    : '';
+  const res = await fetch(`/api/tiers${yearsParam}`);
+  const data = await res.json();
+  const { n, avgRank, sd } = data.overallStats;
+  tiersOverallStatsLine.textContent = n > 0
+    ? `Based on ${n} appearances across the included years \u00b7 overall average placement ${avgRank} \u00b7 std. dev ${sd}`
+    : 'No data for the currently included years.';
+  tiersTable.setData(data.players);
+  tiersLoaded = true;
+}
+
+tabButtons.forEach((btn) => {
+  if (btn.dataset.tab === 'tiers') {
+    btn.addEventListener('click', () => loadTiersData(false));
   }
 });
 

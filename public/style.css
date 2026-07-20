@@ -161,6 +161,50 @@ code {
   margin-top: 20px;
 }
 
+/* ---- Global controls (years — shared across all tabs) ---- */
+
+.global-controls {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 24px;
+  margin-bottom: 20px;
+}
+
+.global-controls-label {
+  margin-top: 0 !important;
+  margin-bottom: 10px !important;
+}
+
+/* ---- Expected ROI chart ---- */
+
+.roi-chart-section {
+  padding: 16px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+
+.roi-chart-svg {
+  width: 100%;
+  height: auto;
+  min-width: 500px;
+  display: block;
+}
+
+.chart-empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 24px;
+  margin: 0;
+}
+
+/* ---- Tier stats mini-table (kept for any future per-group breakdown) ---- */
+
+.tier-stats-table {
+  font-size: 0.85rem;
+}
+
 .slider-row {
   display: flex;
   align-items: center;

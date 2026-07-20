@@ -4,6 +4,12 @@ const Database = require('better-sqlite3');
 const { loadIdentityMap, identityTablesExist } = require('./data/player-identity');
 const { runFullSync } = require('./data/riot-sync');
 const { startPeriodicSync } = require('./data/scheduler');
+const {
+  computeROICurve,
+  computeROIPlayers,
+  computeOverallStats,
+  computeOverallZScores
+} = require('./data/alt-rankings');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -239,6 +245,19 @@ function parseYearsParam(raw) {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+// Shared by /api/stats, /api/roi, /api/tiers — years-filters then
+// resolves identity, since all three alternative methodologies operate
+// on the same underlying appearances, just scored differently.
+function getFilteredIdentifiedRows(req) {
+  const yearsFilter = parseYearsParam(req.query.years);
+  let rows = getAllRows();
+  if (yearsFilter) {
+    rows = rows.filter((r) => yearsFilter.has(r.year));
+  }
+  const identityMap = loadIdentityMap(db);
+  return resolveIdentities(rows, identityMap);
+}
+
 app.get('/api/stats', (req, res) => {
   const riskAversion = parseFloat(req.query.risk);
   const halfLifeYears = parseFloat(req.query.halfLife);
@@ -249,17 +268,35 @@ app.get('/api/stats', (req, res) => {
     return res.status(400).json({ error: 'halfLife query param must be a non-negative number' });
   }
 
-  const yearsFilter = parseYearsParam(req.query.years);
-  let rows = getAllRows();
-  if (yearsFilter) {
-    rows = rows.filter((r) => yearsFilter.has(r.year));
-  }
-
-  const identityMap = loadIdentityMap(db);
-  const withIdentity = resolveIdentities(rows, identityMap);
+  const withIdentity = getFilteredIdentifiedRows(req);
   const derived = attachDerivedFields(withIdentity);
   const stats = computeGroupStats(derived, riskAversion, halfLifeYears);
   res.json({ riskAversion, halfLifeYears, stats });
+});
+
+// Expected-ROI-by-pick-order: an alternative to the percentile-based
+// Adjusted Pick Value. Instead of a theoretical linear expectation
+// (Pick Percentile - Rank Percentile), this builds an empirical curve
+// from actual historical placements at each pick order, then scores
+// each player against however that curve actually looks — see
+// data/alt-rankings.js for the full explanation.
+app.get('/api/roi', (req, res) => {
+  const withIdentity = getFilteredIdentifiedRows(req);
+  const curve = computeROICurve(withIdentity);
+  const players = computeROIPlayers(withIdentity, curve);
+  res.json({ curve, players });
+});
+
+// Z-score against the overall pooled placement distribution (originally
+// tier-grouped; simplified after confirming every tier draws from an
+// identical distribution in this snake-draft format — see
+// data/alt-rankings.js for the full explanation). Route name kept as
+// /api/tiers for continuity even though tiering itself was dropped.
+app.get('/api/tiers', (req, res) => {
+  const withIdentity = getFilteredIdentifiedRows(req);
+  const overallStats = computeOverallStats(withIdentity);
+  const players = computeOverallZScores(withIdentity, overallStats);
+  res.json({ overallStats, players });
 });
 
 app.get('/api/meta', (req, res) => {
