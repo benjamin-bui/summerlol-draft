@@ -115,12 +115,13 @@ function attachDerivedFields(rows) {
       Number.isFinite(row.pickOrder) &&
       Number.isFinite(row.rank)
     ) {
+      pickRound = Math.floor((row.pickOrder - 1) / yearInfo.captains.size) + 1;
       pickPercentile = (row.pickOrder - 1) / (yearInfo.pickCount - 1);
       rankPercentile = (row.rank - 1) / (yearInfo.captains.size - 1);
       value = pickPercentile - rankPercentile;
     }
 
-    return { ...row, pickPercentile, rankPercentile, value };
+    return { ...row, pickRound, pickPercentile, rankPercentile, value };
   });
 }
 
@@ -282,7 +283,8 @@ app.get('/api/stats', (req, res) => {
 // data/alt-rankings.js for the full explanation.
 app.get('/api/roi', (req, res) => {
   const withIdentity = getFilteredIdentifiedRows(req);
-  const curve = computeROICurve(withIdentity);
+  const derived = attachDerivedFields(withIdentity);
+  const curve = computeROICurve(derived);
   const players = computeROIPlayers(withIdentity, curve);
   res.json({ curve, players });
 });
