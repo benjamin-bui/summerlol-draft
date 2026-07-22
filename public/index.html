@@ -24,42 +24,31 @@
     <nav class="tabs">
       <button class="tab-btn active" data-tab="trueskill">TrueSkill</button>
       <button class="tab-btn" data-tab="rankings">Rankings</button>
-      <button class="tab-btn" data-tab="rawdata">Raw Data</button>
+      <button class="tab-btn" data-tab="draftdata">Draft Data</button>
+      <button class="tab-btn" data-tab="matchdata">Matchup Data</button>
     </nav>
 
-    <!-- ================= RANKINGS TAB ================= -->
-    <section class="tab-panel" id="tab-rankings">
-      <section class="control-panel">
-        <div>
-          <p><strong>Adjusted Pick Value: </strong> Weighted difference between average pick percentile and rank percentile.</p>
-          <p><strong>n:</strong> Number of tournaments of data.</p>
-          <p><strong>Avg. Pick%: </strong>Average percentage of draft picked before this player is picked.</p>
-          <p><strong>Est. Pick Order: </strong>Based on Total N players in the draft, where in the pick order this person is picked on average.</p>
-          <p><strong>Avg. Rank%: </strong>Average placement as a percentile; 1st place is 0% and last place is 100%</p>
-          <p><strong>Est. Rank Order: </strong>Based on Total N players in the draft, what placement does this player have on average (assuming teams of 5).</p>
-        </div>
-        <label for="risk">Risk-aversion weight (&lambda;)</label>
-        <div class="slider-row">
-          <input type="range" id="risk" min="0" max="3" step=".05" value="0.5" />
-          <span id="riskValue" class="risk-value">0.50</span>
-        </div>
+      <!-- ================= RANKINGS TAB ================= -->
+      <section class="tab-panel" id="tab-rankings">
+        <section class="control-panel">
+          <div>
+            <p><strong>Adjusted Pick Value: </strong> Weighted difference between average pick percentile and rank percentile.</p>
+            <p><strong>n:</strong> Number of tournaments of data.</p>
+            <p><strong>Avg. Pick%: </strong>Average percentage of draft picked before this player is picked.</p>
+            <p><strong>Est. Pick Order: </strong>Based on Total N players in the draft, where in the pick order this person is picked on average.</p>
+            <p><strong>Avg. Rank%: </strong>Average placement as a percentile; 1st place is 0% and last place is 100%</p>
+            <p><strong>Est. Rank Order: </strong>Based on Total N players in the draft, what placement does this player have on average (assuming teams of 5).</p>
+          </div>
+          <label for="totalN" class="second-control">Total N (for estimated pick/rank order columns)</label>
+          <div class="slider-row">
+            <input type="number" id="totalN" min="2" max="1000" step="1" value="40" class="total-n-input" />
+          </div>
+        </section>
 
-        <label for="halfLife" class="second-control">Recency half-life (years)</label>
-        <div class="slider-row">
-          <input type="range" id="halfLife" min="0" max="6" step="0.5" value="2" />
-          <span id="halfLifeValue" class="risk-value">2.0</span>
-        </div>
-
-        <label for="totalN" class="second-control">Total N (for estimated pick/rank order columns)</label>
-        <div class="slider-row">
-          <input type="number" id="totalN" min="2" max="1000" step="1" value="40" class="total-n-input" />
-        </div>
-      </section>
-
-      <section class="table-controls">
-        <button id="columnsBtn" class="columns-btn">Columns &#9662;</button>
-        <div id="columnsPanel" class="columns-panel hidden"></div>
-      </section>
+        <section class="table-controls">
+          <button id="columnsBtn" class="columns-btn">Columns &#9662;</button>
+          <div id="columnsPanel" class="columns-panel hidden"></div>
+        </section>
 
       <section class="table-section">
         <table id="statsTable">
@@ -83,6 +72,8 @@
         <p>Note that win probabilities may not properly reflect listed TrueSkill scores. This is particularly common when there are new players with high uncertainty. Win probabilities are calculated based on the estimated skill score, not the conservative skill score.</p>
       </section>
 
+      <div id="trueskill-fun-facts"></div>
+
       <section class="table-controls">
         <button id="trueskillColumnsBtn" class="columns-btn">Columns &#9662;</button>
         <div id="trueskillColumnsPanel" class="columns-panel hidden"></div>
@@ -100,28 +91,29 @@
       </section>
     </section>
 
-    <!-- ================= RAW DATA TAB ================= -->
-    <section class="tab-panel" id="tab-rawdata">
-      <section class="table-controls">
-        <button id="downloadCsvBtn" class="download-btn">Download CSV</button>
-      </section>
-
-      <section class="table-section">
-        <table id="rawTable">
-          <thead>
-            <tr id="rawHeaderRow"></tr>
-          </thead>
-          <tbody id="rawBody">
-            <!-- populated by app.js -->
-          </tbody>
-        </table>
-      </section>
-
-      <footer>
-        <p><span id="rawRowCount">–</span> rows &middot; <code>id</code> column omitted &middot; served from <code>/api/raw</code></p>
-      </footer>
+    <!-- ================= DRAFT DATA TAB ================= -->
+    <section class="tab-panel" id="tab-draftdata">
+      <div class="table-controls">
+        <button id="draftColumnsBtn" class="columns-btn">Columns ▾</button>
+        <div id="draftColumnsPanel" class="columns-panel hidden"></div>
+        <button id="downloadDraftCsvBtn" class="download-btn">Download CSV</button>
+      </div>
+      <div class="table-section">
+        <table><thead><tr id="draftHeaderRow"></tr></thead><tbody id="draftBody"></tbody></table>
+      </div>
     </section>
-  </div>
+
+    <!-- ================= MATCH DATA TAB ================= -->
+    <section class="tab-panel" id="tab-matchdata">
+      <div class="table-controls">
+        <button id="matchColumnsBtn" class="columns-btn">Columns ▾</button>
+        <div id="matchColumnsPanel" class="columns-panel hidden"></div>
+        <button id="downloadMatchCsvBtn" class="download-btn">Download CSV</button>
+      </div>
+      <div class="table-section">
+        <table><thead><tr id="matchHeaderRow"></tr></thead><tbody id="matchBody"></tbody></table>
+      </div>
+    </section>
 
   <div id="playerProfileModal" class="player-profile-modal" aria-hidden="true">
     <div class="player-profile-backdrop" data-close="true"></div>

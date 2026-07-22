@@ -44,6 +44,57 @@ themeToggleBtn.addEventListener('click', () => {
   localStorage.setItem(THEME_STORAGE_KEY, next);
 });
 
+// TrueSkill Fun Facts
+function renderFunFactsHtml(ff) {
+  if (!ff) return '';
+  const pctRows = ff.percentileCutoffs.map((p) =>
+    `<tr><td>${escapeHtml(p.name)}</td><td>${p.percentile}%</td><td>${p.ratingCutoff ?? '–'}</td></tr>`).join('');
+
+
+  const facts = [];
+  if (ff.biggestUpset) {
+    const u = ff.biggestUpset;
+    facts.push(`<strong>Biggest upset:</strong> ${escapeHtml(u.winnerName)} (avg ${u.winnerAvgBefore}) over ${escapeHtml(u.loserName)} (avg ${u.loserAvgBefore}) in ${u.tournament} ${u.year} — only a ${Math.round(u.predictedWinProbForWinner * 100)}% predicted chance. ${u.mvpName ? `${escapeHtml(u.mvpName)} swung ${u.mvpRatingChange > 0 ? '+' : ''}${u.mvpRatingChange} TrueSkill.` : ''}`);
+  }
+  if (ff.longestStreak) {
+    facts.push(`<strong>Longest win streak:</strong> ${escapeHtml(ff.longestStreak.displayName)}, ${ff.longestStreak.streak} games`);
+  }
+  if (ff.longestLossStreak) {
+    facts.push(`<strong>Longest losing streak:</strong> ${escapeHtml(ff.longestLossStreak.displayName)}, ${ff.longestLossStreak.streak} games`);
+  }
+  if (ff.peakRating) {
+    facts.push(`<strong>Highest TrueSkill ever reached:</strong> ${escapeHtml(ff.peakRating.displayName)}, ${ff.peakRating.conservativeRating} (${ff.peakRating.tournament} ${ff.peakRating.year})`);
+  }
+  if (ff.mostGamesPlayed) {
+    facts.push(`<strong>Most games played:</strong> ${escapeHtml(ff.mostGamesPlayed.displayName)}, ${ff.mostGamesPlayed.games} games`);
+  }
+  if (ff.mostActiveRivalry) {
+    const r = ff.mostActiveRivalry;
+    facts.push(`<strong>Most active rivalry:</strong> ${escapeHtml(r.teamAName)} vs ${escapeHtml(r.teamBName)}, ${r.gamesPlayed} games played (${r.teamAWins}-${r.teamBWins}${r.draws ? `-${r.draws} draws` : ''})`);
+  }
+
+  return `
+    <div class="fun-facts-box">
+      <button class="fun-facts-toggle" aria-expanded="false">▶ Fun facts</button>
+      <div class="fun-facts-body" hidden>
+        <h4>TrueSkill percentile cutoffs (League of Legends rank equivalent)</h4>
+        <table class="fun-facts-table"><thead><tr><th>Rank</th><th>Percentile</th><th>Rating cutoff</th></tr></thead>
+          <tbody>${pctRows}</tbody></table>
+        <ul class="fun-facts-list">${facts.map((f) => `<li>${f}</li>`).join('')}</ul>
+      </div>
+    </div>`;
+}
+
+document.addEventListener('click', (e) => {
+  const toggle = e.target.closest('.fun-facts-toggle');
+  if (!toggle) return;
+  const body = toggle.nextElementSibling;
+  const isOpen = !body.hidden;
+  body.hidden = isOpen;
+  toggle.setAttribute('aria-expanded', String(!isOpen));
+  toggle.textContent = (isOpen ? '▶' : '▼') + ' Fun facts';
+});
+// Modal Player Profile
 const playerProfileModal = document.getElementById('playerProfileModal');
 const playerProfileCloseBtn = document.getElementById('playerProfileClose');
 const playerProfileContent = document.getElementById('playerProfileContent');
@@ -111,11 +162,11 @@ const historyRows = history.map((entry, idx) => {
     <td colspan="11">
       <div class="roster-detail">
         <div>
-          <strong>Your team - </strong> avg TrueSkill: ${entry.ownTeam?.avgConservativeRating ?? '–'} (${entry.ownTeam?.avgMu ?? '-'})
+          <strong>Your team - </strong> avg TrueSkill (μ): ${entry.ownTeam?.avgConservativeRating ?? '–'} (${entry.ownTeam?.avgMu ?? '-'})
           <ul>${rosterList(entry.ownTeam)}</ul>
         </div>
         <div>
-          <strong>Opponent - </strong> avg TrueSkill: ${entry.opponentTeam?.avgConservativeRating ?? '–'} (${entry.opponentTeam?.avgMu ?? '-'})
+          <strong>Opponent - </strong> avg TrueSkill (μ): ${entry.opponentTeam?.avgConservativeRating ?? '–'} (${entry.opponentTeam?.avgMu ?? '-'})
           <ul>${rosterList(entry.opponentTeam)}</ul>
         </div>
       </div>
@@ -148,6 +199,7 @@ function buildChartHtml(history) {
 
   const points = history.map((h, i) => ({
     x: i + 1,
+    trueskill: h.conservativeRating,
     mu: h.mu,
     sigma: h.sigma,
     outcome: h.outcome,
@@ -157,19 +209,19 @@ function buildChartHtml(history) {
   }));
 
   const xMax = points.length;
-  const yMin = Math.min(...points.map((p) => p.mu));
-  const yMax = Math.max(...points.map((p) => p.mu));
+  const yMin = Math.min(...points.map((p) => p.trueskill));
+  const yMax = Math.max(...points.map((p) => p.trueskill));
   const yPad = (yMax - yMin) * 0.05 || 1;
 
   const xScale = (x) => padL + ((x - 1) / Math.max(1, xMax - 1)) * plotW;
   const yScale = (y) => padT + plotH - ((y - (yMin - yPad)) / ((yMax + yPad) - (yMin - yPad))) * plotH;
 
-  const muPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p.x)} ${yScale(p.mu)}`).join(' ');
+  const trueskillPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p.x)} ${yScale(p.trueskill)}`).join(' ');
 
   const outcomeColor = { win: '#2e7d32', loss: '#c62828', draw: '#757575' };
   const dots = points.map((p) => `
-    <circle cx="${xScale(p.x)}" cy="${yScale(p.mu)}" r="3.5" fill="${outcomeColor[p.outcome] || '#888'}">
-      <title>${escapeHtml(`${p.year} ${p.tournament} vs ${p.opponent}: ${p.outcome} (mu=${p.mu}, sigma=${p.sigma})`)}</title>
+    <circle cx="${xScale(p.x)}" cy="${yScale(p.trueskill)}" r="3.5" fill="${outcomeColor[p.outcome] || '#888'}">
+      <title>${escapeHtml(`${p.year} ${p.tournament} vs ${p.opponent}: ${p.outcome} (TrueSkill = ${p.trueskill}, μ=${p.mu}, σ=${p.sigma})`)}</title>
     </circle>
   `).join('');
 
@@ -186,13 +238,13 @@ function buildChartHtml(history) {
   return `
     <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" class="profile-chart-svg">
       ${gridlines}
-      <path d="${muPath}" fill="none" stroke="#2b6cb0" stroke-width="2" />
+      <path d="${trueskillPath}" fill="none" stroke="#2b6cb0" stroke-width="2" />
       ${dots}
       <text x="${padL}" y="${height - 6}" font-size="10" fill="#888">Game 1</text>
       <text x="${width - padR}" y="${height - 6}" text-anchor="end" font-size="10" fill="#888">Game ${xMax}</text>
     </svg>
     <div class="profile-chart-legend">
-      <span><i style="background:#2b6cb0"></i> μ (skill estimate)</span>
+      <span><i style="background:#2b6cb0"></i> TrueSkill (skill estimate)</span>
       <span><i style="background:#2e7d32"></i> win</span>
       <span><i style="background:#c62828"></i> loss</span>
       <span><i style="background:#757757"></i> draw</span>
@@ -607,20 +659,11 @@ function buildHeaderCell(col, sortColumn, sortDirection, filterState, onFilterCh
 
 // ==================== Rankings tab state ====================
 
-const riskSlider = document.getElementById('risk');
-const riskValueLabel = document.getElementById('riskValue');
-const halfLifeSlider = document.getElementById('halfLife');
-const halfLifeValueLabel = document.getElementById('halfLifeValue');
 const statsHeaderRow = document.getElementById('statsHeaderRow');
 const statsBody = document.getElementById('statsBody');
 const columnsBtn = document.getElementById('columnsBtn');
 const columnsPanel = document.getElementById('columnsPanel');
 const totalNInput = document.getElementById('totalN');
-
-const RISK_MIN = parseFloat(riskSlider.min);
-const RISK_MAX = parseFloat(riskSlider.max);
-const HALFLIFE_MIN = parseFloat(halfLifeSlider.min);
-const HALFLIFE_MAX = parseFloat(halfLifeSlider.max);
 
 let fetchDebounceTimer = null;
 let urlDebounceTimer = null;
@@ -784,40 +827,11 @@ async function fetchStats(risk, halfLife) {
 
 function currentSliderValues() {
   return {
-    risk: parseFloat(riskSlider.value),
-    halfLife: parseFloat(halfLifeSlider.value)
+    risk: 0.25,
+    halfLife: 2
   };
 }
 
-function scheduleFetch() {
-  clearTimeout(fetchDebounceTimer);
-  fetchDebounceTimer = setTimeout(() => {
-    const { risk, halfLife } = currentSliderValues();
-    fetchStats(risk, halfLife);
-  }, 80);
-}
-
-riskSlider.addEventListener('input', () => {
-  riskValueLabel.textContent = parseFloat(riskSlider.value).toFixed(2);
-  scheduleFetch();
-  scheduleUrlUpdate();
-});
-
-halfLifeSlider.addEventListener('input', () => {
-  const val = parseFloat(halfLifeSlider.value);
-  halfLifeValueLabel.textContent = val === 0 ? '0 (off)' : val.toFixed(1);
-  scheduleFetch();
-  scheduleUrlUpdate();
-});
-
-totalNInput.addEventListener('input', () => {
-  const val = parseInt(totalNInput.value, 10);
-  if (!Number.isFinite(val) || val < 2) return; // ignore invalid/incomplete typing
-  totalN = val;
-  applyTotalN();
-  renderRankingsBody();
-  scheduleUrlUpdate();
-});
 
 // ==================== Tabs ====================
 
@@ -836,19 +850,6 @@ tabButtons.forEach((btn) => {
   });
 });
 
-// ==================== Raw Data tab ====================
-
-const rawHeaderRow = document.getElementById('rawHeaderRow');
-const rawBody = document.getElementById('rawBody');
-const rawRowCountEl = document.getElementById('rawRowCount');
-const downloadCsvBtn = document.getElementById('downloadCsvBtn');
-
-let rawColumns = [];
-let rawRows = [];
-let rawSortColumn = null;
-let rawSortDirection = 'asc';
-let rawLoaded = false;
-let rawFilters = {};
 
 // Converts every value in a genuinely-numeric column from string to a
 // real JS number, once, right when the raw data loads. Fixes two bugs at
@@ -890,101 +891,8 @@ function inferDecimals(rows, colName) {
   return 0;
 }
 
-function rawColumnConfigs() {
-  return rawColumns.map((name) => ({
-    key: name,
-    label: name,
-    sortable: true,
-    filterable: true,
-    type: rawRows.some((r) => typeof r[name] === 'number') ? 'number' : 'string',
-    decimals: inferDecimals(rawRows, name)
-  }));
-}
-
-function rebuildRawHeader() {
-  removePopoversOwnedBy('raw');
-  rawHeaderRow.innerHTML = '';
-  const cols = rawColumnConfigs();
-  cols.forEach((col) => {
-    const th = buildHeaderCell(col, rawSortColumn, rawSortDirection, rawFilters, () => {
-      renderRawBody();
-    }, 'raw');
-    th.addEventListener('click', () => {
-      if (rawSortColumn === col.key) {
-        rawSortDirection = rawSortDirection === 'asc' ? 'desc' : 'asc';
-      } else {
-        rawSortColumn = col.key;
-        rawSortDirection = 'asc';
-      }
-      [...rawHeaderRow.children].forEach((h) => {
-        h.classList.remove('sorted-asc', 'sorted-desc');
-        if (h.dataset.sort === rawSortColumn) {
-          h.classList.add(rawSortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
-        }
-      });
-      renderRawBody();
-    });
-    rawHeaderRow.appendChild(th);
-  });
-}
-
-function renderRawBody() {
-  const cols = rawColumnConfigs();
-  const filtered = applyColumnFilters(rawRows, cols, rawFilters);
-  const sorted = rawSortColumn ? sortRows(filtered, cols, rawSortColumn, rawSortDirection) : filtered;
-
-  if (sorted.length === 0) {
-    rawBody.innerHTML = `<tr><td colspan="${cols.length}" class="empty">No rows match the active filters</td></tr>`;
-    return;
-  }
-
-  rawBody.innerHTML = sorted
-    .map((row) => {
-      const cells = cols
-        .map((col) => {
-          if (col.key === groupColName) {
-            return `<td>${renderPlayerCell({ group: row[col.key], profileUrl: row._playerProfileUrl })}</td>`;
-          }
-          const val = row[col.key];
-          return `<td>${val === null || val === undefined ? '–' : escapeHtml(val)}</td>`;
-        })
-        .join('');
-      return `<tr>${cells}</tr>`;
-    })
-    .join('');
-}
-
-downloadCsvBtn.addEventListener('click', () => {
-  const a = document.createElement('a');
-  a.href = '/api/raw.csv';
-  a.download = 'draft-data.csv';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-});
-
-async function loadRawData() {
-  if (rawLoaded) return; // fetch once, lazily, the first time the tab is opened
-  const res = await fetch('/api/raw');
-  const data = await res.json();
-  rawColumns = data.columns;
-  rawRows = data.rows;
-  coerceNumericColumns(rawColumns, rawRows);
-  rawRowCountEl.textContent = rawRows.length;
-  rawLoaded = true;
-  rebuildRawHeader();
-  renderRawBody();
-}
-
-tabButtons.forEach((btn) => {
-  if (btn.dataset.tab === 'rawdata') {
-    btn.addEventListener('click', loadRawData);
-  }
-});
-
 // ==================== Reusable sortable/filterable/column-toggleable table ====================
-// Powers the ROI and Tiers tabs below, and is a reasonable starting
-// point for any future tab that's basically "a table of players/rows
+// Starting point for any future tab that's basically "a table of players/rows
 // with some computed metric" — which is most of what this app is.
 // Rankings and Raw Data predate this and aren't using it (they have
 // some tab-specific quirks — Rankings' derived Est. Order columns,
@@ -1098,8 +1006,11 @@ function createTabTable({
       .map((row, i) => {
         const cells = cols
           .map((col) => {
-            if (col.key === 'group') {
-              return `<td class="group-name">${renderPlayerCell(row)}</td>`;
+            if (col.playerLink || col.key === 'group') {
+              const playerRow = col.playerLink
+                ? { group: row[col.key], profileUrl: row._playerProfileUrl, identityKey: row._playerIdentityKey }
+                : row;
+              return `<td class="group-name">${renderPlayerCell(playerRow)}</td>`;
             }
             const val = col.key === 'rank' ? i + 1 : row[col.key];
             const cls = col.className ? ` class="${col.className}"` : col.key === 'rank' ? ' class="rank"' : '';
@@ -1162,6 +1073,7 @@ async function loadtrueskillData(forceRefresh) {
   if (trueskillLoaded && !forceRefresh) return;
   const res = await fetch(`/api/trueskill`);
   const data = await res.json();
+  document.getElementById('trueskill-fun-facts').innerHTML = renderFunFactsHtml(data.funFacts);
   trueskillTable.setData(data.players);
   trueskillLoaded = true;
 }
@@ -1172,55 +1084,117 @@ tabButtons.forEach((btn) => {
   }
 });
 
+
+// ==================== Draft Data tab ====================
+const DRAFT_DATA_COLUMNS = [
+  { key: 'Tournament', label: 'Tournament', sortable: true, hideable: true, filterable: true, type: 'string' },
+  { key: 'Year', label: 'Year', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'Captain', label: 'Captain', sortable: true, hideable: true, filterable: true, type: 'string' },
+  { key: 'Player', label: 'Player', sortable: true, hideable: false, filterable: true, type: 'string', playerLink: true, className: 'group-name' },
+  { key: 'Pick Order', label: 'Pick Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'Rank', label: 'Rank', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 }
+];
+
+const draftDataTable = createTabTable({
+  columns: DRAFT_DATA_COLUMNS,
+  headerRowEl: document.getElementById('draftHeaderRow'),
+  bodyEl: document.getElementById('draftBody'),
+  columnsBtnEl: document.getElementById('draftColumnsBtn'),
+  columnsPanelEl: document.getElementById('draftColumnsPanel'),
+  ownerKey: 'draftdata',
+  defaultSortColumn: 'Year',
+  emptyMessage: 'No rows match the active filters'
+});
+
+let draftDataLoaded = false;
+
+async function loadDraftData() {
+  if (draftDataLoaded) return;
+  const res = await fetch('/api/raw');
+  const data = await res.json();
+  // Raw DB values arrive as strings (SQLite/CSV-sourced) -- coerceNumericColumns
+  // is the same helper the old single Raw Data tab used, just called here
+  // against this tab's own column list instead of a dynamically-discovered one.
+  coerceNumericColumns(DRAFT_DATA_COLUMNS.map((c) => c.key), data.rows);
+  draftDataTable.setData(data.rows);
+  draftDataLoaded = true;
+}
+
+tabButtons.forEach((btn) => {
+  if (btn.dataset.tab === 'draftdata') {
+    btn.addEventListener('click', () => loadDraftData(false));
+  }
+});
+
+document.getElementById('downloadDraftCsvBtn').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = '/api/raw.csv';
+  a.download = 'draft-data.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+});
+
+// ==================== Match Data tab ====================
+
+const MATCH_DATA_COLUMNS = [
+  { key: 'year', label: 'Year', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'tournament', label: 'Tournament', sortable: true, hideable: true, filterable: true, type: 'string' },
+  { key: 'team1', label: 'Team 1', sortable: true, hideable: true, filterable: true, type: 'string' },
+  { key: 'team2', label: 'Team 2', sortable: true, hideable: true, filterable: true, type: 'string' },
+  { key: 'result', label: 'Result', sortable: true, hideable: true, filterable: true, type: 'string' },
+  { key: 'csv_row_index', label: 'CSV Row', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, defaultHidden: true }
+];
+
+const matchDataTable = createTabTable({
+  columns: MATCH_DATA_COLUMNS,
+  headerRowEl: document.getElementById('matchHeaderRow'),
+  bodyEl: document.getElementById('matchBody'),
+  columnsBtnEl: document.getElementById('matchColumnsBtn'),
+  columnsPanelEl: document.getElementById('matchColumnsPanel'),
+  ownerKey: 'matchdata',
+  defaultSortColumn: 'year',
+  emptyMessage: 'No rows match the active filters'
+});
+let matchDataLoaded = false;
+async function loadMatchData() {
+  if (matchDataLoaded) return;
+  const res = await fetch('/api/raw-matches');
+  const data = await res.json();
+  coerceNumericColumns(MATCH_DATA_COLUMNS.map((c) => c.key), data.rows);
+  matchDataTable.setData(data.rows);
+  matchDataLoaded = true;
+}
+
+tabButtons.forEach((btn) => {
+  if (btn.dataset.tab === 'matchdata') {
+    btn.addEventListener('click', () => loadMatchData(false));
+  }
+});
+
+document.getElementById('downloadMatchCsvBtn').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = '/api/raw-matches.csv';
+  a.download = 'match-data.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+});
+
 // ==================== URL query param state ====================
-// ?risk=&halfLife=&sort=&dir=&hidden=&tab=
 
 function readStateFromURL() {
   const params = new URLSearchParams(window.location.search);
 
-  const risk = parseFloat(params.get('risk'));
-  const halfLife = parseFloat(params.get('halfLife'));
-  const sort = params.get('sort');
-  const dir = params.get('dir');
-  const hidden = params.get('hidden');
-  const tab = params.get('tab');
-  const n = parseInt(params.get('totalN'), 10);
+  const tab = params.get('tab') || 'trueskill';
 
-  if (!Number.isNaN(risk) && risk >= RISK_MIN && risk <= RISK_MAX) {
-    riskSlider.value = risk;
-  }
-  if (!Number.isNaN(halfLife) && halfLife >= HALFLIFE_MIN && halfLife <= HALFLIFE_MAX) {
-    halfLifeSlider.value = halfLife;
-  }
-  const validSortKeys = RANKINGS_COLUMNS.filter((c) => c.sortable).map((c) => c.key);
-  if (sort && validSortKeys.includes(sort)) {
-    sortColumn = sort;
-  }
-  if (dir === 'asc' || dir === 'desc') {
-    sortDirection = dir;
-  }
-  if (hidden !== null) {
-    hiddenColumns = new Set();
-    hidden.split(',').filter(Boolean).forEach((key) => {
-      if (RANKINGS_COLUMNS.some((c) => c.key === key && c.hideable)) hiddenColumns.add(key);
-    });
-  }
-  if (Number.isFinite(n) && n >= 2) {
-    totalN = n;
-    totalNInput.value = n;
-  }
   setActiveTab(tab);
-  if (tab === 'rawdata') loadRawData();
+  if (tab === 'draftdata') loadDraftData();
+  if (tab === 'matchdata') loadMatchData();
 }
 
 function writeStateToURL() {
   const params = new URLSearchParams();
-  params.set('risk', parseFloat(riskSlider.value).toFixed(2));
-  params.set('halfLife', parseFloat(halfLifeSlider.value).toFixed(1));
-  params.set('sort', sortColumn);
-  params.set('dir', sortDirection);
-  params.set('hidden', [...hiddenColumns].join(','));
-  params.set('totalN', totalN);
   const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab || 'trueskill';
   params.set('tab', activeTab);
 
@@ -1239,15 +1213,6 @@ function scheduleUrlUpdate() {
   readStateFromURL();
   await loadMeta();
 
-  riskValueLabel.textContent = parseFloat(riskSlider.value).toFixed(2);
-  const initHalfLife = parseFloat(halfLifeSlider.value);
-  halfLifeValueLabel.textContent = initHalfLife === 0 ? '0 (off)' : initHalfLife.toFixed(1);
-
-  RANKINGS_COLUMNS.filter((c) => c.hideable).forEach((col) => {
-    const checkbox = columnsPanel.querySelector(`input[data-col="${col.key}"]`);
-    if (checkbox) checkbox.checked = !hiddenColumns.has(col.key);
-  });
-  
   rebuildRankingsHeader();
 
   const { risk, halfLife } = currentSliderValues();

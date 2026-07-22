@@ -265,24 +265,27 @@ app.get('/api/stats', (req, res) => {
 // TrueSkill: rates players as a sequence of team games, one per year,
 
 function getMatches() {
-  return db.prepare('SELECT id AS rowIndex, year, tournament, team1, team2, result, csv_row_index AS rowIndex FROM matches').all();
+  return db.prepare('SELECT year, tournament, team1, team2, result, csv_row_index AS rowIndex FROM matches').all();
 }
 
-app.get('/api/trueskill', (req, res) => {
-  const withIdentity = getFilteredIdentifiedRows();
-  const identityMap = loadIdentityMap(db);
-  const matches = getMatches();
 
+
+const { computeFunFacts } = require('./src/lib/trueskill-funfacts');
+
+app.get('/api/trueskill', (req, res) => {
+  const identityMap = loadIdentityMap(db);
+  const allRows = resolveIdentities(getAllRows(), identityMap);
+  const matches = getMatches();
   const opts = {};
-  for (const key of ['mu', 'sigma', 'beta', 'tau', 'drawProbability']) {
+  for (const key of ['mu', 'sigma', 'beta', 'tau', 'drawProbability', 'conservativeK']) {
     if (req.query[key] !== undefined) {
       const val = parseFloat(req.query[key]);
       if (Number.isNaN(val)) return res.status(400).json({ error: `${key} query param must be a number` });
       opts[key] = val;
     }
   }
-
-  const result = computeTrueSkillFromMatches(matches, withIdentity, identityMap, opts);
+  const result = computeTrueSkillFromMatches(matches, allRows, identityMap, opts);
+  result.funFacts = computeFunFacts(result);
   res.json(result);
 });
 
@@ -357,6 +360,39 @@ app.get('/api/raw', (req, res) => {
   res.json({ columns, rows: enriched });
 });
 
+// Match data endpoint
+function getRawMatchColumns() {
+  return db
+    .prepare('PRAGMA table_info(matches)')
+    .all()
+    .map((c) => c.name)
+    .filter((name) => name !== 'id'); // only the autoincrement key excluded; csv_row_index stays
+}
+
+function getRawMatchRows() {
+  const columns = getRawMatchColumns();
+  const selectCols = columns.map(q).join(', ');
+  const rows = db.prepare(`SELECT ${selectCols} FROM matches`).all();
+  return { columns, rows };
+}
+
+app.get('/api/raw-matches', (req, res) => {
+  const { columns, rows } = getRawMatchRows();
+  res.json({ columns, rows });
+});
+
+app.get('/api/raw-matches.csv', (req, res) => {
+  const { columns, rows } = getRawMatchRows();
+  const lines = [columns.map(csvEscape).join(',')];
+  for (const row of rows) {
+    lines.push(columns.map((c) => csvEscape(row[c])).join(','));
+  }
+  const csv = lines.join('\n');
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="match-data.csv"');
+  res.send(csv);
+});
 // CSV-escapes a single field: wraps in quotes if it contains a comma,
 // quote, or newline, doubling any internal quotes.
 function csvEscape(value) {

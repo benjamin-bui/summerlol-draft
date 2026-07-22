@@ -49,7 +49,7 @@ function loadIdentityMap(db) {
     map.set(row.alias, {
       identityKey: `p${row.player_id}`,
       displayName,
-      profileUrl: resolved ? opggLink(row.riot_game_name, row.riot_tag_line, row.riot_region) : null,
+      profileUrl: resolved ? opggLink(row.riot_game_name, row.riot_tag_line, OPGG_REGION) : null,
       resolved
     });
   }
@@ -57,4 +57,24 @@ function loadIdentityMap(db) {
   return map;
 }
 
-module.exports = { loadIdentityMap, opggLink, identityTablesExist };
+// Reverse of identityMap: identityKey -> display info. Built once per
+// computeTrueSkillFromMatches call rather than scanning draftRows per
+// lookup -- also fixes captains/players who are correctly identity-matched
+// but never appear as a Player value in draftRows (e.g. captain-only,
+// no recorded picks), who previously fell through to showing their raw
+// identityKey as a "name".
+function buildReverseIdentityLookup(identityMap) {
+  const byKey = new Map();
+  for (const identity of identityMap.values()) {
+    if (!byKey.has(identity.identityKey)) {
+      byKey.set(identity.identityKey, {
+        displayName: identity.displayName,
+        profileUrl: identity.profileUrl || null,
+        identified: !!identity.resolved
+      });
+    }
+  }
+  return byKey;
+}
+
+module.exports = { loadIdentityMap, buildReverseIdentityLookup, opggLink, identityTablesExist };

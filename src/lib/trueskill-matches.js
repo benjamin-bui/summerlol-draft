@@ -1,4 +1,5 @@
 const { Rating, TrueSkill } = require('ts-trueskill');
+const { buildReverseIdentityLookup } = require('./player-identity');
 
 function buildRosterMap(draftRows, identityMap) {
   const resolve = (name) => {
@@ -72,7 +73,11 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
     const identity = identityMap.get(name);
     return identity ? identity.identityKey : name;
   };
+
+  const reverseIdentity = buildReverseIdentityLookup(identityMap);
+
   const displayInfo = (key) => {
+    if (reverseIdentity.has(key)) return reverseIdentity.get(key);
     for (const row of draftRows) {
       if ((row.identityKey || resolve(row.groupVal)) === key) {
         return { displayName: row.displayName || row.groupVal, profileUrl: row.profileUrl || null, identified: !!row.identified };
@@ -84,6 +89,7 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
   const roster = buildRosterMap(draftRows, identityMap);
   const ratings = new Map();  // identityKey -> Rating
   const history = new Map();  // identityKey -> [{year, tournament, opponent, result, mu, sigma, conservativeRating, conservativeK}]
+  const games = [];
 
   // Diagnostics: which (year, captain) pairs had no roster on record, so
   // they were played as solo teams -- surface this so you can tell "no
@@ -172,31 +178,46 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
     const outcome1 = ranks[0] < ranks[1] ? 'win' : ranks[0] > ranks[1] ? 'loss' : 'draw';
     const outcome2 = ranks[1] < ranks[0] ? 'win' : ranks[1] > ranks[0] ? 'loss' : 'draw';
 
-    const record = (members, updatedRatings, opponentKey, outcome, predictedWinProb, ownTeam, opponentTeam) => {
-      members.forEach((key, i) => {
+    const record = (members, updatedRatings, preRatings, opponentKey, outcome, predictedWinProb, ownTeam, opponentTeam) => {
+      return members.map((key, i) => {
+        const pre = preRatings[i];
+        const preConservative = round3(pre.mu - conservativeK * pre.sigma);
         ratings.set(key, updatedRatings[i]);
         if (!history.has(key)) history.set(key, []);
         const opponentDisplay = displayInfo(opponentKey).displayName || opponentKey;
-        history.get(key).push({
+        const postConservative = round3(updatedRatings[i].mu - conservativeK * updatedRatings[i].sigma);
+        const entry = {
           gameIndex: m.rowIndex ?? m.id ?? 0,
           year: m.year,
           tournament: m.tournament,
           opponent: opponentDisplay,
           opponentName: opponentDisplay,
-          outcome, // 'win' | 'loss' | 'draw'
+          outcome,
           predictedWinProb: round3(predictedWinProb),
           mu: round3(updatedRatings[i].mu),
           sigma: round3(updatedRatings[i].sigma),
-          conservativeRating: round3(updatedRatings[i].mu - conservativeK * updatedRatings[i].sigma),
+          conservativeRating: postConservative,
+          ratingChange: round3(postConservative - preConservative),
           ownTeam: { roster: ownTeam.roster, avgConservativeRating: ownTeam.avg, avgMu: ownTeam.avgMu },
-          opponentTeam: { roster: opponentTeam.roster, avgConservativeRating: opponentTeam.avg, avgMu: opponentTeam.avgMu}
-        });
+          opponentTeam: { roster: opponentTeam.roster, avgConservativeRating: opponentTeam.avg, avgMu: opponentTeam.avgMu }
+        };
+        history.get(key).push(entry);
+        return { identityKey: key, displayName: displayInfo(key).displayName, ratingChange: entry.ratingChange };
       });
     };
-    record(team1Members, updated1, team2Key, outcome1, p1WinsPredicted, 
+    const team1Changes = record(team1Members, updated1, team1Ratings, team2Key, outcome1, p1WinsPredicted,
       { roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu }, { roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu });
-    record(team2Members, updated2, team1Key, outcome2, p2WinsPredicted, 
-      { roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu}, { roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu });
+    const team2Changes = record(team2Members, updated2, team2Ratings, team1Key, outcome2, p2WinsPredicted,
+      { roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu }, { roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu });
+    const winner = outcome1 === 'win' ? 'team1' : outcome2 === 'win' ? 'team2' : 'draw';
+    games.push({
+      year: m.year,
+      tournament: m.tournament,
+      team1: { key: team1Key, name: displayInfo(team1Key).displayName, roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu, changes: team1Changes },
+      team2: { key: team2Key, name: displayInfo(team2Key).displayName, roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu, changes: team2Changes },
+      winner,
+      predictedWinProbTeam1: round3(p1WinsPredicted)
+    });
   }
 
   const players = [...ratings.entries()].map(([identityKey, rating]) => {
@@ -234,7 +255,8 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
     params: { mu, sigma, beta, tau, drawProbability, conservativeK },
     gamesProcessed: ordered.length,
     players,
-    unresolvedTeams // (year, captain) pairs that had no draft roster on file
+    unresolvedTeams,
+    games // one row per match -- source data for fun facts
   };
 }
 
@@ -271,4 +293,4 @@ function predictedWinProbability(team1Ratings, team2Ratings, beta) {
 }
 
 
-module.exports = { computeTrueSkillFromMatches, buildRosterMap, predictedWinProbability };
+module.exports = { computeTrueSkillFromMatches, buildRosterMap, predictedWinProbability, round3 };
