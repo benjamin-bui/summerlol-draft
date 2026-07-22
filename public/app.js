@@ -44,6 +44,192 @@ themeToggleBtn.addEventListener('click', () => {
   localStorage.setItem(THEME_STORAGE_KEY, next);
 });
 
+const playerProfileModal = document.getElementById('playerProfileModal');
+const playerProfileCloseBtn = document.getElementById('playerProfileClose');
+const playerProfileContent = document.getElementById('playerProfileContent');
+const playerProfileTitle = document.getElementById('playerProfileTitle');
+
+function closePlayerProfile() {
+  if (!playerProfileModal) return;
+  playerProfileModal.classList.remove('open');
+  playerProfileModal.setAttribute('aria-hidden', 'true');
+  playerProfileContent.innerHTML = 'Loading…';
+}
+
+
+function renderPlayerProfileContent(player) {
+  const title = escapeHtml(player?.group || player?.identityKey || 'Player');
+  const summaryRows = [
+    `<div class="profile-summary">`,
+    `<span><strong>${title}</strong></span>`,
+    `<span>${player?.identified ? 'Identified' : 'Unidentified'}</span>`,
+    player?.profileUrl ? `<a href="${escapeHtml(player.profileUrl)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>` : '',
+    `</div>`
+  ].filter(Boolean).join('');
+
+  const statsRows = [
+    `<div class="profile-summary">`,
+    `<span>Games: ${player?.games ?? '–'}</span>`,
+    `<span>Wins: ${player?.wins ?? '–'}</span>`,
+    `<span>Losses: ${player?.losses ?? '–'}</span>`,
+    `</div>`
+  ].join('');
+
+  const ratingRows = [
+    `<div class="profile-summary">`,
+    `<span>TrueSkill: ${player?.conservativeRating ?? '–'}</span>`,
+    `<span>μ: ${player?.mu ?? '–'}</span>`,
+    `<span>σ: ${player?.sigma ?? '–'}</span>`,
+    `</div>`
+  ].join('');
+
+  const history = player?.history || [];
+  const conservativeK = player?.conservativeK ?? 3;
+
+  const historyRows = history.map((entry) => {
+    const outcomeClass = entry.outcome === 'win' ? 'outcome-win' : entry.outcome === 'loss' ? 'outcome-loss' : 'outcome-draw';
+    const conservativeRating = Number.isFinite(entry.conservativeRating)
+      ? entry.conservativeRating
+      : (Number.isFinite(entry.mu) && Number.isFinite(entry.sigma) ? entry.mu - conservativeK * entry.sigma : null);
+    const predictedWinProb = Number.isFinite(entry.predictedWinProb)
+      ? `${Math.round(entry.predictedWinProb * 100)}%`
+      : '–';
+    return `<tr>
+      <td>${escapeHtml(entry.year ?? '–')}</td>
+      <td>${escapeHtml(entry.tournament || '–')}</td>
+      <td>${escapeHtml(entry.opponent || '–')}</td>
+      <td class="${outcomeClass}">${escapeHtml(entry.outcome || '–')}</td>
+      <td>${predictedWinProb}</td>
+      <td>${conservativeRating ?? '–'}</td>
+      <td>${entry.mu ?? '–'}</td>
+      <td>${entry.sigma ?? '–'}</td>
+    </tr>`;
+  }).join('');
+
+  playerProfileTitle.textContent = title;
+  return [
+    summaryRows,
+    statsRows,
+    ratingRows,
+    buildChartHtml(history),
+    historyRows
+      ? `<table class="profile-history-table"><thead><tr><th>Year</th><th>Tournament</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>TrueSkill</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
+      : '<p>No match history available.</p>'
+  ].join('');
+}
+
+// Returns an inline SVG (as a string, to fit the innerHTML-based render
+// above) plotting mu over each game in order.
+
+function buildChartHtml(history) {
+  if (!history.length) {
+    return '<p class="profile-chart-empty">No games recorded yet.</p>';
+  }
+
+  const width = 700, height = 260, padL = 45, padR = 15, padT = 15, padB = 30;
+  const plotW = width - padL - padR, plotH = height - padT - padB;
+
+  const points = history.map((h, i) => ({
+    x: i + 1,
+    mu: h.mu,
+    sigma: h.sigma,
+    outcome: h.outcome,
+    opponent: h.opponent,
+    year: h.year,
+    tournament: h.tournament
+  }));
+
+  const xMax = points.length;
+  const yMin = Math.min(...points.map((p) => p.mu));
+  const yMax = Math.max(...points.map((p) => p.mu));
+  const yPad = (yMax - yMin) * 0.05 || 1;
+
+  const xScale = (x) => padL + ((x - 1) / Math.max(1, xMax - 1)) * plotW;
+  const yScale = (y) => padT + plotH - ((y - (yMin - yPad)) / ((yMax + yPad) - (yMin - yPad))) * plotH;
+
+  const muPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p.x)} ${yScale(p.mu)}`).join(' ');
+
+  const outcomeColor = { win: '#2e7d32', loss: '#c62828', draw: '#757575' };
+  const dots = points.map((p) => `
+    <circle cx="${xScale(p.x)}" cy="${yScale(p.mu)}" r="3.5" fill="${outcomeColor[p.outcome] || '#888'}">
+      <title>${escapeHtml(`${p.year} ${p.tournament} vs ${p.opponent}: ${p.outcome} (mu=${p.mu}, sigma=${p.sigma})`)}</title>
+    </circle>
+  `).join('');
+
+  const ticks = 4;
+  const gridlines = Array.from({ length: ticks + 1 }, (_, i) => {
+    const val = (yMin - yPad) + ((yMax + yPad) - (yMin - yPad)) * (i / ticks);
+    const y = yScale(val);
+    return `
+      <line x1="${padL}" y1="${y}" x2="${width - padR}" y2="${y}" stroke="#eee" stroke-width="1" />
+      <text x="${padL - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="#888">${val.toFixed(1)}</text>
+    `;
+  }).join('');
+
+  return `
+    <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" class="profile-chart-svg">
+      ${gridlines}
+      <path d="${muPath}" fill="none" stroke="#2b6cb0" stroke-width="2" />
+      ${dots}
+      <text x="${padL}" y="${height - 6}" font-size="10" fill="#888">Game 1</text>
+      <text x="${width - padR}" y="${height - 6}" text-anchor="end" font-size="10" fill="#888">Game ${xMax}</text>
+    </svg>
+    <div class="profile-chart-legend">
+      <span><i style="background:#2b6cb0"></i> μ (skill estimate)</span>
+      <span><i style="background:#2e7d32"></i> win</span>
+      <span><i style="background:#c62828"></i> loss</span>
+      <span><i style="background:#757757"></i> draw</span>
+    </div>
+  `;
+}
+
+async function openPlayerProfile(identityKey) {
+  if (!identityKey || !playerProfileModal) return;
+  playerProfileModal.classList.add('open');
+  playerProfileModal.setAttribute('aria-hidden', 'false');
+  playerProfileContent.innerHTML = 'Loading…';
+
+  try {
+    const res = await fetch(`/api/player/${encodeURIComponent(identityKey)}`);
+    if (!res.ok) throw new Error('Player profile not found');
+    const player = await res.json();
+    playerProfileContent.innerHTML = renderPlayerProfileContent(player);
+  } catch (err) {
+    playerProfileContent.innerHTML = `<p>${escapeHtml(err.message || 'Unable to load player profile')}</p>`;
+  }
+}
+
+function renderPlayerCell(row) {
+  const name = escapeHtml(row.group || row.displayName || '');
+  const identityKey = row.identityKey || row._playerIdentityKey || null;
+  if (identityKey) {
+    return `<a href="#" class="player-link" data-player-key="${escapeHtml(identityKey)}">${name}</a>`;
+  }
+  if (row.profileUrl) {
+    return `<a href="${escapeHtml(row.profileUrl)}" target="_blank" rel="noopener noreferrer" class="player-link" title="View on op.gg">${name}</a>`;
+  }
+  return name;
+}
+
+document.addEventListener('click', (event) => {
+  const link = event.target.closest('.player-link[data-player-key]');
+  if (!link) return;
+  event.preventDefault();
+  openPlayerProfile(link.dataset.playerKey);
+});
+
+playerProfileCloseBtn?.addEventListener('click', closePlayerProfile);
+playerProfileModal?.addEventListener('click', (event) => {
+  if (event.target.classList.contains('player-profile-backdrop') || event.target.dataset.close === 'true') {
+    closePlayerProfile();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && playerProfileModal?.classList.contains('open')) {
+    closePlayerProfile();
+  }
+});
+
 // ==================== Column configuration ====================
 
 const RANKINGS_COLUMNS = [
@@ -74,10 +260,31 @@ function sortRows(rows, columns, sortColumn, sortDirection) {
   const col = columns.find((c) => c.key === sortColumn);
   const dir = sortDirection === 'asc' ? 1 : -1;
   return [...rows].sort((a, b) => {
-    const av = a[sortColumn];
-    const bv = b[sortColumn];
+    if (sortColumn === 'latestGameTournament') {
+      const parseTournamentValue = (row) => {
+        const raw = String(row.latestGameTournament || '').trim();
+        const match = raw.match(/^(winter|summer)\s*(\d{4})?$/i);
+        if (!match) return { year: 0, seasonRank: 2, raw };
+        return {
+          year: parseInt(match[2] || '0', 10),
+          seasonRank: match[1].toLowerCase() === 'winter' ? 0 : 1,
+          raw
+        };
+      };
+      const av = parseTournamentValue(a);
+      const bv = parseTournamentValue(b);
+      if (av.year !== bv.year) return dir * (bv.year - av.year);
+      if (av.seasonRank !== bv.seasonRank) return av.seasonRank - bv.seasonRank;
+      return dir * String(av.raw).localeCompare(String(bv.raw));
+    }
+
+    const av = col && typeof col.sortValue === 'function' ? col.sortValue(a) : a[sortColumn];
+    const bv = col && typeof col.sortValue === 'function' ? col.sortValue(b) : b[sortColumn];
     if (av === null || av === undefined) return 1;
     if (bv === null || bv === undefined) return -1;
+    if (typeof av === 'number' || typeof bv === 'number') {
+      return dir * (Number(av) - Number(bv));
+    }
     if (col && col.type === 'string') return dir * String(av).localeCompare(String(bv));
     if (typeof av === 'string' || typeof bv === 'string') {
       return dir * String(av).localeCompare(String(bv));
@@ -93,15 +300,9 @@ function rowPassesFilter(row, col, filter) {
   if (!filter) return true;
   const value = row[col.key];
 
-  if (filter.type === 'regex') {
-    if (!filter.pattern) return true;
-    let re;
-    try {
-      re = new RegExp(filter.pattern, 'i');
-    } catch {
-      return true; // invalid regex mid-type — don't hide everything while they're typing
-    }
-    return re.test(String(value ?? ''));
+  if (filter.type === 'checkbox') {
+    if (!filter.values || filter.values.length === 0) return true;
+    return filter.values.includes(String(value ?? ''));
   }
 
   // Numeric filters: a row with no value can't satisfy any comparison
@@ -123,11 +324,41 @@ function applyColumnFilters(rows, columns, filterState) {
 }
 
 // Builds the inner HTML for a column's filter popover, based on its type.
-function filterPopoverInnerHTML(col) {
+function filterPopoverInnerHTML(col, rows, filterState) {
   if (col.type === 'string') {
+    const values = [...new Set(rows
+      .map((row) => row[col.key])
+      .filter((value) => value !== null && value !== undefined && String(value).trim() !== ''))]
+      .map((value) => String(value));
+
+    const orderedValues = values.sort((a, b) => {
+      const parseTournamentValue = (value) => {
+        const raw = String(value || '').trim();
+        const match = raw.match(/^(winter|summer)\s*(\d{4})?$/i);
+        if (!match) return { year: 0, seasonRank: 2, raw };
+        return {
+          year: parseInt(match[2] || '0', 10),
+          seasonRank: match[1].toLowerCase() === 'summer' ? 0 : 1,
+          raw
+        };
+      };
+      const av = parseTournamentValue(a);
+      const bv = parseTournamentValue(b);
+      if (av.year !== bv.year) return bv.year - av.year;
+      if (av.seasonRank !== bv.seasonRank) return av.seasonRank - bv.seasonRank;
+      return String(av.raw).localeCompare(String(bv.raw));
+    });
+
+    const optionsHtml = orderedValues.length
+      ? orderedValues.map((value) => {
+          const checked = filterState[col.key]?.values?.includes(value) ? 'checked' : '';
+          return `<label class="filter-option"><input type="checkbox" class="filter-checkbox-option" value="${escapeHtml(value)}" ${checked} /> ${escapeHtml(value)}</label>`;
+        }).join('')
+      : '<div class="filter-empty">No values</div>';
+
     return `
-      <label>Regex match</label>
-      <input type="text" class="filter-regex-input" placeholder="e.g. ^Team|Xemacs" />
+      <label>Select values</label>
+      <div class="filter-checkbox-list">${optionsHtml}</div>
       <div class="filter-popover-actions">
         <button type="button" class="filter-clear-btn">Clear</button>
       </div>`;
@@ -188,29 +419,26 @@ function wireFilterPopover(th, col, popover, filterState, onChange, closeAllPopo
   }
 
   if (col.type === 'string') {
-    const input = popover.querySelector('.filter-regex-input');
+    const checkboxes = [...popover.querySelectorAll('.filter-checkbox-option')];
     const clearBtn = popover.querySelector('.filter-clear-btn');
-    input.addEventListener('input', () => {
-      const pattern = input.value.trim();
-      let valid = true;
-      try {
-        if (pattern) new RegExp(pattern);
-      } catch {
-        valid = false;
-      }
-      input.classList.toggle('invalid', !valid);
-      if (!pattern) {
+
+    function updateFromCheckboxes() {
+      const values = checkboxes.filter((box) => box.checked).map((box) => box.value);
+      if (values.length > 0) {
+        filterState[col.key] = { type: 'checkbox', values };
+        setActive(true);
+      } else {
         delete filterState[col.key];
         setActive(false);
-      } else if (valid) {
-        filterState[col.key] = { type: 'regex', pattern };
-        setActive(true);
       }
       onChange();
-    });
+    }
+
+    checkboxes.forEach((box) => box.addEventListener('change', updateFromCheckboxes));
     clearBtn.addEventListener('click', () => {
-      input.value = '';
-      input.classList.remove('invalid');
+      checkboxes.forEach((box) => {
+        box.checked = false;
+      });
       delete filterState[col.key];
       setActive(false);
       onChange();
@@ -316,7 +544,7 @@ function removePopoversOwnedBy(owner) {
 // handling and (if filterable) a filter icon + popover. `owner` tags the
 // popover so removePopoversOwnedBy() can clean up stale ones when this
 // table's header gets rebuilt (e.g. on a column-visibility change).
-function buildHeaderCell(col, sortColumn, sortDirection, filterState, onFilterChange, owner) {
+function buildHeaderCell(col, sortColumn, sortDirection, filterState, onFilterChange, owner, rows) {
   const th = document.createElement('th');
   th.dataset.sort = col.key;
   if (!col.sortable) th.classList.add('not-sortable');
@@ -339,7 +567,7 @@ function buildHeaderCell(col, sortColumn, sortDirection, filterState, onFilterCh
     const popover = document.createElement('div');
     popover.className = 'filter-popover hidden';
     popover.dataset.owner = owner;
-    popover.innerHTML = filterPopoverInnerHTML(col);
+    popover.innerHTML = filterPopoverInnerHTML(col, rows, filterState);
     document.body.appendChild(popover);
     allPopovers.push(popover);
 
@@ -415,7 +643,7 @@ function rebuildRankingsHeader() {
     const th = buildHeaderCell(col, sortColumn, sortDirection, rankingsFilters, () => {
       renderRankingsBody();
       scheduleUrlUpdate();
-    }, 'rankings');
+    }, 'rankings', latestStats);
     th.addEventListener('click', () => {
       if (!col.sortable) return;
       if (sortColumn === col.key) {
@@ -450,7 +678,11 @@ function escapeHtml(str) {
 }
 
 function renderPlayerCell(row) {
-  const name = escapeHtml(row.group);
+  const name = escapeHtml(row.group || row.displayName || '');
+  const identityKey = row.identityKey || row._playerIdentityKey || null;
+  if (identityKey) {
+    return `<a href="#" class="player-link" data-player-key="${escapeHtml(identityKey)}" title="View profile">${name}</a>`;
+  }
   if (row.profileUrl) {
     return `<a href="${escapeHtml(row.profileUrl)}" target="_blank" rel="noopener noreferrer" class="player-link" title="View on op.gg">${name}</a>`;
   }
@@ -808,7 +1040,7 @@ function createTabTable({
     visibleColumns().forEach((col) => {
       const th = buildHeaderCell(col, state.sortColumn, state.sortDirection, state.filters, () => {
         renderBody();
-      }, ownerKey);
+      }, ownerKey, state.data);
       th.addEventListener('click', () => {
         if (!col.sortable) return;
         if (state.sortColumn === col.key) {
@@ -856,6 +1088,7 @@ function createTabTable({
   return {
     setData(newData) {
       state.data = newData;
+      rebuildHeader();
       renderBody();
     }
   };
@@ -867,6 +1100,14 @@ function createTabTable({
 const TRUESKILL_COLUMNS= [
   { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
   { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, className: 'group-name', type: 'string' },
+  { key: 'latestGameTournament', label: 'Latest Tournament', sortable: true, hideable: true, filterable: true, type: 'string', sortValue: (row) => {
+    const raw = String(row.latestGameTournament || '').trim();
+    const match = raw.match(/^(winter|summer)\s*(\d{4})?$/i);
+    if (!match) return 2_000_000;
+    const seasonRank = match[1].toLowerCase() === 'winter' ? 0 : 1;
+    const year = parseInt(match[2] || '0', 10);
+    return seasonRank * 1_000_000 + year;
+  } },
   { key: 'conservativeRating', label: 'Trueskill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
   { key: 'mu', label: 'Optimistic Rating', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
   { key: 'sigma', label: 'Uncertainty', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 },

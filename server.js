@@ -100,6 +100,7 @@ function attachDerivedFields(rows) {
 
   return rows.map((row) => {
     const yearInfo = perYear[row.year];
+    let pickRound = null;
     let pickPercentile = null;
     let rankPercentile = null;
     let value = null;
@@ -155,7 +156,13 @@ function computeGroupStats(rows, riskAversion, halfLifeYears) {
     // derived — n and the percentile averages should reflect all known
     // data even for a season that's missing Pick Order or Rank.
     if (!groups[key]) {
-      groups[key] = { entries: [], displayName: row.displayName, profileUrl: row.profileUrl, identified: row.identified };
+      groups[key] = {
+        entries: [],
+        displayName: row.displayName,
+        profileUrl: row.profileUrl,
+        identified: row.identified,
+        identityKey: key
+      };
     }
     groups[key].entries.push({
       value: row.value, // may be null — filtered out below where relevant
@@ -165,7 +172,7 @@ function computeGroupStats(rows, riskAversion, halfLifeYears) {
     });
   }
 
-  const result = Object.values(groups).map(({ entries, displayName, profileUrl, identified }) => {
+  const result = Object.values(groups).map(({ entries, displayName, profileUrl, identified, identityKey }) => {
     const n = entries.length;
     const valueEntries = entries.filter((e) => Number.isFinite(e.value));
 
@@ -201,6 +208,7 @@ function computeGroupStats(rows, riskAversion, halfLifeYears) {
 
     return {
       group: displayName,
+      identityKey,
       profileUrl,
       identified,
       n,
@@ -253,37 +261,11 @@ app.get('/api/stats', (req, res) => {
   res.json({ riskAversion, halfLifeYears, stats });
 });
 
-// Expected-ROI-by-pick-order: an alternative to the percentile-based
-// Adjusted Pick Value. Instead of a theoretical linear expectation
-// (Pick Percentile - Rank Percentile), this builds an empirical curve
-// from actual historical placements at each pick order, then scores
-// each player against however that curve actually looks — see
-// data/alt-rankings.js for the full explanation.
-app.get('/api/roi', (req, res) => {
-  const withIdentity = getFilteredIdentifiedRows();
-  const derived = attachDerivedFields(withIdentity);
-  const curve = computeROICurve(derived);
-  const players = computeROIPlayers(withIdentity, curve);
-  res.json({ curve, players });
-});
-
-// Z-score against the overall pooled placement distribution (originally
-// tier-grouped; simplified after confirming every tier draws from an
-// identical distribution in this snake-draft format — see
-// data/alt-rankings.js for the full explanation). Route name kept as
-// /api/tiers for continuity even though tiering itself was dropped.
-app.get('/api/tiers', (req, res) => {
-  const withIdentity = getFilteredIdentifiedRows();
-  const derived = attachDerivedFields(withIdentity);
-  const overallStats = computeOverallStats(withIdentity);
-  const players = computeOverallZScores(withIdentity, overallStats);
-  res.json({ overallStats, players });
-});
 
 // TrueSkill: rates players as a sequence of team games, one per year,
 
 function getMatches() {
-  return db.prepare('SELECT year, tournament, team1, team2, result FROM matches').all();
+  return db.prepare('SELECT id AS rowIndex, year, tournament, team1, team2, result FROM matches').all();
 }
 
 app.get('/api/trueskill', (req, res) => {
@@ -302,6 +284,19 @@ app.get('/api/trueskill', (req, res) => {
 
   const result = computeTrueSkillFromMatches(matches, withIdentity, identityMap, opts);
   res.json(result);
+});
+
+app.get('/api/player/:key', (req, res) => {
+  const identityMap = loadIdentityMap(db);
+  const allRows = resolveIdentities(getAllRows(), identityMap);
+  const matches = getMatches();
+  const result = computeTrueSkillFromMatches(matches, allRows, identityMap, {});
+
+  const key = decodeURIComponent(req.params.key);
+  const player = result.players.find((p) => p.identityKey === key);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+
+  res.json(player);
 });
 
 app.get('/api/meta', (req, res) => {
@@ -353,7 +348,11 @@ app.get('/api/raw', (req, res) => {
   const identityMap = loadIdentityMap(db);
   const enriched = rows.map((row) => {
     const identity = identityMap.get(row[GROUP_COL]);
-    return { ...row, _playerProfileUrl: identity ? identity.profileUrl : null };
+    return {
+      ...row,
+      _playerProfileUrl: identity ? identity.profileUrl : null,
+      _playerIdentityKey: identity ? identity.identityKey : null
+    };
   });
   res.json({ columns, rows: enriched });
 });

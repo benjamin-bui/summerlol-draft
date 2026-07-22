@@ -24,7 +24,7 @@
    specific font and I'll wire it in. */
 :root[data-theme="light"] {
   --bg: #fcf3f6;
-  --panel: rgba(255, 255, 255, 0.78);
+  --panel: #ffffff;
   --border: rgba(232, 99, 154, 0.2);
   --text: #3d2440;
   --muted: #9c8299;
@@ -371,6 +371,7 @@ input[type="range"]::-moz-range-thumb {
 .filter-popover {
   position: fixed;
   background: var(--panel);
+  opacity: 1;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 14px;
@@ -599,3 +600,22 @@ header {
   background: linear-gradient(180deg, #e8639a, #c9a7e8);
   border-radius: 10px;
 }
+
+/* ---- Player profile modal ---- */
+.player-profile-modal { display: none; position: fixed; inset: 0; z-index: 1000; }
+.player-profile-modal.open { display: block; }
+.player-profile-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.5); }
+.player-profile-panel {
+  position: relative; max-width: 780px; margin: 5vh auto; background: #fff;
+  border-radius: 8px; padding: 24px; max-height: 90vh; overflow-y: auto;
+}
+.player-profile-close { position: absolute; top: 12px; right: 16px; border: none; background: none; font-size: 24px; cursor: pointer; }
+.profile-summary { display: flex; gap: 16px; color: #555; margin-top: 4px; font-size: 14px; }
+.profile-chart-legend { display: flex; gap: 14px; font-size: 12px; color: #666; margin-top: 4px; }
+.profile-chart-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+.profile-history-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
+.profile-history-table th, .profile-history-table td { padding: 6px 8px; border-bottom: 1px solid #eee; text-align: left; }
+.profile-history-table th { text-transform: none !important; letter-spacing: normal; font-weight: 600; }
+.outcome-win { color: #2e7d32; font-weight: 600; }
+.outcome-loss { color: #c62828; font-weight: 600; }
+.outcome-draw { color: #757575; }
