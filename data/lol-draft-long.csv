@@ -48,8 +48,8 @@ id,Tournament,Year,Captain,Player,Pick Order,Rank
 47,Summer,2021,Sober Teddy#NA1,Feiro#NA1,7,8.0
 48,Summer,2021,Kiny#0001,bootlane#NA1,8,5.5
 49,Summer,2021,Xemacs#LOR,Inspiring#309,9,10.0
-50,Summer,2021,MangoStalker,Brishin#bris,10,5.5
-51,Summer,2021,MangoStalker,KocLV#FREE,11,5.5
+50,Summer,2021,Salt Frog#NA1,Brishin#bris,10,5.5
+51,Summer,2021,Salt Frog#NA1,KocLV#FREE,11,5.5
 52,Summer,2021,Xemacs#LOR,War Koala#1650,12,10.0
 53,Summer,2021,Kiny#0001,fook,13,5.5
 54,Summer,2021,Sober Teddy#NA1,Ene#TFT,14,8.0
@@ -68,8 +68,8 @@ id,Tournament,Year,Captain,Player,Pick Order,Rank
 67,Summer,2021,Sober Teddy#NA1,Cherry Boba,27,8.0
 68,Summer,2021,Kiny#0001,AngusMcRib#DLLM,28,5.5
 69,Summer,2021,Xemacs#LOR,FirstSeraph#NA1,29,10.0
-70,Summer,2021,MangoStalker,PlightOfTheFlake#NA1,30,5.5
-71,Summer,2021,MangoStalker,dr3am3ter#NA1,31,5.5
+70,Summer,2021,Salt Frog#NA1,PlightOfTheFlake#NA1,30,5.5
+71,Summer,2021,Salt Frog#NA1,dr3am3ter#NA1,31,5.5
 72,Summer,2021,Xemacs#LOR,LadyTree#TREE,32,10.0
 73,Summer,2021,Kiny#0001,Glick666#NA1,33,5.5
 74,Summer,2021,Sober Teddy#NA1,ariessaxon,34,8.0
@@ -126,12 +126,12 @@ id,Tournament,Year,Captain,Player,Pick Order,Rank
 125,Summer,2023,No Love#NA1,police defunder#NA1,5,1.0
 126,Summer,2023,Kalesvol#DOOB,yabuo#BUO,6,3.5
 127,Summer,2023,Voidliss#NA1,xPhanpy#dil,7,3.5
-128,Summer,2023,Tranquil Turtle,Bloodyninja1122#NA1,8,5.0
+128,Summer,2023,TranquilTurtle,Bloodyninja1122#NA1,8,5.0
 129,Summer,2023,FirstSeraph#NA1,Inspiring#309,9,6.5
 130,Summer,2023,abrahampark#NA1,Alexei#NA1,10,9.5
 131,Summer,2023,abrahampark#NA1,Cardinal#7333,11,9.5
 132,Summer,2023,FirstSeraph#NA1,entropy#NA0,12,6.5
-133,Summer,2023,Tranquil Turtle,Phishy Fish#NA1,13,5.0
+133,Summer,2023,TranquilTurtle,Phishy Fish#NA1,13,5.0
 134,Summer,2023,Voidliss#NA1,Liquid Blade#4th,14,3.5
 135,Summer,2023,Kalesvol#DOOB,KocLV#FREE,15,3.5
 136,Summer,2023,No Love#NA1,a midnight snack#DROCK,16,1.0
@@ -146,12 +146,12 @@ id,Tournament,Year,Captain,Player,Pick Order,Rank
 145,Summer,2023,No Love#NA1,War Koala#1650,25,1.0
 146,Summer,2023,Kalesvol#DOOB,LightningFst#1008,26,3.5
 147,Summer,2023,Voidliss#NA1,Chikenbagelz#NA1,27,3.5
-148,Summer,2023,Tranquil Turtle,benbooee#BEN,28,5.0
+148,Summer,2023,TranquilTurtle,benbooee#BEN,28,5.0
 149,Summer,2023,FirstSeraph#NA1,Taco1518#NA1,29,6.5
 150,Summer,2023,abrahampark#NA1,C0L#NA1,30,9.5
 151,Summer,2023,abrahampark#NA1,youn9#NA3,31,9.5
 152,Summer,2023,FirstSeraph#NA1,ajblast#NA1,32,6.5
-153,Summer,2023,Tranquil Turtle,ATM SammyS#ATM,33,5.0
+153,Summer,2023,TranquilTurtle,ATM SammyS#ATM,33,5.0
 154,Summer,2023,Voidliss#NA1,Arachnobat#LOR,34,3.5
 155,Summer,2023,Kalesvol#DOOB,Funk#02468,35,3.5
 156,Summer,2023,No Love#NA1,jtb102#NA1,36,1.0

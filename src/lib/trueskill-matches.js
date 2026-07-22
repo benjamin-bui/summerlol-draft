@@ -1,12 +1,5 @@
-// data/trueskill-matches.js
 const { Rating, TrueSkill } = require('ts-trueskill');
 
-// Builds a roster lookup keyed by (Year, Captain) ONLY -- not Tournament.
-// The draft CSV only ever labels its rows Tournament="Summer" (there's no
-// Winter draft data yet), so a Captain's roster is assumed to carry across
-// every split/tournament played that same year. If/when Winter drafts get
-// added with their own rosters, change this key to also include
-// tournament and this function is the only thing that needs to move.
 function buildRosterMap(draftRows, identityMap) {
   const resolve = (name) => {
     const identity = identityMap.get(name);
@@ -70,8 +63,9 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
   mu = 1000,
   sigma = mu / 3,
   beta = mu / 4,
-  tau = (mu / 100) / 50,
-  drawProbability = 0
+  tau = sigma / 50,
+  drawProbability = 0,
+  conservativeK = 1
 } = {}) {
   const env = new TrueSkill(mu, sigma, beta, tau, drawProbability);
   const resolve = (name) => {
@@ -90,7 +84,6 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
   const roster = buildRosterMap(draftRows, identityMap);
   const ratings = new Map();  // identityKey -> Rating
   const history = new Map();  // identityKey -> [{year, tournament, opponent, result, mu, sigma, conservativeRating, conservativeK}]
-  const conservativeK = 3;
 
   // Diagnostics: which (year, captain) pairs had no roster on record, so
   // they were played as solo teams -- surface this so you can tell "no
@@ -110,12 +103,15 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
       if (normalized === 'summer') return 1;
       return 2;
     };
-
     const seasonDiff = seasonRank(a.tournament) - seasonRank(b.tournament);
     if (seasonDiff !== 0) return seasonDiff;
 
-    return (a.rowIndex ?? 0) - (b.rowIndex ?? 0);
-  });
+    // Top of file = later in time, bottom = earlier -- so a LARGER
+    // csv_row_index (further down the file) is chronologically OLDER and
+    // should be processed first. This is the reverse of a naive "row order =
+  // chronological order" assumption, which is what the bug above was.
+  return (b.rowIndex ?? 0) - (a.rowIndex ?? 0);
+});
 
   for (const m of ordered) {
     const team1Key = resolve(m.team1);
@@ -123,16 +119,49 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
 
     const getRoster = (rawName, key) => {
       const found = roster.get(m.year, m.tournament, key);
-      if (found) return [...found];
-      unresolved.set(`${m.year}::${m.tournament}::${rawName}`, (unresolved.get(`${m.year}::${m.tournament}::${rawName}`) || 0) + 1);
-      return [key]; // solo-team fallback
+      const members = found ? [...found] : [];
+      // Defensive: the captain (== key, since key is the resolved team1Key/
+      // team2Key) must always be present, regardless of whether the roster
+      // Set already had them via buildRosterMap's own .add(captainKey) call.
+      // This guards against any downstream rebuild of the member list ever
+      // silently dropping them again.
+      if (!members.includes(key)) members.push(key);
+      if (!found) {
+        unresolved.set(`${m.year}::${m.tournament}::${rawName}`, (unresolved.get(`${m.year}::${m.tournament}::${rawName}`) || 0) + 1);
+      }
+      return members;
     };
-
     const team1Members = getRoster(m.team1, team1Key);
     const team2Members = getRoster(m.team2, team2Key);
 
     const team1Ratings = team1Members.map((k) => ratings.get(k) || new Rating(mu, sigma));
     const team2Ratings = team2Members.map((k) => ratings.get(k) || new Rating(mu, sigma));
+    
+    const buildRosterSnapshot = (memberKeys, memberRatings) =>
+      memberKeys.map((key, i) => {
+        const info = displayInfo(key);
+        const r = memberRatings[i];
+        return {
+          identityKey: key,
+          displayName: info.displayName || key,
+          mu: round3(r.mu),
+          sigma: round3(r.sigma),
+          conservativeRating: round3(r.mu - conservativeK * r.sigma)
+        };
+      });
+    const team1Roster = buildRosterSnapshot(team1Members, team1Ratings);
+    const team2Roster = buildRosterSnapshot(team2Members, team2Ratings);
+    const avgConservative = (roster) => roster.length
+      ? round3(roster.reduce((sum, m) => sum + m.conservativeRating, 0) / roster.length)
+      : null;
+    const team1Avg = avgConservative(team1Roster);
+    const team2Avg = avgConservative(team2Roster);
+
+    const avgMu = (roster)  => roster.length
+      ? round3(roster.reduce((sum, m) => sum + m.mu, 0) / roster.length)
+      : null;
+    const team1AvgMu = avgMu(team1Roster);
+    const team2AvgMu = avgMu(team2Roster);
 
     const p1WinsPredicted = predictedWinProbability(team1Ratings, team2Ratings, beta);
     const p2WinsPredicted = 1 - p1WinsPredicted;
@@ -142,10 +171,8 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
 
     const outcome1 = ranks[0] < ranks[1] ? 'win' : ranks[0] > ranks[1] ? 'loss' : 'draw';
     const outcome2 = ranks[1] < ranks[0] ? 'win' : ranks[1] > ranks[0] ? 'loss' : 'draw';
-    const surprise1 = outcome1 === 'win' ? 1 - p1WinsPredicted : outcome1 === 'loss' ? p1WinsPredicted : 0.5;
-    const surprise2 = outcome2 === 'win' ? 1 - p2WinsPredicted : outcome2 === 'loss' ? p2WinsPredicted : 0.5;
 
-    const record = (members, updatedRatings, opponentKey, outcome, predictedWinProb, surprise) => {
+    const record = (members, updatedRatings, opponentKey, outcome, predictedWinProb, ownTeam, opponentTeam) => {
       members.forEach((key, i) => {
         ratings.set(key, updatedRatings[i]);
         if (!history.has(key)) history.set(key, []);
@@ -158,20 +185,24 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
           opponentName: opponentDisplay,
           outcome, // 'win' | 'loss' | 'draw'
           predictedWinProb: round3(predictedWinProb),
-          surprise: round3(surprise),
           mu: round3(updatedRatings[i].mu),
           sigma: round3(updatedRatings[i].sigma),
-          conservativeRating: round3(updatedRatings[i].mu - conservativeK * updatedRatings[i].sigma)
+          conservativeRating: round3(updatedRatings[i].mu - conservativeK * updatedRatings[i].sigma),
+          ownTeam: { roster: ownTeam.roster, avgConservativeRating: ownTeam.avg, avgMu: ownTeam.avgMu },
+          opponentTeam: { roster: opponentTeam.roster, avgConservativeRating: opponentTeam.avg, avgMu: opponentTeam.avgMu}
         });
       });
     };
-    record(team1Members, updated1, team2Key, outcome1, p1WinsPredicted, surprise1);
-    record(team2Members, updated2, team1Key, outcome2, p2WinsPredicted, surprise2);
+    record(team1Members, updated1, team2Key, outcome1, p1WinsPredicted, 
+      { roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu }, { roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu });
+    record(team2Members, updated2, team1Key, outcome2, p2WinsPredicted, 
+      { roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu}, { roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu });
   }
 
   const players = [...ratings.entries()].map(([identityKey, rating]) => {
     const info = displayInfo(identityKey);
     const h = history.get(identityKey) || [];
+    const uniqueTournaments = new Set(h.map((x) => `${x.year}::${x.tournament}`)).size;
     return {
       identityKey,
       group: info.displayName,
@@ -182,6 +213,7 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
       conservativeRating: round3(rating.mu - conservativeK * rating.sigma),
       conservativeK,
       games: h.length,
+      tournaments: uniqueTournaments,
       wins: h.filter((x) => x.outcome === 'win').length,
       losses: h.filter((x) => x.outcome === 'loss').length,
       draws: h.filter((x) => x.outcome === 'draw').length,
@@ -216,12 +248,14 @@ function round3(x) {
 // term), then reads off a normal CDF -- this is the same math the FAQ/
 // standard writeups for TrueSkill use for pairwise win-probability.
 function normCdf(x) {
-  // Abramowitz-Stegun erf approximation, accurate to ~1e-7 -- no built-in
-  // normal CDF in JS, and this dataset's game counts don't justify pulling
-  // in a stats library just for this one function.
-  const t = 1 / (1 + 0.3275911 * Math.abs(x));
-  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
-  const erf = x >= 0 ? y : -y;
+  // Scale the z-score for the error function
+  const z = x / Math.SQRT2;
+  
+  // Abramowitz-Stegun erf approximation, accurate to ~1e-7
+  const t = 1 / (1 + 0.3275911 * Math.abs(z));
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z);
+  const erf = z >= 0 ? y : -y;
+  
   return 0.5 * (1 + erf);
 }
 

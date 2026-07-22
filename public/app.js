@@ -77,7 +77,7 @@ function renderPlayerProfileContent(player) {
 
   const ratingRows = [
     `<div class="profile-summary">`,
-    `<span>TrueSkill: ${player?.conservativeRating ?? '–'}</span>`,
+    `<span>TrueSkill: ${player?.conservativeRating ?? '–'} <span class="stat-formula">(μ ${player?.mu ?? '–'} − ${player?.conservativeK ?? 1}σ)</span></span>`,
     `<span>μ: ${player?.mu ?? '–'}</span>`,
     `<span>σ: ${player?.sigma ?? '–'}</span>`,
     `</div>`
@@ -86,25 +86,42 @@ function renderPlayerProfileContent(player) {
   const history = player?.history || [];
   const conservativeK = player?.conservativeK ?? 3;
 
-  const historyRows = history.map((entry) => {
-    const outcomeClass = entry.outcome === 'win' ? 'outcome-win' : entry.outcome === 'loss' ? 'outcome-loss' : 'outcome-draw';
-    const conservativeRating = Number.isFinite(entry.conservativeRating)
-      ? entry.conservativeRating
-      : (Number.isFinite(entry.mu) && Number.isFinite(entry.sigma) ? entry.mu - conservativeK * entry.sigma : null);
-    const predictedWinProb = Number.isFinite(entry.predictedWinProb)
-      ? `${Math.round(entry.predictedWinProb * 100)}%`
-      : '–';
-    return `<tr>
-      <td>${escapeHtml(entry.year ?? '–')}</td>
-      <td>${escapeHtml(entry.tournament || '–')}</td>
-      <td>${escapeHtml(entry.opponent || '–')}</td>
-      <td class="${outcomeClass}">${escapeHtml(entry.outcome || '–')}</td>
-      <td>${predictedWinProb}</td>
-      <td>${conservativeRating ?? '–'}</td>
-      <td>${entry.mu ?? '–'}</td>
-      <td>${entry.sigma ?? '–'}</td>
-    </tr>`;
-  }).join('');
+const historyRows = history.map((entry, idx) => {
+  const outcomeClass = entry.outcome === 'win' ? 'outcome-win' : entry.outcome === 'loss' ? 'outcome-loss' : 'outcome-draw';
+  const rosterId = `roster-detail-${idx}`;
+
+  const rosterList = (team) => (team?.roster || [])
+    .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${Math.round(m.conservativeRating)} (${Math.round(m.mu)})</span></li>`)
+    .join('');
+
+  return `<tr>
+    <td><button class="roster-toggle" data-target="${rosterId}" aria-expanded="false">▶</button></td>
+    <td>${escapeHtml(entry.year ?? '–')}</td>
+    <td>${escapeHtml(entry.tournament || '–')}</td>
+    <td>${escapeHtml(entry.opponent || '–')}</td>
+    <td class="${outcomeClass}">${escapeHtml(entry.outcome || '–')}</td>
+    <td>${Math.round((entry.predictedWinProb ?? 0) * 100)}%</td>
+    <td>${entry.ownTeam?.avgConservativeRating ?? '–'}</td>
+    <td>${entry.opponentTeam?.avgConservativeRating ?? '–'}</td>
+    <td>${entry.conservativeRating ?? '–'}</td>
+    <td>${entry.mu ?? '–'}</td>
+    <td>${entry.sigma ?? '–'}</td>
+  </tr>
+  <tr id="${rosterId}" class="roster-detail-row" hidden>
+    <td colspan="11">
+      <div class="roster-detail">
+        <div>
+          <strong>Your team - </strong> avg TrueSkill: ${entry.ownTeam?.avgConservativeRating ?? '–'} (${entry.ownTeam?.avgMu ?? '-'})
+          <ul>${rosterList(entry.ownTeam)}</ul>
+        </div>
+        <div>
+          <strong>Opponent - </strong> avg TrueSkill: ${entry.opponentTeam?.avgConservativeRating ?? '–'} (${entry.opponentTeam?.avgMu ?? '-'})
+          <ul>${rosterList(entry.opponentTeam)}</ul>
+        </div>
+      </div>
+    </td>
+  </tr>`;
+}).join('');
 
   playerProfileTitle.textContent = title;
   return [
@@ -113,7 +130,7 @@ function renderPlayerProfileContent(player) {
     ratingRows,
     buildChartHtml(history),
     historyRows
-      ? `<table class="profile-history-table"><thead><tr><th>Year</th><th>Tournament</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>TrueSkill</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
+      ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
       : '<p>No match history available.</p>'
   ].join('');
 }
@@ -126,7 +143,7 @@ function buildChartHtml(history) {
     return '<p class="profile-chart-empty">No games recorded yet.</p>';
   }
 
-  const width = 700, height = 260, padL = 45, padR = 15, padT = 15, padB = 30;
+  const width = 900, height = 260, padL = 45, padR = 15, padT = 15, padB = 30;
   const plotW = width - padL - padR, plotH = height - padT - padB;
 
   const points = history.map((h, i) => ({
@@ -216,6 +233,17 @@ document.addEventListener('click', (event) => {
   if (!link) return;
   event.preventDefault();
   openPlayerProfile(link.dataset.playerKey);
+});
+
+document.addEventListener('click', (e) => {
+  const toggle = e.target.closest('.roster-toggle');
+  if (!toggle) return;
+  const target = document.getElementById(toggle.dataset.target);
+  if (!target) return;
+  const isOpen = !target.hidden;
+  target.hidden = isOpen;
+  toggle.setAttribute('aria-expanded', String(!isOpen));
+  toggle.textContent = isOpen ? '▶' : '▼';
 });
 
 playerProfileCloseBtn?.addEventListener('click', closePlayerProfile);
@@ -1104,14 +1132,15 @@ const TRUESKILL_COLUMNS= [
     const raw = String(row.latestGameTournament || '').trim();
     const match = raw.match(/^(winter|summer)\s*(\d{4})?$/i);
     if (!match) return 2_000_000;
-    const seasonRank = match[1].toLowerCase() === 'winter' ? 0 : 1;
+    const seasonRank = match[1].toLowerCase() === 'summer' ? 0 : 1;
     const year = parseInt(match[2] || '0', 10);
     return seasonRank * 1_000_000 + year;
   } },
-  { key: 'conservativeRating', label: 'Trueskill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
-  { key: 'mu', label: 'Optimistic Rating', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
-  { key: 'sigma', label: 'Uncertainty', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 },
+  { key: 'conservativeRating', label: 'TrueSkill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
+  { key: 'mu', label: 'μ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
+  { key: 'sigma', label: 'σ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 },
   { key: 'games', label: 'Games', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'tournaments', label: 'Tournaments', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'wins', label: 'Wins', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'losses', label: 'Losses', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
 
@@ -1180,10 +1209,8 @@ function readStateFromURL() {
     totalN = n;
     totalNInput.value = n;
   }
-  if (tab === 'rawdata' || tab === 'rankings') {
-    setActiveTab(tab);
-    if (tab === 'rawdata') loadRawData();
-  }
+  setActiveTab(tab);
+  if (tab === 'rawdata') loadRawData();
 }
 
 function writeStateToURL() {
@@ -1194,7 +1221,7 @@ function writeStateToURL() {
   params.set('dir', sortDirection);
   params.set('hidden', [...hiddenColumns].join(','));
   params.set('totalN', totalN);
-  const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab || 'rankings';
+  const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab || 'trueskill';
   params.set('tab', activeTab);
 
   const newUrl = `${window.location.pathname}?${params.toString()}`;
@@ -1220,11 +1247,13 @@ function scheduleUrlUpdate() {
     const checkbox = columnsPanel.querySelector(`input[data-col="${col.key}"]`);
     if (checkbox) checkbox.checked = !hiddenColumns.has(col.key);
   });
-
+  
   rebuildRankingsHeader();
 
   const { risk, halfLife } = currentSliderValues();
   await fetchStats(risk, halfLife);
+  
+  loadtrueskillData() 
 
   writeStateToURL();
 })();

@@ -6,8 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const DB_PATH = path.join(__dirname, 'app.db');
-
+const DB_PATH = path.join(__dirname, '..', '..', 'data', 'app.db');
 // Minimal RFC4180-ish line parser (handles quoted fields defensively even
 // though the current export doesn't use any) -- consistent with the
 // existing csvEscape() in server.js being the mirror-image of this.
@@ -58,14 +57,16 @@ function main() {
 
   const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
+  db.exec('DROP TABLE IF EXISTS matches');
   db.exec(`
-    CREATE TABLE IF NOT EXISTS matches (
+    CREATE TABLE matches (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       year INTEGER NOT NULL,
       tournament TEXT,
       team1 TEXT NOT NULL,
       team2 TEXT NOT NULL,
-      result TEXT NOT NULL
+      result TEXT NOT NULL,
+      csv_row_index INTEGER NOT NULL
     )
   `);
 
@@ -73,19 +74,16 @@ function main() {
   // there's no natural unique key across two teams playing repeat games.
   db.exec('DELETE FROM matches');
   const insert = db.prepare(
-    'INSERT INTO matches (year, tournament, team1, team2, result) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO matches (year, tournament, team1, team2, result, csv_row_index) VALUES (?, ?, ?, ?, ?, ?)'
   );
   const insertMany = db.transaction((rows) => {
-    for (const r of rows) {
-      if (!r[idx.year]) continue; // skip trailing blank lines
-      insert.run(
-        parseInt(r[idx.year], 10),
-        r[idx.tournament] || null,
-        r[idx.team1],
-        r[idx.team2],
-        r[idx.result]
-      );
-    }
+    rows.forEach((r, i) => {
+      if (!r[idx.year]) return;
+      // i = position in the CSV, top of file = 0. Explicit and deterministic
+      // on every re-ingest -- doesn't depend on SQLite's AUTOINCREMENT
+      // counter, which persists across DELETE and would drift after repeat loads.
+      insert.run(parseInt(r[idx.year], 10), r[idx.tournament] || null, r[idx.team1], r[idx.team2], r[idx.result], i);
+    });
   });
   insertMany(rows);
 

@@ -5,13 +5,13 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "ingest-csv": "node data/csv-to-sqlite.js",
-    "watch-csv": "node data/watch-csv.js",
-    "bootstrap-identities": "node data/bootstrap-player-identities.js",
-    "export-pending-tags": "node data/export-pending-tags.js",
-    "import-pending-tags": "node data/import-pending-tags.js",
-    "sync-riot": "node data/run-riot-sync.js",
-    "refresh-all": "node data/refresh-all.js"
+    "ingest-csv": "node src/scripts/csv-to-sqlite.js",
+    "watch-csv": "node src/scripts/watch-csv.js",
+    "bootstrap-identities": "node src/scripts/bootstrap-player-identities.js",
+    "export-pending-tags": "node src/scripts/export-pending-tags.js",
+    "import-pending-tags": "node src/scripts/import-pending-tags.js",
+    "sync-riot": "node src/scripts/run-riot-sync.js",
+    "refresh-all": "node src/scripts/refresh-all.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",

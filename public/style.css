@@ -72,7 +72,7 @@ header h1 {
 }
 
 code {
-  font-family: var(--mono);
+  font-family: var(--sans);
   background: var(--panel);
   border: 1px solid var(--border);
   padding: 1px 6px;
@@ -225,7 +225,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .risk-value {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 1rem;
   min-width: 3.5ch;
   text-align: right;
@@ -234,7 +234,7 @@ input[type="range"]::-moz-range-thumb {
 
 .formula {
   margin: 14px 0 0;
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 0.78rem;
   color: var(--muted);
 }
@@ -256,7 +256,7 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 6px;
   padding: 6px 12px;
   font-size: 0.85rem;
-  font-family: var(--mono);
+  font-family: var(--sans);
   cursor: pointer;
   color: var(--muted);
 }
@@ -276,7 +276,7 @@ input[type="range"]::-moz-range-thumb {
   background: var(--bg);
   border: 1px solid var(--border);
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 0.9rem;
   padding: 8px 12px;
   border-radius: 6px;
@@ -404,7 +404,7 @@ input[type="range"]::-moz-range-thumb {
   background: var(--bg);
   border: 1px solid var(--border);
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 0.85rem;
   padding: 8px 10px;
   border-radius: 6px;
@@ -470,7 +470,7 @@ thead th {
   font-weight: 500;
   color: var(--muted);
   font-size: 0.78rem;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.04em;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
@@ -506,7 +506,7 @@ thead th.sorted-desc::after {
 tbody td {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
-  font-family: var(--mono);
+  font-family: var(--sans);
   white-space: nowrap;
 }
 
@@ -606,16 +606,35 @@ header {
 .player-profile-modal.open { display: block; }
 .player-profile-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.5); }
 .player-profile-panel {
-  position: relative; max-width: 780px; margin: 5vh auto; background: #fff;
+  position: relative; max-width: 1000px; margin: 5vh auto;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 8px; padding: 24px; max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 8px 24px var(--shadow);
 }
-.player-profile-close { position: absolute; top: 12px; right: 16px; border: none; background: none; font-size: 24px; cursor: pointer; }
-.profile-summary { display: flex; gap: 16px; color: #555; margin-top: 4px; font-size: 14px; }
-.profile-chart-legend { display: flex; gap: 14px; font-size: 12px; color: #666; margin-top: 4px; }
+.player-profile-close {
+  position: absolute; top: 12px; right: 16px; border: none; background: none;
+  font-size: 24px; cursor: pointer; color: var(--muted);
+}
+.player-profile-close:hover { color: var(--text); }
+
+.profile-summary { display: flex; flex-wrap: wrap; gap: 16px; color: var(--muted); margin-top: 4px; font-size: 14px; }
+.profile-chart-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 4px; }
 .profile-chart-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+
 .profile-history-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
-.profile-history-table th, .profile-history-table td { padding: 6px 8px; border-bottom: 1px solid #eee; text-align: left; }
-.profile-history-table th { text-transform: none !important; letter-spacing: normal; font-weight: 600; }
-.outcome-win { color: #2e7d32; font-weight: 600; }
-.outcome-loss { color: #c62828; font-weight: 600; }
-.outcome-draw { color: #757575; }
+.profile-history-table th, .profile-history-table td {
+  padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left;
+}
+.profile-history-table th { color: var(--muted); font-weight: 500; }
+
+.outcome-win { color: var(--accent); font-weight: 600; }
+.outcome-loss { color: var(--danger); font-weight: 600; }
+.outcome-draw { color: var(--muted); }
+
+.roster-toggle { border: none; background: none; cursor: pointer; font-size: 12px; padding: 2px 6px; color: var(--muted); }
+.roster-detail-row td { background: var(--bg); padding: 10px 14px; }
+.roster-detail { display: flex; gap: 32px; flex-wrap: wrap; }
+.roster-detail ul { list-style: none; margin: 4px 0 0; padding: 0; font-size: 13px; }
+.roster-detail li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; color: var(--text); }
+.roster-rating { color: var(--muted); font-variant-numeric: tabular-nums; }

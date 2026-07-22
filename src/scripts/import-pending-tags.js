@@ -14,7 +14,7 @@ const fs = require('fs');
 const Database = require('better-sqlite3');
 const { parse } = require('csv-parse/sync');
 
-const DB_PATH = path.join(__dirname, 'app.db');
+const DB_PATH = path.join(__dirname, '..', '..', 'app.db');
 const inputPath = process.argv[2] || path.join(__dirname, 'pending-player-tags.csv');
 
 const db = new Database(DB_PATH, { fileMustExist: true });
@@ -59,4 +59,4 @@ if (skippedUnknown > 0) {
   console.log(`Skipped ${skippedUnknown} rows whose raw_name no longer matches anything in pending_lookups.`);
 }
 console.log('\nRun the sync next to actually resolve these against Riot\'s API:');
-console.log('  node data/run-riot-sync.js');
+console.log('  node src/scripts/run-riot-sync.js');

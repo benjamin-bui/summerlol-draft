@@ -18,7 +18,7 @@ const path = require('path');
 const { parse } = require('csv-parse/sync');
 const Database = require('better-sqlite3');
 
-const DB_PATH = path.join(__dirname, 'app.db');
+const DB_PATH = path.join(__dirname, '..', '..', 'data', 'app.db');
 const TABLE = 'rows';
 
 // Quote every identifier with double quotes — this is what lets column

@@ -16,44 +16,44 @@
     </header>
 
     <section class="notes-section">
-      <!--
-        Edit the content below directly to change what shows here — no
-        save button, no backend, just plain HTML. Basic tags like <p>,
-        <strong>, <em>, <ul>/<li>, <br> all work fine.
-      -->
       <p>
         A mostly for-fun look at participant performance relative to draft order across the Williams College Summer and Winter LoL tournaments.
       </p>
     </section>
 
     <nav class="tabs">
-      <button class="tab-btn active" data-tab="rankings">Rankings</button>
-      <button class="tab-btn" data-tab="trueskill">Trueskill&#8482</button>
+      <button class="tab-btn active" data-tab="trueskill">TrueSkill</button>
+      <button class="tab-btn" data-tab="rankings">Rankings</button>
       <button class="tab-btn" data-tab="rawdata">Raw Data</button>
     </nav>
 
     <!-- ================= RANKINGS TAB ================= -->
-    <section class="tab-panel active" id="tab-rankings">
+    <section class="tab-panel" id="tab-rankings">
       <section class="control-panel">
+        <div>
+          <p><strong>Adjusted Pick Value: </strong> Weighted difference between average pick percentile and rank percentile.</p>
+          <p><strong>n:</strong> Number of tournaments of data.</p>
+          <p><strong>Avg. Pick%: </strong>Average percentage of draft picked before this player is picked.</p>
+          <p><strong>Est. Pick Order: </strong>Based on Total N players in the draft, where in the pick order this person is picked on average.</p>
+          <p><strong>Avg. Rank%: </strong>Average placement as a percentile; 1st place is 0% and last place is 100%</p>
+          <p><strong>Est. Rank Order: </strong>Based on Total N players in the draft, what placement does this player have on average (assuming teams of 5).</p>
+        </div>
         <label for="risk">Risk-aversion weight (&lambda;)</label>
         <div class="slider-row">
-          <input type="range" id="risk" min="0" max="3" step="0.05" value="0.5" />
+          <input type="range" id="risk" min="0" max="3" step=".05" value="0.5" />
           <span id="riskValue" class="risk-value">0.50</span>
         </div>
-        <p class="formula">Adjusted Pick Value = weighted mean &minus; &lambda; &times; weighted std. dev.</p>
 
         <label for="halfLife" class="second-control">Recency half-life (years)</label>
         <div class="slider-row">
           <input type="range" id="halfLife" min="0" max="6" step="0.5" value="2" />
           <span id="halfLifeValue" class="risk-value">2.0</span>
         </div>
-        <p class="formula">weight = 0.5 ^ (years ago / half-life) &middot; 0 = no decay, all seasons count equally</p>
 
         <label for="totalN" class="second-control">Total N (for estimated pick/rank order columns)</label>
         <div class="slider-row">
           <input type="number" id="totalN" min="2" max="1000" step="1" value="40" class="total-n-input" />
         </div>
-        <p class="formula">Est. Pick Order = Avg. Pick % &times; (N &minus; 1) + 1 &middot; Est. Rank Order = Avg. Rank % &times; (N&frasl;4 &minus; 1) + 1 (N&frasl;4 = number of teams, since each team gets 4 picks)</p>
       </section>
 
       <section class="table-controls">
@@ -74,11 +74,13 @@
     </section>
 
     <!-- ================= TRUESKILL TAB ================= -->
-    <section class="tab-panel" id="tab-trueskill">
+    <section class="tab-panel active" id="tab-trueskill">
       <section class="control-panel">
-        <p class>
-          Bayesian TRUESKILL&#8482 score.
-        </p>
+        <h3>Bayesian TrueSkill score, courtesy of Microsoft (or at least what is publically available and trivial to replicate).</h3>
+        <p><strong>TrueSkill: </strong>Conservative TrueSkill score μ - σ; intended to deflate players with a small number of games and high uncertainty.</p>
+        <p><strong>μ: </strong>Estimated skill score. Everyone starts at 1000.</p>
+        <p><strong>σ: </strong>Uncertainty in player skill. Everyone starts at μ/3</p>
+        <p>Note that win probabilities may not properly reflect listed TrueSkill scores. This is particularly common when there are new players with high uncertainty. Win probabilities are calculated based on the estimated skill score, not the conservative skill score.</p>
       </section>
 
       <section class="table-controls">

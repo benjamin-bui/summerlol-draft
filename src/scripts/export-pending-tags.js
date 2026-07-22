@@ -12,7 +12,7 @@
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const DB_PATH = path.join(__dirname, 'app.db');
+const DB_PATH = path.join(__dirname, '..', '..', 'app.db');
 const outputPath = process.argv[2] || path.join(__dirname, 'pending-player-tags.csv');
 
 function csvEscape(value) {

@@ -21,7 +21,7 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const fs = require('fs');
 
-const DB_PATH = path.join(__dirname, 'app.db');
+const DB_PATH = path.join(__dirname, '..', '..', 'data', 'app.db');
 const SCHEMA_PATH = path.join(__dirname, '..', 'db', 'identity-schema.sql');
 const TABLE = 'rows';
 const GROUP_COL = 'Player';

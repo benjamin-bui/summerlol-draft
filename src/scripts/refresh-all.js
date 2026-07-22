@@ -17,9 +17,9 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const { ingestCsv, DB_PATH } = require('./csv-to-sqlite');
 const { bootstrap } = require('./bootstrap-player-identities');
-const { runFullSync } = require('./riot-sync');
+const { runFullSync } = require('../lib/riot-sync');
 
-const csvPath = process.argv[2] || path.join(__dirname, 'lol-draft-long.csv');
+const csvPath = process.argv[2] || path.join(__dirname, '..', '..', 'data', 'lol-draft-long.csv');
 
 (async () => {
   console.log(`Step 1/3: ingesting ${csvPath}...`);

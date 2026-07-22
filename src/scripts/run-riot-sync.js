@@ -3,15 +3,14 @@
  * refresh already-known players to catch renames) against the real Riot
  * API. Requires RIOT_API_KEY in the environment.
  *
- * Usage:
- *   RIOT_API_KEY=RGAPI-xxxx node data/run-riot-sync.js
  */
 
 const path = require('path');
+console.log(__dirname)
 const Database = require('better-sqlite3');
-const { runFullSync } = require('./riot-sync');
-
-const DB_PATH = path.join(__dirname, 'app.db');
+console.log(__dirname)
+const { runFullSync } = require(path.join(__dirname, '..', 'lib', 'riot-sync.js'));
+const DB_PATH = path.join(__dirname, '..', '..', 'app.db');
 
 (async () => {
   if (!process.env.RIOT_API_KEY) {

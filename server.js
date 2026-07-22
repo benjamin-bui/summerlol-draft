@@ -265,7 +265,7 @@ app.get('/api/stats', (req, res) => {
 // TrueSkill: rates players as a sequence of team games, one per year,
 
 function getMatches() {
-  return db.prepare('SELECT id AS rowIndex, year, tournament, team1, team2, result FROM matches').all();
+  return db.prepare('SELECT id AS rowIndex, year, tournament, team1, team2, result, csv_row_index AS rowIndex FROM matches').all();
 }
 
 app.get('/api/trueskill', (req, res) => {
@@ -398,7 +398,7 @@ app.get('/api/identity/status', (req, res) => {
   if (!identityTablesExist(db)) {
     return res.json({
       bootstrapped: false,
-      message: 'Identity tables not created yet — run node data/bootstrap-player-identities.js'
+      message: 'Identity tables not created yet — run node src/scripts/bootstrap-player-identities.js'
     });
   }
   const totalPlayers = db.prepare('SELECT COUNT(*) c FROM players').get().c;

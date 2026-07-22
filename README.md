@@ -360,7 +360,7 @@ CSV directly (add a tag that was missing, or correct one that was
 wrong), that change needs to reach the database first:
 
 ```bash
-node data/csv-to-sqlite.js data/lol-draft-long.csv   # 1. re-ingest the edit
+node src/scripts/csv-to-sqlite.js data/lol-draft-long.csv   # 1. re-ingest the edit
 npm run bootstrap-identities                          # 2. queue the new/changed name
 RIOT_API_KEY=your-key npm run sync-riot                # 3. actually resolve it
 ```
@@ -449,5 +449,5 @@ verification, not app functionality — but what they confirmed, concretely:
 ## Loading Individual Match Data
 
 ```bash
-node data/ingest-matches.js data/lol-draft-match.csv
+node src/scripts/ingest-matches.js data/lol-draft-match.csv
 ```
