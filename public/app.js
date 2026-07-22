@@ -359,7 +359,6 @@ const statsHeaderRow = document.getElementById('statsHeaderRow');
 const statsBody = document.getElementById('statsBody');
 const columnsBtn = document.getElementById('columnsBtn');
 const columnsPanel = document.getElementById('columnsPanel');
-const yearCheckboxesEl = document.getElementById('yearCheckboxes');
 const totalNInput = document.getElementById('totalN');
 
 const RISK_MIN = parseFloat(riskSlider.min);
@@ -374,8 +373,6 @@ let sortColumn = 'adjAvg';
 let sortDirection = 'desc';
 let hiddenColumns = new Set(RANKINGS_COLUMNS.filter((c) => c.defaultHidden).map((c) => c.key));
 let rankingsFilters = {};
-let allYears = [];
-let selectedYears = new Set();
 let totalN = 40;
 
 // Columns visibility panel
@@ -493,42 +490,6 @@ async function loadMeta() {
   const res = await fetch('/api/meta');
   const meta = await res.json();
   groupColName = meta.groupCol;
-  allYears = meta.years;
-  if (selectedYears.size === 0) {
-    // no explicit URL selection was made — default to all years
-    allYears.forEach((y) => selectedYears.add(y));
-  }
-  renderYearCheckboxes();
-}
-
-function renderYearCheckboxes() {
-  yearCheckboxesEl.innerHTML = '';
-  allYears.forEach((year) => {
-    const label = document.createElement('label');
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = selectedYears.has(year);
-    checkbox.dataset.year = year;
-    if (checkbox.checked) label.classList.add('checked');
-    checkbox.addEventListener('change', () => {
-      if (checkbox.checked) selectedYears.add(year);
-      else selectedYears.delete(year);
-      label.classList.toggle('checked', checkbox.checked);
-      scheduleFetch();
-      scheduleUrlUpdate();
-
-      // ROI/Tiers data depends on the years filter too — invalidate the
-      // lazy-load cache, and if one of those tabs is the one currently
-      // visible, refetch immediately rather than waiting for the next
-      // time it's opened.
-      trueskillLoaded = false;
-      const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-      if (activeTab === 'trueskill') loadTrueskillData(true);
-    });
-    label.appendChild(checkbox);
-    label.appendChild(document.createTextNode(String(year)));
-    yearCheckboxesEl.appendChild(label);
-  });
 }
 
 // Translates each row's percentile columns into an estimated ordinal
@@ -550,10 +511,7 @@ function applyTotalN() {
 }
 
 async function fetchStats(risk, halfLife) {
-  const yearsParam = allYears.length > 0 && selectedYears.size < allYears.length
-    ? `&years=${[...selectedYears].join(',')}`
-    : '';
-  const res = await fetch(`/api/stats?risk=${risk}&halfLife=${halfLife}${yearsParam}`);
+  const res = await fetch(`/api/stats?risk=${risk}&halfLife=${halfLife}`);
   if (!res.ok) {
     statsBody.innerHTML = `<tr><td colspan="8">Error loading stats</td></tr>`;
     return;
@@ -945,7 +903,7 @@ tabButtons.forEach((btn) => {
 });
 
 // ==================== URL query param state ====================
-// ?risk=&halfLife=&sort=&dir=&hidden=&tab=&years=
+// ?risk=&halfLife=&sort=&dir=&hidden=&tab=
 
 function readStateFromURL() {
   const params = new URLSearchParams(window.location.search);
@@ -956,7 +914,6 @@ function readStateFromURL() {
   const dir = params.get('dir');
   const hidden = params.get('hidden');
   const tab = params.get('tab');
-  const years = params.get('years');
   const n = parseInt(params.get('totalN'), 10);
 
   if (!Number.isNaN(risk) && risk >= RISK_MIN && risk <= RISK_MAX) {
@@ -978,9 +935,6 @@ function readStateFromURL() {
       if (RANKINGS_COLUMNS.some((c) => c.key === key && c.hideable)) hiddenColumns.add(key);
     });
   }
-  if (years) {
-    years.split(',').map((y) => parseInt(y, 10)).filter((y) => Number.isFinite(y)).forEach((y) => selectedYears.add(y));
-  }
   if (Number.isFinite(n) && n >= 2) {
     totalN = n;
     totalNInput.value = n;
@@ -999,9 +953,6 @@ function writeStateToURL() {
   params.set('dir', sortDirection);
   params.set('hidden', [...hiddenColumns].join(','));
   params.set('totalN', totalN);
-  if (allYears.length > 0 && selectedYears.size < allYears.length) {
-    params.set('years', [...selectedYears].sort((a, b) => a - b).join(','));
-  }
   const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab || 'rankings';
   params.set('tab', activeTab);
 

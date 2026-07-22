@@ -161,21 +161,6 @@ code {
   margin-top: 20px;
 }
 
-/* ---- Global controls (years — shared across all tabs) ---- */
-
-.global-controls {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 16px 24px;
-  margin-bottom: 20px;
-}
-
-.global-controls-label {
-  margin-top: 0 !important;
-  margin-bottom: 10px !important;
-}
-
 /* ---- Expected ROI chart ---- */
 
 .roi-chart-section {

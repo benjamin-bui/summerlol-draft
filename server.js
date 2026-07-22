@@ -1,10 +1,10 @@
 const express = require('express');
 const path = require('path');
 const Database = require('better-sqlite3');
-const { loadIdentityMap, identityTablesExist } = require('./data/player-identity');
-const { runFullSync } = require('./data/riot-sync');
-const { startPeriodicSync } = require('./data/scheduler');
-const { computeTrueSkillFromMatches } = require('./data/trueskill-matches');
+const { loadIdentityMap, identityTablesExist } = require('./src/lib/player-identity');
+const { runFullSync } = require('./src/lib/riot-sync');
+const { startPeriodicSync } = require('./src/scripts/scheduler');
+const { computeTrueSkillFromMatches } = require('./src/lib/trueskill-matches');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -133,10 +133,7 @@ function weightedAvg(entries, getVal) {
 
 // EWMA-style recency weighting. `halfLifeYears` = 0 means no decay (every
 // season weighted equally). Age is measured against the most recent year
-// present in `rows` — if a year has been excluded via the years filter,
-// the age reference point shifts to whatever the newest INCLUDED season
-// is, which is the intuitive behavior (recency is relative to what's
-// actually being considered, not to data that's been excluded).
+// present in `rows`, so recency is always relative to the available data.
 function computeGroupStats(rows, riskAversion, halfLifeYears) {
   const maxYear = rows.reduce(
     (m, r) => (Number.isFinite(r.year) && r.year > m ? r.year : m),
@@ -228,29 +225,14 @@ function round2(x) {
   return Math.round(x * 100) / 100;
 }
 
-// Parses a comma-separated list of years from a query param into a Set of
-// integers, or null if not provided/empty (meaning "no filter, use all").
-function parseYearsParam(raw) {
-  if (!raw) return null;
-  const years = raw
-    .split(',')
-    .map((s) => parseInt(s.trim(), 10))
-    .filter((n) => Number.isFinite(n));
-  return years.length > 0 ? new Set(years) : null;
-}
-
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Shared by /api/stats, /api/roi, /api/tiers — years-filters then
-// resolves identity, since all three alternative methodologies operate
-// on the same underlying appearances, just scored differently.
-function getFilteredIdentifiedRows(req) {
-  const yearsFilter = parseYearsParam(req.query.years);
-  let rows = getAllRows();
-  if (yearsFilter) {
-    rows = rows.filter((r) => yearsFilter.has(r.year));
-  }
+// Shared by /api/stats, /api/roi, /api/tiers — resolves identity for the
+// full dataset so each alternative methodology operates on the same
+// underlying appearances, just scored differently.
+function getFilteredIdentifiedRows() {
+  const rows = getAllRows();
   const identityMap = loadIdentityMap(db);
   return resolveIdentities(rows, identityMap);
 }
@@ -265,7 +247,7 @@ app.get('/api/stats', (req, res) => {
     return res.status(400).json({ error: 'halfLife query param must be a non-negative number' });
   }
 
-  const withIdentity = getFilteredIdentifiedRows(req);
+  const withIdentity = getFilteredIdentifiedRows();
   const derived = attachDerivedFields(withIdentity);
   const stats = computeGroupStats(derived, riskAversion, halfLifeYears);
   res.json({ riskAversion, halfLifeYears, stats });
@@ -278,7 +260,7 @@ app.get('/api/stats', (req, res) => {
 // each player against however that curve actually looks — see
 // data/alt-rankings.js for the full explanation.
 app.get('/api/roi', (req, res) => {
-  const withIdentity = getFilteredIdentifiedRows(req);
+  const withIdentity = getFilteredIdentifiedRows();
   const derived = attachDerivedFields(withIdentity);
   const curve = computeROICurve(derived);
   const players = computeROIPlayers(withIdentity, curve);
@@ -291,7 +273,7 @@ app.get('/api/roi', (req, res) => {
 // data/alt-rankings.js for the full explanation). Route name kept as
 // /api/tiers for continuity even though tiering itself was dropped.
 app.get('/api/tiers', (req, res) => {
-  const withIdentity = getFilteredIdentifiedRows(req);
+  const withIdentity = getFilteredIdentifiedRows();
   const derived = attachDerivedFields(withIdentity);
   const overallStats = computeOverallStats(withIdentity);
   const players = computeOverallZScores(withIdentity, overallStats);
@@ -305,7 +287,7 @@ function getMatches() {
 }
 
 app.get('/api/trueskill', (req, res) => {
-  const withIdentity = getFilteredIdentifiedRows(req); // reuses your existing years filter
+  const withIdentity = getFilteredIdentifiedRows();
   const identityMap = loadIdentityMap(db);
   const matches = getMatches();
 

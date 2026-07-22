@@ -18,6 +18,7 @@ RUN npm install ts-trueskill
 
 COPY server.js entrypoint.js ./
 COPY public ./public
+COPY src ./src
 COPY data ./data
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh

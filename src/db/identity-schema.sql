@@ -24,13 +24,6 @@ CREATE TABLE IF NOT EXISTS players (
     created_at            TEXT DEFAULT (datetime('now'))
 );
 
--- Every raw "Player" column spelling that's been seen, mapped to a
--- canonical player row. Solves "Rlylost" vs "rlylost" vs "Xemacs#4328
--- (Santiago)" structurally, without fuzzy-matching at query time.
-CREATE TABLE IF NOT EXISTS player_aliases (
-    alias      TEXT PRIMARY KEY,
-    player_id  INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE
-);
 
 -- Aliases queued for Riot lookup but not yet resolved (either no
 -- game_name/tag_line known yet, or looked up and failed/not found).

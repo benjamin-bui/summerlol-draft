@@ -226,14 +226,6 @@ keeps everything owned by you — no more back-and-forth.
   string — `CAST('' AS REAL)` in SQLite silently returns `0`, not `NULL`,
   which would otherwise corrupt the averages. `csv-to-sqlite.js` converts
   empty cells to `NULL` on ingest specifically to avoid this.
-- **Years included**: checkboxes next to the sliders control which
-  seasons are included in the calculation at all (defaults to all).
-  Unchecking a year re-fetches with that year's rows excluded entirely —
-  a player who only appears in an excluded season simply won't be
-  ranked. The recency half-life's "most recent year" reference point is
-  relative to whatever's currently included, not the full dataset — so
-  excluding the newest season shifts the half-life's zero-point back to
-  the next-newest included one.
 - **Per-column filtering**: click the ▾ icon in any column header (not
   the header label itself, which sorts) to open that column's filter.
   Player gets a regex text field (case-insensitive); numeric columns get
@@ -277,7 +269,7 @@ keeps everything owned by you — no more back-and-forth.
   there was nothing concrete to match; let me know if you want a
   specific font and I'll wire it in.
 - All of the Rankings tab's state lives in the URL
-  (`?risk=&halfLife=&sort=&dir=&hidden=&years=&totalN=&tab=`), so a bare visit
+  (`?risk=&halfLife=&sort=&dir=&hidden=&totalN=&tab=`), so a bare visit
   fills in the defaults and the URL updates as you interact — reloading,
   bookmarking, or sending someone a link reproduces the exact same view.
   Per-column filter state is **not** URL-persisted (regex patterns and

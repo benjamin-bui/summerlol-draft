@@ -15,9 +15,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { runFullSync } = require('./riot-sync');
+const { runFullSync } = require('../lib/riot-sync');
 
-const SCHEMA_PATH = path.join(__dirname, 'identity-schema.sql');
+const SCHEMA_PATH = path.join(__dirname, '..', 'db', 'identity-schema.sql');
 const SYNC_STATE_KEY = 'last_full_sync';
 const DEFAULT_INTERVAL_DAYS = 14;
 // How often to check whether the 14 days have elapsed — doesn't need to
