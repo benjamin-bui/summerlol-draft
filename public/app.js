@@ -65,6 +65,9 @@ function renderFunFactsHtml(ff) {
   if (ff.peakRating) {
     facts.push(`<strong>Highest TrueSkill ever reached:</strong> ${escapeHtml(ff.peakRating.displayName)}, ${ff.peakRating.conservativeRating} (${ff.peakRating.tournament} ${ff.peakRating.year})`);
   }
+  if (ff.troughRating) {
+    facts.push(`<strong>Lowest TrueSkill ever reached:</strong> ${escapeHtml(ff.troughRating.displayName)}, ${ff.troughRating.conservativeRating} (${ff.troughRating.tournament} ${ff.troughRating.year})`);
+  }
   if (ff.mostGamesPlayed) {
     facts.push(`<strong>Most games played:</strong> ${escapeHtml(ff.mostGamesPlayed.displayName)}, ${ff.mostGamesPlayed.games} games`);
   }

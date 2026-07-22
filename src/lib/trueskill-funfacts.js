@@ -99,6 +99,16 @@ const biggestUpsetFact = biggestUpset ? formatUpset(biggestUpset) : null;
     }
   }
 
+  // ---- Lowest TrueSkill ever reached, at any point in history ----
+  let troughRating = null;
+  for (const p of players) {
+    for (const h of p.history) {
+      if (!troughRating || h.conservativeRating < troughRating.conservativeRating) {
+        troughRating = { displayName: p.group, conservativeRating: h.conservativeRating, year: h.year, tournament: h.tournament };
+      }
+    }
+  }
+
   // ---- Most games played ----
   const mostGames = players.length
     ? players.reduce((best, p) => (p.games > best.games ? p : best))
@@ -110,6 +120,7 @@ const biggestUpsetFact = biggestUpset ? formatUpset(biggestUpset) : null;
     longestStreak,
     longestLossStreak,
     peakRating,
+    troughRating,
     mostGamesPlayed: mostGames ? { displayName: mostGames.group, games: mostGames.games } : null,
     mostActiveRivalry
   };
