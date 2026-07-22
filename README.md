@@ -289,45 +289,7 @@ keeps everything owned by you — no more back-and-forth.
 
 ## Alternative ranking methodologies (Expected ROI / Tiers tabs)
 
-Two more tabs alongside Rankings and Raw Data, each a different way of
-scoring the same underlying data. Both are unweighted (no risk-aversion
-or recency half-life) — simple averages across whichever years are
-included. **Years included** is now a page-level control (moved above
-the tabs) since it applies to every tab, not just Rankings.
 
-### Expected ROI
-Adjusted Pick Value assumes a smooth, theoretical relationship between
-draft position and expected outcome (`Pick % − Rank %`). This tab
-instead builds an **empirical curve** — for each exact pick order, the
-actual historical average placement of everyone ever picked there — then
-scores each player by `expected placement for their pick order − their
-actual placement`. Positive means they outperformed what history says
-to expect from that draft position. The curve itself is charted (hand-rolled
-inline SVG, not a library — this app has zero external/CDN dependencies
-by design, so a chart library would be the first one; the chart is
-simple enough that seemed like the wrong tradeoff for a self-hosted
-Docker app that shouldn't need outbound internet access to render a line
-chart). Verified the curve and a sample player's value against an
-independent pandas calculation from the raw CSV.
-
-### Tiers
-**Originally** tier-based (picks grouped into buckets of size = that
-season's captain count — tier 1 = round 1, tier 2 = round 2, etc.),
-each player z-scored against their tier's own average/std dev. Turned
-out to be worth simplifying: in a standard snake draft, every tier
-draws from an **identical** distribution of outcomes. Each captain
-picks exactly once per round, and placement is the captain/team's
-result — the same value across all four of that captain's picks
-regardless of which round. Verified directly against the real data:
-pooling every season's tier 1 through tier 4 rank values gave the
-literal same multiset every time (`[1.0, 2.0, 3.5, 3.5, 5.5, 5.5, 8.0,
-8.0, 8.0, 10.0]` for 2021, identical across all 4 tiers). So the tier
-grouping added computation without adding any real differentiation —
-this tab now just z-scores everyone against the single overall pooled
-placement distribution instead. Simpler code, mathematically
-equivalent result. If your draft format ever changes such that captains
-*don't* pick exactly once per round, this equivalence would break and
-tiering would become meaningful again — worth revisiting if so.
 
 ### Reusable table infrastructure
 Both of these tabs are built on a new `createTabTable()` factory in
@@ -492,32 +454,8 @@ verification, not app functionality — but what they confirmed, concretely:
   tables yet), and the CSV/Docker/entrypoint pipeline all still work
   unchanged if you never touch this feature at all.
 
-**What you'll need to verify yourself**, since it requires a real key
-and real network access: that `getAccountByRiotId`/`getAccountByPuuid`
-actually parse Riot's real response shape correctly, and that the rate
-limiting behavior holds up against Riot's actual limits rather than the
-mocked 429 scenario tested here.
+## Loading Individual Match Data
 
-### A note on your data
-
-Checked directly: of 111 distinct names in the current dataset, 92 now
-have a parseable `Name#Tag` (up from 7 originally) — the rest can't be
-resolved without one, since Riot's account API has no "search by display
-name only" endpoint (that was deprecated in favor of Riot ID).
-
-**Two data issues were caught and fixed while ingesting your latest
-CSV** — flagging both since they'd have silently affected results:
-- **Row `id=109`** (2022, `youn9#NA3`) was missing its `Rank` value
-  entirely — every field after `Pick Order` had shifted over by one.
-  Fully recoverable: the `Rank Percentile` field was still present, and
-  solving backward (`Rank = Rank Percentile × 9 + 1`) gave exactly
-  `3.5`, which also correctly reproduces the row's own `Pick Value` —
-  so this isn't a guess, it's derived from data already in the row.
-- **2024's captain list had 11 distinct entries instead of 10** —
-  `"SK Telecom T1#Faker"` appeared once as `"SK Telecom T1#Faker#Faker"`
-  (id=171), clearly a duplicated-tag typo confirmed by all four of that
-  captain's rows sharing the identical `Rank` (7.5). Left uncorrected,
-  this would have silently shifted the Rank Percentile denominator
-  (captains − 1) for **every player in the 2024 season**, not just this
-  one row.
-
+```bash
+node data/ingest-matches.js data/lol-draft-match.csv
+```

@@ -521,11 +521,9 @@ function renderYearCheckboxes() {
       // lazy-load cache, and if one of those tabs is the one currently
       // visible, refetch immediately rather than waiting for the next
       // time it's opened.
-      roiLoaded = false;
-      tiersLoaded = false;
+      trueskillLoaded = false;
       const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-      if (activeTab === 'roi') loadROIData(true);
-      if (activeTab === 'tiers') loadTiersData(true);
+      if (activeTab === 'trueskill') loadTrueskillData(true);
     });
     label.appendChild(checkbox);
     label.appendChild(document.createTextNode(String(year)));
@@ -905,144 +903,44 @@ function createTabTable({
   };
 }
 
-// ==================== Expected ROI tab ====================
 
-const ROI_COLUMNS = [
+// ==================== trueskill tab ====================
+
+const TRUESKILL_COLUMNS= [
   { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
   { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, className: 'group-name', type: 'string' },
-  { key: 'roiValue', label: 'ROI Value', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
-  { key: 'n', label: 'n', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'avgPickOrder', label: 'Avg. Pick Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 },
-  { key: 'avgRank', label: 'Avg. Rank', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 }
+  { key: 'conservativeRating', label: 'Trueskill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
+  { key: 'mu', label: 'Optimistic Rating', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
+  { key: 'sigma', label: 'Uncertainty', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 },
+  { key: 'games', label: 'Games', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'wins', label: 'Wins', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'losses', label: 'Losses', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+
 ];
 
-const roiTable = createTabTable({
-  columns: ROI_COLUMNS,
-  headerRowEl: document.getElementById('roiHeaderRow'),
-  bodyEl: document.getElementById('roiBody'),
-  columnsBtnEl: document.getElementById('roiColumnsBtn'),
-  columnsPanelEl: document.getElementById('roiColumnsPanel'),
-  ownerKey: 'roi',
-  defaultSortColumn: 'roiValue'
+const trueskillTable = createTabTable({
+  columns: TRUESKILL_COLUMNS,
+  headerRowEl: document.getElementById('trueskillHeaderRow'),
+  bodyEl: document.getElementById('trueskillBody'),
+  columnsBtnEl: document.getElementById('trueskillColumnsBtn'),
+  columnsPanelEl: document.getElementById('trueskillColumnsPanel'),
+  ownerKey: 'trueskill',
+  defaultSortColumn: 'conservativeRating'
 });
 
-let roiLoaded = false;
-let roiCurveData = [];
+let trueskillLoaded = false;
 
-function renderROIChart() {
-  const container = document.getElementById('roiChartContainer');
-  if (roiCurveData.length === 0) {
-    container.innerHTML = '<p class="chart-empty">No data to chart for the currently included years.</p>';
-    return;
-  }
-
-  const width = 760;
-  const height = 320;
-  const padL = 56;
-  const padR = 20;
-  const padT = 16;
-  const padB = 40;
-
-  const pickOrders = roiCurveData.map((c) => c.pickOrder);
-  const ranks = roiCurveData.map((c) => c.expectedRank);
-  const minPO = Math.min(...pickOrders);
-  const maxPO = Math.max(...pickOrders);
-  const minRank = Math.min(...ranks);
-  const maxRank = Math.max(...ranks);
-  const rankSpan = maxRank - minRank || 1;
-  const poSpan = maxPO - minPO || 1;
-
-  const xScale = (po) => padL + ((po - minPO) / poSpan) * (width - padL - padR);
-  // Lower rank = better placement, mapped to the TOP of the chart (smaller
-  // y-pixel), which is the intuitive reading for "better is higher up".
-  const yScale = (rank) => padT + ((rank - minRank) / rankSpan) * (height - padT - padB);
-
-  const points = roiCurveData.map((c) => `${xScale(c.pickOrder).toFixed(1)},${yScale(c.expectedRank).toFixed(1)}`).join(' ');
-
-  const circles = roiCurveData
-    .map((c) => {
-      const cx = xScale(c.pickOrder).toFixed(1);
-      const cy = yScale(c.expectedRank).toFixed(1);
-      return `<circle cx="${cx}" cy="${cy}" r="3" style="fill:var(--accent)">
-        <title>Pick ${c.pickOrder}: avg. rank ${c.expectedRank} (n=${c.n})</title>
-      </circle>`;
-    })
-    .join('');
-
-  container.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" class="roi-chart-svg" role="img" aria-label="Expected rank by pick order">
-      <line x1="${padL}" y1="${height - padB}" x2="${width - padR}" y2="${height - padB}" style="stroke:var(--border)" />
-      <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${height - padB}" style="stroke:var(--border)" />
-      <polyline points="${points}" fill="none" style="stroke:var(--accent)" stroke-width="2" />
-      ${circles}
-      <text x="${padL}" y="${height - padB + 22}" font-size="11" style="fill:var(--muted)">Pick ${minPO}</text>
-      <text x="${width - padR}" y="${height - padB + 22}" font-size="11" style="fill:var(--muted)" text-anchor="end">Pick ${maxPO}</text>
-      <text x="${padL - 8}" y="${padT + 4}" font-size="11" style="fill:var(--muted)" text-anchor="end">${minRank.toFixed(1)} (best)</text>
-      <text x="${padL - 8}" y="${height - padB}" font-size="11" style="fill:var(--muted)" text-anchor="end">${maxRank.toFixed(1)} (worst)</text>
-      <text x="${(padL + width - padR) / 2}" y="${height - 6}" font-size="12" style="fill:var(--text)" text-anchor="middle">Pick Order</text>
-      <text x="16" y="${(padT + height - padB) / 2}" font-size="12" style="fill:var(--text)" text-anchor="middle" transform="rotate(-90 16 ${(padT + height - padB) / 2})">Expected Rank</text>
-    </svg>`;
-}
-
-async function loadROIData(forceRefresh) {
-  if (roiLoaded && !forceRefresh) return;
-  const yearsParam = allYears.length > 0 && selectedYears.size < allYears.length
-    ? `?years=${[...selectedYears].join(',')}`
-    : '';
-  const res = await fetch(`/api/roi${yearsParam}`);
+async function loadtrueskillData(forceRefresh) {
+  if (trueskillLoaded && !forceRefresh) return;
+  const res = await fetch(`/api/trueskill`);
   const data = await res.json();
-  roiCurveData = data.curve;
-  roiTable.setData(data.players);
-  renderROIChart();
-  roiLoaded = true;
+  trueskillTable.setData(data.players);
+  trueskillLoaded = true;
 }
 
 tabButtons.forEach((btn) => {
-  if (btn.dataset.tab === 'roi') {
-    btn.addEventListener('click', () => loadROIData(false));
-  }
-});
-
-// ==================== Tiers tab ====================
-
-const TIERS_COLUMNS = [
-  { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
-  { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, className: 'group-name', type: 'string' },
-  { key: 'zScore', label: 'Z-Score', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
-  { key: 'n', label: 'n', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 }
-];
-
-const tiersTable = createTabTable({
-  columns: TIERS_COLUMNS,
-  headerRowEl: document.getElementById('tiersHeaderRow'),
-  bodyEl: document.getElementById('tiersBody'),
-  columnsBtnEl: document.getElementById('tiersColumnsBtn'),
-  columnsPanelEl: document.getElementById('tiersColumnsPanel'),
-  ownerKey: 'tiers',
-  defaultSortColumn: 'zScore'
-});
-
-let tiersLoaded = false;
-const tiersOverallStatsLine = document.getElementById('tiersOverallStatsLine');
-
-async function loadTiersData(forceRefresh) {
-  if (tiersLoaded && !forceRefresh) return;
-  const yearsParam = allYears.length > 0 && selectedYears.size < allYears.length
-    ? `?years=${[...selectedYears].join(',')}`
-    : '';
-  const res = await fetch(`/api/tiers${yearsParam}`);
-  const data = await res.json();
-  const { n, avgRank, sd } = data.overallStats;
-  tiersOverallStatsLine.textContent = n > 0
-    ? `Based on ${n} appearances across the included years \u00b7 overall average placement ${avgRank} \u00b7 std. dev ${sd}`
-    : 'No data for the currently included years.';
-  tiersTable.setData(data.players);
-  tiersLoaded = true;
-}
-
-tabButtons.forEach((btn) => {
-  if (btn.dataset.tab === 'tiers') {
-    btn.addEventListener('click', () => loadTiersData(false));
+  if (btn.dataset.tab === 'trueskill') {
+    btn.addEventListener('click', () => loadtrueskillData(false));
   }
 });
 

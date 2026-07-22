@@ -33,8 +33,7 @@
 
     <nav class="tabs">
       <button class="tab-btn active" data-tab="rankings">Rankings</button>
-      <button class="tab-btn" data-tab="roi">Expected ROI</button>
-      <button class="tab-btn" data-tab="tiers">Tiers</button>
+      <button class="tab-btn" data-tab="trueskill">Trueskill&#8482</button>
       <button class="tab-btn" data-tab="rawdata">Raw Data</button>
     </nav>
 
@@ -79,59 +78,25 @@
       </section>
     </section>
 
-    <!-- ================= EXPECTED ROI TAB ================= -->
-    <section class="tab-panel" id="tab-roi">
+    <!-- ================= TRUESKILL TAB ================= -->
+    <section class="tab-panel" id="tab-trueskill">
       <section class="control-panel">
-        <p >
-          Difference between average performance for a given pick order and actual placement.
-          A higher value means the player, on average, has a higher placement than the average person in their placement.
-          </p>
-      </section>
-
-      <section class="table-section roi-chart-section">
-        <div id="roiChartContainer"><!-- populated by app.js --></div>
+        <p class>
+          Bayesian TRUESKILL&#8482 score.
+        </p>
       </section>
 
       <section class="table-controls">
-        <button id="roiColumnsBtn" class="columns-btn">Columns &#9662;</button>
-        <div id="roiColumnsPanel" class="columns-panel hidden"></div>
+        <button id="trueskillColumnsBtn" class="columns-btn">Columns &#9662;</button>
+        <div id="trueskillColumnsPanel" class="columns-panel hidden"></div>
       </section>
 
       <section class="table-section">
-        <table id="roiTable">
+        <table id="trueskillTable">
           <thead>
-            <tr id="roiHeaderRow"></tr>
+            <tr id="trueskillHeaderRow"></tr>
           </thead>
-          <tbody id="roiBody">
-            <!-- populated by app.js -->
-          </tbody>
-        </table>
-      </section>
-    </section>
-
-    <!-- ================= TIERS TAB ================= -->
-    <section class="tab-panel" id="tab-tiers">
-      <section class="control-panel">
-        <p class="formula">Originally tier-grouped (picks bucketed by round), simplified to a single
-          pooled z-score after confirming every tier draws from an <strong>identical</strong> distribution
-          of outcomes in this snake-draft format &mdash; each captain picks exactly once per round, and
-          placement is the captain/team's outcome, identical across all of that captain's picks regardless
-          of round. Z-score = (overall average placement &minus; actual placement) / overall std. dev.,
-          averaged across appearances. No risk-aversion or recency weighting applied here either.</p>
-        <p class="formula" id="tiersOverallStatsLine">Loading overall stats&hellip;</p>
-      </section>
-
-      <section class="table-controls">
-        <button id="tiersColumnsBtn" class="columns-btn">Columns &#9662;</button>
-        <div id="tiersColumnsPanel" class="columns-panel hidden"></div>
-      </section>
-
-      <section class="table-section">
-        <table id="tiersTable">
-          <thead>
-            <tr id="tiersHeaderRow"></tr>
-          </thead>
-          <tbody id="tiersBody">
+          <tbody id="trueskillBody">
             <!-- populated by app.js -->
           </tbody>
         </table>

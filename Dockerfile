@@ -14,6 +14,7 @@ RUN apk add --no-cache python3 make g++ su-exec
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
+RUN npm install ts-trueskill
 
 COPY server.js entrypoint.js ./
 COPY public ./public

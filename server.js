@@ -4,12 +4,7 @@ const Database = require('better-sqlite3');
 const { loadIdentityMap, identityTablesExist } = require('./data/player-identity');
 const { runFullSync } = require('./data/riot-sync');
 const { startPeriodicSync } = require('./data/scheduler');
-const {
-  computeROICurve,
-  computeROIPlayers,
-  computeOverallStats,
-  computeOverallZScores
-} = require('./data/alt-rankings');
+const { computeTrueSkillFromMatches } = require('./data/trueskill-matches');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -46,11 +41,12 @@ function getAllRows() {
   const stmt = db.prepare(
     `SELECT ${q(GROUP_COL)} AS groupVal,
             ${q(CAPTAIN_COL)} AS captain,
+            "Tournament" AS tournament,
             CAST(${q(YEAR_COL)} AS INTEGER) AS year,
             CAST(${q(PICK_ORDER_COL)} AS REAL) AS pickOrder,
             CAST(${q(RANK_COL)} AS REAL) AS rank
-     FROM ${q(TABLE)}
-     WHERE ${q(GROUP_COL)} IS NOT NULL AND ${q(GROUP_COL)} != ''`
+    FROM ${q(TABLE)}
+    WHERE ${q(GROUP_COL)} IS NOT NULL AND ${q(GROUP_COL)} != ''`
   );
   return stmt.all();
 }
@@ -296,9 +292,34 @@ app.get('/api/roi', (req, res) => {
 // /api/tiers for continuity even though tiering itself was dropped.
 app.get('/api/tiers', (req, res) => {
   const withIdentity = getFilteredIdentifiedRows(req);
+  const derived = attachDerivedFields(withIdentity);
   const overallStats = computeOverallStats(withIdentity);
   const players = computeOverallZScores(withIdentity, overallStats);
   res.json({ overallStats, players });
+});
+
+// TrueSkill: rates players as a sequence of team games, one per year,
+
+function getMatches() {
+  return db.prepare('SELECT year, tournament, team1, team2, result FROM matches').all();
+}
+
+app.get('/api/trueskill', (req, res) => {
+  const withIdentity = getFilteredIdentifiedRows(req); // reuses your existing years filter
+  const identityMap = loadIdentityMap(db);
+  const matches = getMatches();
+
+  const opts = {};
+  for (const key of ['mu', 'sigma', 'beta', 'tau', 'drawProbability']) {
+    if (req.query[key] !== undefined) {
+      const val = parseFloat(req.query[key]);
+      if (Number.isNaN(val)) return res.status(400).json({ error: `${key} query param must be a number` });
+      opts[key] = val;
+    }
+  }
+
+  const result = computeTrueSkillFromMatches(matches, withIdentity, identityMap, opts);
+  res.json(result);
 });
 
 app.get('/api/meta', (req, res) => {

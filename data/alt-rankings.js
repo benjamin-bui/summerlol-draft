@@ -109,16 +109,7 @@ function computeROIPlayers(rows, curve) {
 }
 
 // ==================== Overall z-score ====================
-// Originally tier-based (picks grouped into tiers of size = captain
-// count, z-scored within each tier). Dropped the tiering: in a standard
-// snake draft, every tier draws from the exact same underlying
-// distribution of outcomes (each captain picks exactly once per round,
-// and Rank is the captain/team's outcome — identical across all of that
-// captain's picks regardless of which tier they landed in). Verified
-// directly against the real data: every tier's pooled rank multiset was
-// literally identical, season by season. So tier-scoping added
-// computation without adding any actual differentiation — a single
-// pooled z-score is simpler and mathematically equivalent.
+
 
 /**
  * One overall average Rank and sample std dev (n-1) across every
