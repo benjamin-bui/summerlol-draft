@@ -6,11 +6,9 @@
  */
 
 const path = require('path');
-console.log(__dirname)
 const Database = require('better-sqlite3');
-console.log(__dirname)
 const { runFullSync } = require(path.join(__dirname, '..', 'lib', 'riot-sync.js'));
-const DB_PATH = path.join(__dirname, '..', '..', 'app.db');
+const DB_PATH = path.join(__dirname, '..', '..', 'data', 'app.db');
 
 (async () => {
   if (!process.env.RIOT_API_KEY) {

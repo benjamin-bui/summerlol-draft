@@ -90,31 +90,33 @@ function resolveIdentities(rows, identityMap) {
 // three fields as null — it still counts toward n, just not toward
 // mean/sd/adjusted average or the percentile averages.
 function attachDerivedFields(rows) {
-  const perYear = {};
+  const perGroup = {};
   for (const row of rows) {
     if (!Number.isFinite(row.year)) continue;
-    if (!perYear[row.year]) perYear[row.year] = { pickCount: 0, captains: new Set() };
-    perYear[row.year].pickCount += 1;
-    if (row.captain) perYear[row.year].captains.add(row.captain);
+    const groupKey = `${row.year}::${row.tournament || 'Summer'}`;
+    if (!perGroup[groupKey]) perGroup[groupKey] = { pickCount: 0, captains: new Set() };
+    perGroup[groupKey].pickCount += 1;
+    if (row.captain) perGroup[groupKey].captains.add(row.captain);
   }
 
   return rows.map((row) => {
-    const yearInfo = perYear[row.year];
+    const groupKey = `${row.year}::${row.tournament || 'Summer'}`;
+    const groupInfo = perGroup[groupKey];
     let pickRound = null;
     let pickPercentile = null;
     let rankPercentile = null;
     let value = null;
 
     if (
-      yearInfo &&
-      yearInfo.pickCount > 1 &&
-      yearInfo.captains.size > 1 &&
+      groupInfo &&
+      groupInfo.pickCount > 1 &&
+      groupInfo.captains.size > 1 &&
       Number.isFinite(row.pickOrder) &&
       Number.isFinite(row.rank)
     ) {
-      pickRound = Math.floor((row.pickOrder - 1) / yearInfo.captains.size) + 1;
-      pickPercentile = (row.pickOrder - 1) / (yearInfo.pickCount - 1);
-      rankPercentile = (row.rank - 1) / (yearInfo.captains.size - 1);
+      pickRound = Math.floor((row.pickOrder - 1) / groupInfo.captains.size) + 1;
+      pickPercentile = (row.pickOrder - 1) / (groupInfo.pickCount - 1);
+      rankPercentile = (row.rank - 1) / (groupInfo.captains.size - 1);
       value = pickPercentile - rankPercentile;
     }
 
@@ -388,6 +390,10 @@ const MATCH_COLUMN_DISPLAY_NAMES = {
   csv_row_index: 'CSV Row Index' // internal-ish, but included for completeness if ever un-hidden
 };
 
+app.get('/api/raw-matches', (req, res) => {
+  const { columns, rows } = getRawMatchRows();
+  res.json({ columns, rows });
+});
 
 app.get('/api/raw-matches.csv', (req, res) => {
   const { columns, rows } = getRawMatchRows();
@@ -403,18 +409,6 @@ app.get('/api/raw-matches.csv', (req, res) => {
   res.send(csv);
 });
 
-app.get('/api/raw-matches.csv', (req, res) => {
-  const { columns, rows } = getRawMatchRows();
-  const lines = [columns.map(csvEscape).join(',')];
-  for (const row of rows) {
-    lines.push(columns.map((c) => csvEscape(row[c])).join(','));
-  }
-  const csv = lines.join('\n');
-
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename="match-data.csv"');
-  res.send(csv);
-});
 // CSV-escapes a single field: wraps in quotes if it contains a comma,
 // quote, or newline, doubling any internal quotes.
 function csvEscape(value) {
