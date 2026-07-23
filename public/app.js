@@ -54,7 +54,7 @@ function renderFunFactsHtml(ff) {
   const facts = [];
   if (ff.biggestUpset) {
     const u = ff.biggestUpset;
-    facts.push(`<strong>Biggest upset:</strong> ${escapeHtml(u.winnerName)} (avg ${u.winnerAvgBefore}) over ${escapeHtml(u.loserName)} (avg ${u.loserAvgBefore}) in ${u.tournament} ${u.year} — only a ${Math.round(u.predictedWinProbForWinner * 100)}% predicted chance. ${u.mvpName ? `${escapeHtml(u.mvpName)} swung ${u.mvpRatingChange > 0 ? '+' : ''}${u.mvpRatingChange} TrueSkill.` : ''}`);
+    facts.push(`<strong>Biggest upset:</strong> ${escapeHtml(u.winnerName)} (avg ${u.winnerAvgBefore}) over ${escapeHtml(u.loserName)} (avg ${u.loserAvgBefore}) in ${u.tournament} ${u.year} - only a ${Math.round(u.predictedWinProbForWinner * 100)}% predicted chance. ${u.mvpName ? `${escapeHtml(u.mvpName)} swung ${u.mvpRatingChange > 0 ? '+' : ''}${u.mvpRatingChange} TrueSkill.` : ''}`);
   }
   if (ff.longestStreak) {
     facts.push(`<strong>Longest win streak:</strong> ${escapeHtml(ff.longestStreak.displayName)}, ${ff.longestStreak.streak} games`);
@@ -145,7 +145,7 @@ const historyRows = history.map((entry, idx) => {
   const rosterId = `roster-detail-${idx}`;
 
   const rosterList = (team) => (team?.roster || [])
-    .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${Math.round(m.conservativeRating)} (${Math.round(m.mu)})</span></li>`)
+    .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating)} (${Math.round(m.mu)})</span></li>`)
     .join('');
 
   return `<tr>
@@ -158,6 +158,7 @@ const historyRows = history.map((entry, idx) => {
     <td>${Math.round((entry.predictedWinProb ?? 0) * 100)}%</td>
     <td>${entry.ownTeam?.avgConservativeRating ?? '–'}</td>
     <td>${entry.opponentTeam?.avgConservativeRating ?? '–'}</td>
+    <td>${renderTrueSkillValue(entry.conservativeRating)}</td>
     <td>${entry.conservativeRating ?? '–'}</td>
     <td>${entry.mu ?? '–'}</td>
     <td>${entry.sigma ?? '–'}</td>
@@ -191,7 +192,7 @@ const historyRows = history.map((entry, idx) => {
 }
 
 // Returns an inline SVG (as a string, to fit the innerHTML-based render
-// above) plotting mu over each game in order.
+// above) plotting TrueSkill over each game in order.
 
 function buildChartHtml(history) {
   if (!history.length) {
@@ -212,13 +213,40 @@ function buildChartHtml(history) {
     tournament: h.tournament
   }));
 
+  const xScale = (x) => padL + ((x - 1) / Math.max(1, xMax - 1)) * plotW;
+  const yScale = (y) => padT + plotH - ((y - (yMin - yPad)) / ((yMax + yPad) - (yMin - yPad))) * plotH;
+
   const xMax = points.length;
   const yMin = Math.min(...points.map((p) => p.trueskill));
   const yMax = Math.max(...points.map((p) => p.trueskill));
   const yPad = (yMax - yMin) * 0.05 || 1;
 
-  const xScale = (x) => padL + ((x - 1) / Math.max(1, xMax - 1)) * plotW;
-  const yScale = (y) => padT + plotH - ((y - (yMin - yPad)) / ((yMax + yPad) - (yMin - yPad))) * plotH;
+  // Define size and spacing for the badges
+  const badgeSize = 16;
+  const badgeOffset = 6; // How many pixels above the dot the badge should float
+
+  const badges = points.map((p) => {
+    // Re-use your existing logic to determine the tier
+    const tier = getRankTier(p.trueskill);
+    const tierName = tier && tier.name ? tier.name.toLowerCase() : 'unranked';
+    const iconPath = `/icons/${tierName}.webp`;
+
+    // Calculate center of the dot
+    const cx = xScale(p.x);
+    const cy = yScale(p.trueskill);
+
+    // SVG <image> x/y coordinates map to the top-left corner of the image
+    const imgX = cx - (badgeSize / 2);
+    const imgY = cy - badgeSize - badgeOffset;
+
+    return `
+      <image href="${iconPath}" x="${imgX}" y="${imgY}" width="${badgeSize}" height="${badgeSize}">
+        <title>${tier ? tier.name : 'Unranked'} Rank</title>
+      </image>
+    `;
+  }).join('');
+
+
 
   const trueskillPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p.x)} ${yScale(p.trueskill)}`).join(' ');
 
@@ -228,7 +256,6 @@ function buildChartHtml(history) {
     <title>${escapeHtml(`${p.year} ${p.tournament}${p.matchStage ? ' (' + p.matchStage + ')' : ''} vs ${p.opponent}: ${p.outcome} (TrueSkill = ${p.trueskill}, μ=${p.mu}, σ=${p.sigma})`)}</title>
     </circle>
   `).join('');
-
   const ticks = 4;
   const gridlines = Array.from({ length: ticks + 1 }, (_, i) => {
     const val = (yMin - yPad) + ((yMax + yPad) - (yMin - yPad)) * (i / ticks);
@@ -244,6 +271,7 @@ function buildChartHtml(history) {
       ${gridlines}
       <path d="${trueskillPath}" fill="none" stroke="#2b6cb0" stroke-width="2" />
       ${dots}
+      ${badges} <!-- ADDED HERE -->
       <text x="${padL}" y="${height - 6}" font-size="10" fill="#888">Game 1</text>
       <text x="${width - padR}" y="${height - 6}" text-anchor="end" font-size="10" fill="#888">Game ${xMax}</text>
     </svg>
@@ -313,6 +341,7 @@ document.addEventListener('keydown', (event) => {
     closePlayerProfile();
   }
 });
+
 
 // ==================== Column configuration ====================
 
@@ -389,6 +418,15 @@ function rowPassesFilter(row, col, filter) {
     return filter.values.includes(String(value ?? ''));
   }
 
+  if (filter.type === 'regex') {
+    if (!filter.pattern) return true;
+    try {
+      const re = new RegExp(filter.pattern, 'i');
+      return re.test(String(value ?? ''));
+    } catch {
+      return true; // invalid regex already blocked at input time; fail open just in case
+    }
+  }
   // Numeric filters: a row with no value can't satisfy any comparison
   if (value === null || value === undefined || Number.isNaN(value)) return false;
 
@@ -409,7 +447,7 @@ function applyColumnFilters(rows, columns, filterState) {
 
 // Builds the inner HTML for a column's filter popover, based on its type.
 function filterPopoverInnerHTML(col, rows, filterState) {
-  if (col.type === 'string') {
+  if (col.type === 'string' && col.filterType === 'checkbox') {
     const values = [...new Set(rows
       .map((row) => row[col.key])
       .filter((value) => value !== null && value !== undefined && String(value).trim() !== ''))]
@@ -443,6 +481,17 @@ function filterPopoverInnerHTML(col, rows, filterState) {
     return `
       <label>Select values</label>
       <div class="filter-checkbox-list">${optionsHtml}</div>
+      <div class="filter-popover-actions">
+        <button type="button" class="filter-clear-btn">Clear</button>
+      </div>`;
+  }
+  if (col.type === 'string') {
+    // Free-text/regex filter -- default for open-ended string columns
+    // like Player, Captain, Team 1, Team 2, Result.
+    const existing = filterState[col.key]?.pattern || '';
+    return `
+      <label>Filter (regex, case-insensitive)</label>
+      <input type="text" class="filter-regex-input" placeholder="e.g. voidliss" value="${escapeHtml(existing)}" />
       <div class="filter-popover-actions">
         <button type="button" class="filter-clear-btn">Clear</button>
       </div>`;
@@ -502,7 +551,7 @@ function wireFilterPopover(th, col, popover, filterState, onChange, closeAllPopo
     icon.classList.toggle('active', isActive);
   }
 
-  if (col.type === 'string') {
+   if (col.type === 'string' && col.filterType === 'checkbox') {
     const checkboxes = [...popover.querySelectorAll('.filter-checkbox-option')];
     const clearBtn = popover.querySelector('.filter-clear-btn');
 
@@ -527,7 +576,41 @@ function wireFilterPopover(th, col, popover, filterState, onChange, closeAllPopo
       setActive(false);
       onChange();
     });
+  } else if (col.type === 'string') {
+    const input = popover.querySelector('.filter-regex-input');
+    const clearBtn = popover.querySelector('.filter-clear-btn');
+
+    function updateFromInput() {
+      const pattern = input.value.trim();
+      if (pattern === '') {
+        delete filterState[col.key];
+        setActive(false);
+        input.classList.remove('invalid');
+        onChange();
+        return;
+      }
+      try {
+        new RegExp(pattern, 'i'); // validate before storing -- bad regex shouldn't silently filter everything out
+        filterState[col.key] = { type: 'regex', pattern };
+        input.classList.remove('invalid');
+        setActive(true);
+      } catch {
+        input.classList.add('invalid');
+        // don't update filterState with an invalid pattern -- keep last-good filter active
+      }
+      onChange();
+    }
+
+    input.addEventListener('input', updateFromInput);
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      delete filterState[col.key];
+      setActive(false);
+      input.classList.remove('invalid');
+      onChange();
+    });
   } else {
+
     const opSelect = popover.querySelector('.filter-op-select');
     const singleWrap = popover.querySelector('.filter-value-single');
     const betweenWrap = popover.querySelector('.filter-value-between');
@@ -995,7 +1078,6 @@ function createTabTable({
       headerRowEl.appendChild(th);
     });
   }
-
   function renderBody() {
     const cols = visibleColumns();
     const filtered = applyColumnFilters(state.data, columns, state.filters);
@@ -1018,6 +1100,7 @@ function createTabTable({
             }
             const val = col.key === 'rank' ? i + 1 : row[col.key];
             const cls = col.className ? ` class="${col.className}"` : col.key === 'rank' ? ' class="rank"' : '';
+            if (col.render) return `<td${cls}>${col.render(val, row)}</td>`;
             return `<td${cls}>${escapeHtml(formatCell(val, col))}</td>`;
           })
           .join('');
@@ -1038,6 +1121,38 @@ function createTabTable({
 }
 
 
+// ====================Rank Tier====================
+// Determines categorical rank from numeric TrueSKill and displays corresponding icon
+let globalRankTiers = null;
+
+function getRankTier(rating) {
+  if (rating === null || rating === undefined || Number.isNaN(rating)) return null;
+  if (!globalRankTiers || globalRankTiers.length === 0) return null;
+
+  return globalRankTiers.find((tier, index, arr) => {
+    // Return true if the rating meets the cutoff, 
+    // OR if we are evaluating the very last tier in the array (acting as the floor).
+    return rating >= tier.ratingCutoff || index === arr.length - 1;
+  });
+}
+
+function renderRankBadge(rating) {
+  const tier = getRankTier(rating);
+  if (!tier) return '';
+  const tierName = tier && tier.name ? tier.name.toLowerCase() : 'unranked';
+  const iconPath = `/icons/${tierName}.webp`;
+  
+  return `<img src="${iconPath}" alt="${tier.name} rank badge" class="rank-badge" />`;
+
+}
+
+// Combines the badge with the formatted number -- used anywhere a raw
+// TrueSkill/conservativeRating value is displayed.
+function renderTrueSkillValue(rating) {
+  if (rating === null || rating === undefined) return '–';
+  return `<span class="trueskill-cell">${renderRankBadge(rating)}${Math.round(rating * 100) / 100}</span>`;
+}
+
 // ==================== trueskill tab ====================
 
 const TRUESKILL_COLUMNS= [
@@ -1051,13 +1166,25 @@ const TRUESKILL_COLUMNS= [
     const year = parseInt(match[2] || '0', 10);
     return seasonRank * 1_000_000 + year;
   } },
-  { key: 'conservativeRating', label: 'TrueSkill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
+  { key: 'conservativeRating', label: 'TrueSkill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg', render:renderTrueSkillValue },
   { key: 'mu', label: 'μ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
   { key: 'sigma', label: 'σ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 },
   { key: 'games', label: 'Games', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'tournaments', label: 'Tournaments', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'wins', label: 'Wins', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'losses', label: 'Losses', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'winrate', label: 'Win Rate %', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0,
+    sortValue: (row) => {
+          if (!row.games || row.games === 0) return 0;
+          return row.wins / row.games;
+    },
+    render: (val, row) => {
+      const games = row.games || 0;
+      const wins = row.wins || 0;
+      if (games === 0) return '0.0%';
+      return ((wins / games) * 100).toFixed(1) + '%';
+    }
+  },
 
 ];
 
@@ -1077,6 +1204,8 @@ async function loadtrueskillData(forceRefresh) {
   if (trueskillLoaded && !forceRefresh) return;
   const res = await fetch(`/api/trueskill`);
   const data = await res.json();
+  globalRankTiers = data.funFacts.percentileCutoffs;
+
   document.getElementById('trueskill-fun-facts').innerHTML = renderFunFactsHtml(data.funFacts);
   trueskillTable.setData(data.players);
   trueskillLoaded = true;
@@ -1091,7 +1220,7 @@ tabButtons.forEach((btn) => {
 
 // ==================== Draft Data tab ====================
 const DRAFT_DATA_COLUMNS = [
-  { key: 'Tournament', label: 'Tournament', sortable: true, hideable: true, filterable: true, type: 'string' },
+  { key: 'Tournament', label: 'Tournament', sortable: true, hideable: true, filterable: true, type: 'string', filterType: 'checkbox' },
   { key: 'Year', label: 'Year', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'Captain', label: 'Captain', sortable: true, hideable: true, filterable: true, type: 'string' },
   { key: 'Player', label: 'Player', sortable: true, hideable: false, filterable: true, type: 'string', playerLink: true, className: 'group-name' },
@@ -1143,7 +1272,7 @@ document.getElementById('downloadDraftCsvBtn').addEventListener('click', () => {
 
 const MATCH_DATA_COLUMNS = [
   { key: 'year', label: 'Year', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'tournament', label: 'Tournament', sortable: true, hideable: true, filterable: true, type: 'string' },
+  { key: 'tournament', label: 'Tournament', sortable: true, hideable: true, filterable: true, type: 'string', filterType: 'checkbox' },
   { key: 'team1', label: 'Team 1', sortable: true, hideable: true, filterable: true, type: 'string' },
   { key: 'team2', label: 'Team 2', sortable: true, hideable: true, filterable: true, type: 'string' },
   { key: 'result', label: 'Result', sortable: true, hideable: true, filterable: true, type: 'string' },

@@ -29,11 +29,13 @@ point the app at a different sheet/column layout.
 ## Data workflow
 
 ### First-time setup / re-loading a full CSV
+
 ```bash
 npm install
 node data/csv-to-sqlite.js data/lol-draft-long.csv --fresh
 npm start
 ```
+
 `--fresh` drops and recreates the table — use it when replacing the
 whole dataset (e.g. a new season's export from the `Long` sheet).
 Omit it and re-running **upserts** by `id` instead, so periodically
@@ -57,15 +59,18 @@ volume mount makes this work.
 
 **Watch mode (live, no restart)** — useful during active local editing,
 run alongside `npm start`:
+
 ```bash
 npm run watch-csv -- data/lol-draft-long.csv
 ```
+
 Ingests once immediately, then re-ingests on every save (upsert by
 `id`, not `--fresh` — so it won't remove rows you deleted from the CSV;
 run the ingest command once with `--fresh` afterward if you did remove
 rows and want that reflected).
 
 **Manual re-run**, for occasional edits:
+
 ```bash
 npm run ingest-csv -- data/lol-draft-long.csv
 ```
@@ -83,11 +88,13 @@ single-row behavior, per your call not to carry the bug forward.
 ### Making manual changes to the data
 
 **Quickest, for one-off fixes** — SQL directly:
+
 ```bash
 sqlite3 data/app.db
 sqlite> UPDATE "rows" SET "Rank" = '3.5' WHERE "id" = 7;
 sqlite> .quit
 ```
+
 Note the double quotes around identifiers with spaces or reserved
 words (`"Pick Value"`, `"rows"`) — required or the SQL parser errors.
 
@@ -168,9 +175,11 @@ files are currently owned by that UID, not your own host user. Switching
 to `--user "$(id -u):$(id -g)"` needs one one-time fix first, or the
 container (now running as your own UID) won't be able to write to files
 still owned by `1000`:
+
 ```bash
 sudo chown -R "$(id -u):$(id -g)" data/
 ```
+
 After that, every subsequent `docker run --user "$(id -u):$(id -g)" ...`
 keeps everything owned by you — no more back-and-forth.
 
@@ -294,6 +303,7 @@ per-CSV column discovery — that made the retrofit riskier than it was
 worth for two tabs that already worked), but it's a reasonable starting
 point for any future "table of players with some computed metric" tab —
 which covers most of what this app does. Usage is basically:
+
 ```js
 const myTable = createTabTable({
   columns: [...],                // same column-def shape as elsewhere
@@ -329,9 +339,11 @@ before this feature existed.
 2. Copy `.env.example` to `.env` and fill in `RIOT_API_KEY` (and
    `RIOT_REGION`/`OPGG_REGION` if NA doesn't apply to you).
 3. **Bootstrap the identity tables** from your current dataset:
+
    ```bash
    npm run bootstrap-identities
    ```
+
    This creates a player+alias row for every distinct name in the
    `Player` column. Any name already in `Name#Tag` format gets queued
    for lookup automatically (it even strips trailing junk like
@@ -339,15 +351,19 @@ before this feature existed.
    time you ingest a new season — only genuinely new names get queued,
    nothing already resolved is touched.
 4. **Fill in tags for names that don't have one yet**:
+
    ```bash
    npm run export-pending-tags        # writes data/pending-player-tags.csv
    # ...edit the CSV, fill in game_name/tag_line for whichever names you know...
    npm run import-pending-tags        # reads it back in
    ```
+
 5. **Run the sync**:
+
    ```bash
    RIOT_API_KEY=your-key npm run sync-riot
    ```
+
    This does two passes: resolves every pending lookup that now has a
    tag, then re-checks every already-resolved player to catch renames.
    Check progress any time with `GET /api/identity/status`.
@@ -366,6 +382,7 @@ RIOT_API_KEY=your-key npm run sync-riot                # 3. actually resolve it
 ```
 
 Or in one command:
+
 ```bash
 RIOT_API_KEY=your-key npm run refresh-all
 ```

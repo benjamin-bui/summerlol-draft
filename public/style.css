@@ -588,8 +588,7 @@ header {
   gap: 16px;
 }
 
-/* ---- Light-theme scrollbar, matching the Glance reference's gradient
-   thumb (pink -> purple) and track color ---- */
+/* ---- Light-theme scrollbar ---- */
 :root[data-theme="light"] ::-webkit-scrollbar {
   width: 6px;
 }
@@ -601,6 +600,20 @@ header {
   border-radius: 10px;
 }
 
+/* -----Rank Icon---- */
+.trueskill-cell {
+  display: inline-flex;
+  align-items: center; /* This handles the vertical centering */
+  gap: 4px; /* Adds a clean space between the icon and the number */
+}
+
+.rank-badge {
+  /* 1em equals the exact font size of the surrounding text. 
+     1.2em makes it just a tiny bit larger than the text for readability. */
+  height: 1.2em; 
+  width: auto; /* Ensures the image doesn't stretch or squash */
+  object-fit: contain;
+}
 
 .fun-facts-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 20px; }
 .fun-facts-toggle { width: 100%; text-align: left; background: none; border: none; color: var(--text); font-family: var(--sans); font-size: 0.9rem; font-weight: 500; padding: 14px 18px; cursor: pointer; }
