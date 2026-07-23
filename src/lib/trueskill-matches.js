@@ -97,9 +97,7 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
   const unresolved = new Map(); // `${year}::${captainRaw}` -> count
 
   // Chronological order matters (each game updates the running rating).
-  // We sort by year first, then by season with Summer before Winter,
-  // and finally preserve the original row order (earliest first) within
-  // the same year/season bucket.
+  // We sort by year first, then by season with Winter before Summer, and then matchOrder
   const ordered = [...matches].sort((a, b) => {
     if (a.year !== b.year) return a.year - b.year;
 
@@ -112,12 +110,15 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
     const seasonDiff = seasonRank(a.tournament) - seasonRank(b.tournament);
     if (seasonDiff !== 0) return seasonDiff;
 
-    // Top of file = later in time, bottom = earlier -- so a LARGER
-    // csv_row_index (further down the file) is chronologically OLDER and
-    // should be processed first. This is the reverse of a naive "row order =
-  // chronological order" assumption, which is what the bug above was.
-  return (b.rowIndex ?? 0) - (a.rowIndex ?? 0);
-});
+    // match_order is authoritative and always present. Ties (same
+    // match_order) represent genuinely simultaneous games -- since no
+    // player appears in two same-match_order games, the relative order
+    // WITHIN a tie can't affect any player's rating (nothing links them).
+    // csv_row_index is used only as a deterministic tiebreak so repeated
+    // runs produce identical output, not because it reflects real time.
+    if (a.matchOrder !== b.matchOrder) return a.matchOrder - b.matchOrder;
+    return (b.rowIndex ?? 0) - (a.rowIndex ?? 0);
+  });
 
   for (const m of ordered) {
     const team1Key = resolve(m.team1);
@@ -190,6 +191,7 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
           gameIndex: m.rowIndex ?? m.id ?? 0,
           year: m.year,
           tournament: m.tournament,
+          matchStage: m.matchStage || null,
           opponent: opponentDisplay,
           opponentName: opponentDisplay,
           outcome,
@@ -198,7 +200,7 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
           sigma: round3(updatedRatings[i].sigma),
           conservativeRating: postConservative,
           ratingChange: round3(postConservative - preConservative),
-          ownTeam: { roster: ownTeam.roster, avgConservativeRating: ownTeam.avg, avgMu: ownTeam.avgMu },
+          ownTeam: { name: ownTeam.name, roster: ownTeam.roster, avgConservativeRating: ownTeam.avg, avgMu: ownTeam.avgMu },
           opponentTeam: { roster: opponentTeam.roster, avgConservativeRating: opponentTeam.avg, avgMu: opponentTeam.avgMu }
         };
         history.get(key).push(entry);
@@ -206,13 +208,16 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
       });
     };
     const team1Changes = record(team1Members, updated1, team1Ratings, team2Key, outcome1, p1WinsPredicted,
-      { roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu }, { roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu });
+      { name: displayInfo(team1Key).displayName, roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu },
+      { name: displayInfo(team2Key).displayName, roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu });
     const team2Changes = record(team2Members, updated2, team2Ratings, team1Key, outcome2, p2WinsPredicted,
-      { roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu }, { roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu });
+      { name: displayInfo(team2Key).displayName, roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu },
+      { name: displayInfo(team1Key).displayName, roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu });
     const winner = outcome1 === 'win' ? 'team1' : outcome2 === 'win' ? 'team2' : 'draw';
     games.push({
       year: m.year,
       tournament: m.tournament,
+      matchStage: m.matchStage || null,
       team1: { key: team1Key, name: displayInfo(team1Key).displayName, roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu, changes: team1Changes },
       team2: { key: team2Key, name: displayInfo(team2Key).displayName, roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu, changes: team2Changes },
       winner,

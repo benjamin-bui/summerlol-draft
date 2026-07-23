@@ -263,9 +263,10 @@ app.get('/api/stats', (req, res) => {
 
 
 // TrueSkill: rates players as a sequence of team games, one per year,
-
 function getMatches() {
-  return db.prepare('SELECT year, tournament, team1, team2, result, csv_row_index AS rowIndex FROM matches').all();
+  return db.prepare(
+    'SELECT year, tournament, team1, team2, result, csv_row_index AS rowIndex, match_order AS matchOrder, match_stage AS matchStage FROM matches'
+  ).all();
 }
 
 
@@ -376,9 +377,30 @@ function getRawMatchRows() {
   return { columns, rows };
 }
 
-app.get('/api/raw-matches', (req, res) => {
+const MATCH_COLUMN_DISPLAY_NAMES = {
+  year: 'Year',
+  tournament: 'Tournament',
+  team1: 'Team 1',
+  team2: 'Team 2',
+  result: 'Result',
+  match_order: 'Match Order',
+  match_stage: 'Match Stage',
+  csv_row_index: 'CSV Row Index' // internal-ish, but included for completeness if ever un-hidden
+};
+
+
+app.get('/api/raw-matches.csv', (req, res) => {
   const { columns, rows } = getRawMatchRows();
-  res.json({ columns, rows });
+  const headerLabels = columns.map((c) => MATCH_COLUMN_DISPLAY_NAMES[c] || c);
+  const lines = [headerLabels.map(csvEscape).join(',')];
+  for (const row of rows) {
+    lines.push(columns.map((c) => csvEscape(row[c])).join(','));
+  }
+  const csv = lines.join('\n');
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="match-data.csv"');
+  res.send(csv);
 });
 
 app.get('/api/raw-matches.csv', (req, res) => {

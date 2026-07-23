@@ -151,7 +151,8 @@ const historyRows = history.map((entry, idx) => {
   return `<tr>
     <td><button class="roster-toggle" data-target="${rosterId}" aria-expanded="false">▶</button></td>
     <td>${escapeHtml(entry.year ?? '–')}</td>
-    <td>${escapeHtml(entry.tournament || '–')}</td>
+    <td>${escapeHtml(entry.tournament || '–')}${entry.matchStage ? ` <span class="match-stage">(${escapeHtml(entry.matchStage)})</span>` : ''}</td>
+    <td>${escapeHtml(entry.ownTeam?.name || '–')}</td>
     <td>${escapeHtml(entry.opponent || '–')}</td>
     <td class="${outcomeClass}">${escapeHtml(entry.outcome || '–')}</td>
     <td>${Math.round((entry.predictedWinProb ?? 0) * 100)}%</td>
@@ -162,14 +163,14 @@ const historyRows = history.map((entry, idx) => {
     <td>${entry.sigma ?? '–'}</td>
   </tr>
   <tr id="${rosterId}" class="roster-detail-row" hidden>
-    <td colspan="11">
+    <td colspan="12">
       <div class="roster-detail">
         <div>
-          <strong>Your team - </strong> avg TrueSkill (μ): ${entry.ownTeam?.avgConservativeRating ?? '–'} (${entry.ownTeam?.avgMu ?? '-'})
+          <strong>${escapeHtml(entry.ownTeam?.name || 'Your team')} - </strong> avg TrueSkill: ${entry.ownTeam?.avgConservativeRating ?? '–'} (${entry.ownTeam?.avgMu ?? '-'})
           <ul>${rosterList(entry.ownTeam)}</ul>
         </div>
         <div>
-          <strong>Opponent - </strong> avg TrueSkill (μ): ${entry.opponentTeam?.avgConservativeRating ?? '–'} (${entry.opponentTeam?.avgMu ?? '-'})
+          <strong>${escapeHtml(entry.opponentTeam?.name || 'Opponent')} - </strong> avg TrueSkill: ${entry.opponentTeam?.avgConservativeRating ?? '–'} (${entry.opponentTeam?.avgMu ?? '-'})
           <ul>${rosterList(entry.opponentTeam)}</ul>
         </div>
       </div>
@@ -184,7 +185,7 @@ const historyRows = history.map((entry, idx) => {
     ratingRows,
     buildChartHtml(history),
     historyRows
-      ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
+      ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Captain</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
       : '<p>No match history available.</p>'
   ].join('');
 }
@@ -221,10 +222,10 @@ function buildChartHtml(history) {
 
   const trueskillPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p.x)} ${yScale(p.trueskill)}`).join(' ');
 
-  const outcomeColor = { win: '#2e7d32', loss: '#c62828', draw: '#757575' };
+  const outcomeColor = { win: '#2e7d32', loss: '#c62828' };
   const dots = points.map((p) => `
     <circle cx="${xScale(p.x)}" cy="${yScale(p.trueskill)}" r="3.5" fill="${outcomeColor[p.outcome] || '#888'}">
-      <title>${escapeHtml(`${p.year} ${p.tournament} vs ${p.opponent}: ${p.outcome} (TrueSkill = ${p.trueskill}, μ=${p.mu}, σ=${p.sigma})`)}</title>
+    <title>${escapeHtml(`${p.year} ${p.tournament}${p.matchStage ? ' (' + p.matchStage + ')' : ''} vs ${p.opponent}: ${p.outcome} (TrueSkill = ${p.trueskill}, μ=${p.mu}, σ=${p.sigma})`)}</title>
     </circle>
   `).join('');
 
@@ -1146,6 +1147,8 @@ const MATCH_DATA_COLUMNS = [
   { key: 'team1', label: 'Team 1', sortable: true, hideable: true, filterable: true, type: 'string' },
   { key: 'team2', label: 'Team 2', sortable: true, hideable: true, filterable: true, type: 'string' },
   { key: 'result', label: 'Result', sortable: true, hideable: true, filterable: true, type: 'string' },
+  { key: 'match_order', label: 'Match Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'match_stage', label: 'Match Stage', sortable: true, hideable: true, filterable: true, type: 'string' },
   { key: 'csv_row_index', label: 'CSV Row', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, defaultHidden: true }
 ];
 
