@@ -292,6 +292,24 @@ app.get('/api/trueskill', (req, res) => {
   res.json(result);
 });
 
+// Comparing TrueSkill against draft data
+const { computeDraftIQ, computeTeamBalance } = require('./src/lib/draft-analysis');
+
+app.get('/api/draft-analysis', (req, res) => {
+  const identityMap = loadIdentityMap(db);
+  const allRows = resolveIdentities(getAllRows(), identityMap);
+  const matches = getMatches();
+
+  const trueskillResult = computeTrueSkillFromMatches(matches, allRows, identityMap, {});
+  const { mu, sigma, conservativeK } = trueskillResult.params;
+  const defaultConservativeRating = Math.round((mu - conservativeK * sigma) * 1000) / 1000
+
+  const { picks, captainDraftIQ } = computeDraftIQ(allRows, trueskillResult.tournamentEntryRatings, defaultConservativeRating);
+  const teamBalance = computeTeamBalance(allRows, trueskillResult.tournamentEntryRatings, trueskillResult.games, identityMap, defaultConservativeRating);
+
+  res.json({ captainDraftIQ, picks, teamBalance });
+});
+
 app.get('/api/player/:key', (req, res) => {
   const identityMap = loadIdentityMap(db);
   const allRows = resolveIdentities(getAllRows(), identityMap);
@@ -392,7 +410,23 @@ const MATCH_COLUMN_DISPLAY_NAMES = {
 
 app.get('/api/raw-matches', (req, res) => {
   const { columns, rows } = getRawMatchRows();
-  res.json({ columns, rows });
+
+  const identityMap = loadIdentityMap(db);
+  const allRows = resolveIdentities(getAllRows(), identityMap);
+  const matches = getMatches();
+  const trueskillResult = computeTrueSkillFromMatches(matches, allRows, identityMap, {});
+  const gameByRowIndex = new Map(trueskillResult.games.map((g) => [g.csvRowIndex, g]));
+
+  const enriched = rows.map((row) => {
+    const game = gameByRowIndex.get(row.csv_row_index);
+    return {
+      ...row,
+      _team1Roster: game?.team1 ?? null,
+      _team2Roster: game?.team2 ?? null
+    };
+  });
+
+  res.json({ columns, rows: enriched });
 });
 
 app.get('/api/raw-matches.csv', (req, res) => {

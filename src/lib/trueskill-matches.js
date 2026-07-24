@@ -87,6 +87,7 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
   };
 
   const roster = buildRosterMap(draftRows, identityMap);
+  const tournamentEntryRating = new Map();
   const ratings = new Map();  // identityKey -> Rating
   const history = new Map();  // identityKey -> [{year, tournament, opponent, result, mu, sigma, conservativeRating, conservativeK}]
   const games = [];
@@ -183,6 +184,14 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
       return members.map((key, i) => {
         const pre = preRatings[i];
         const preConservative = round3(pre.mu - conservativeK * pre.sigma);
+        const entryKey = `${key}::${m.year}::${m.tournament}`;
+        if (!tournamentEntryRating.has(entryKey)) {
+          tournamentEntryRating.set(entryKey, {
+            mu: round3(pre.mu),
+            sigma: round3(pre.sigma),
+            conservativeRating: round3(pre.mu - conservativeK * pre.sigma)
+          });
+        }
         ratings.set(key, updatedRatings[i]);
         if (!history.has(key)) history.set(key, []);
         const opponentDisplay = displayInfo(opponentKey).displayName || opponentKey;
@@ -213,11 +222,15 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
     const team2Changes = record(team2Members, updated2, team2Ratings, team1Key, outcome2, p2WinsPredicted,
       { name: displayInfo(team2Key).displayName, roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu },
       { name: displayInfo(team1Key).displayName, roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu });
+
     const winner = outcome1 === 'win' ? 'team1' : outcome2 === 'win' ? 'team2' : 'draw';
+
+
     games.push({
       year: m.year,
       tournament: m.tournament,
       matchStage: m.matchStage || null,
+      csvRowIndex: m.rowIndex,
       team1: { key: team1Key, name: displayInfo(team1Key).displayName, roster: team1Roster, avg: team1Avg, avgMu: team1AvgMu, changes: team1Changes },
       team2: { key: team2Key, name: displayInfo(team2Key).displayName, roster: team2Roster, avg: team2Avg, avgMu: team2AvgMu, changes: team2Changes },
       winner,
@@ -256,12 +269,18 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
     })
     .sort((a, b) => b.gamesAsSoloTeam - a.gamesAsSoloTeam);
 
+  const tournamentEntryRatings = [...tournamentEntryRating.entries()].map(([key, val]) => {
+    const [identityKey, year, tournament] = key.split('::');
+    return { identityKey, year: parseInt(year, 10), tournament, ...val };
+  });
+
   return {
     params: { mu, sigma, beta, tau, drawProbability, conservativeK },
     gamesProcessed: ordered.length,
     players,
     unresolvedTeams,
-    games // one row per match -- source data for fun facts
+    games,
+    tournamentEntryRatings
   };
 }
 

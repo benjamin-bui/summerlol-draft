@@ -24,6 +24,8 @@
     <nav class="tabs">
       <button class="tab-btn active" data-tab="trueskill">TrueSkill</button>
       <button class="tab-btn" data-tab="rankings">Comparing Pick Order and Results</button>
+      <button class="tab-btn" data-tab="draftiq">Draft vs. TrueSkill</button>
+      <button class="tab-btn" data-tab="teambalance">Team Balance</button>
       <button class="tab-btn" data-tab="draftdata">Draft Data</button>
       <button class="tab-btn" data-tab="matchdata">Matchup Data</button>
     </nav>
@@ -89,6 +91,51 @@
           </tbody>
         </table>
       </section>
+    </section>
+
+    <!-- ================= Draft IQ TAB ================= -->
+    <section class="tab-panel" id="tab-draftiq">
+      <section class="control-panel">
+        <h3>Draft IQ</h3>
+        <p><strong>Value:</strong> For every draft pick ever made, we rank all players in that year's/tournament's draft class by their TrueSkill entering that tournament. Value = (entering-skill rank) − (actual pick order). Positive means a player went later than their skill justified - a steal. Negative means they went earlier - a reach.</p>
+        <p><strong>Draft IQ:</strong> A captain's average pick value across every draft they've participated in. Consistently positive means a captain reliably finds undervalued players; consistently negative means they tend to reach.</p>
+        <p>Note: this compares against a fixed, final skill ranking of the whole draft class - it does not simulate who was actually still available on the board at each individual pick. A pick isn't credited or penalized for the best remaining option having already been taken by someone else.</p>
+        <p>Excluded data: Data from the first tournament is excluded because all players started at the same TrueSkill level. New players joining later tournaments are not excluded and are assessed at the default TrueSkill value.</p>
+      </section>
+      <div class="fun-facts-box" id="draftScatterBox">
+        <button class="collapsible-toggle" aria-expanded="false">▶ Draft IQ vs Win Rate</button>
+        <div class="collapsible-body" hidden>
+          <div class="draft-scatter-groupby">
+            <label for="draftScatterGroupBySelect">Color by:</label>
+            <select id="draftScatterGroupBySelect">
+              <option value="none">Ungrouped</option>
+              <option value="captain">Captain</option>
+              <option value="year">Year</option>
+              <option value="yearTournament">Year : Tournament</option>
+            </select>
+          </div>
+          <div id="draftScatterContainer"></div>
+          <div id="draftScatterLegend" class="draft-scatter-legend"></div>
+        </div>
+      </div>
+      <div class="table-controls">
+        <button id="draftIQColumnsBtn" class="columns-btn">Columns ▾</button>
+        <div id="draftIQColumnsPanel" class="columns-panel hidden"></div>
+      </div>
+      <div class="table-section">
+        <table><thead><tr id="draftIQHeaderRow"></tr></thead><tbody id="draftIQBody"></tbody></table>
+      </div>
+    </section>
+
+    <!-- ================= Team Balance TAB ================= -->
+    <section class="tab-panel" id="tab-teambalance">
+      <div class="table-controls">
+        <button id="teamBalanceColumnsBtn" class="columns-btn">Columns ▾</button>
+        <div id="teamBalanceColumnsPanel" class="columns-panel hidden"></div>
+      </div>
+      <div class="table-section">
+        <table><thead><tr id="teamBalanceHeaderRow"></tr></thead><tbody id="teamBalanceBody"></tbody></table>
+      </div>
     </section>
 
     <!-- ================= DRAFT DATA TAB ================= -->

@@ -661,3 +661,27 @@ header {
 .roster-detail li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; color: var(--text); }
 .roster-rating { color: var(--muted); font-variant-numeric: tabular-nums; }
 .match-stage { color: var(--muted); font-size: 0.85em; }
+
+/* ---- Draft Scatter Plot---- */
+.collapsible-toggle { width: 100%; text-align: left; background: none; border: none; color: var(--text); font-family: var(--sans); font-size: 0.9rem; font-weight: 500; padding: 14px 18px; cursor: pointer; }
+.collapsible-toggle:hover { color: var(--accent); }
+.collapsible-body { padding: 0 18px 16px; }
+#draftScatterContainer { position: relative; }
+.draft-scatter-controls { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.scatter-reset-btn { background: var(--panel); border: 1px solid var(--border); color: var(--text); font-family: var(--sans); font-size: 0.78rem; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+.scatter-reset-btn:hover { border-color: var(--accent-dim); }
+.draft-scatter-hint { font-size: 0.78rem; color: var(--muted); }
+.draft-scatter-tooltip { position: absolute; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 0.8rem; color: var(--text); pointer-events: none; z-index: 10; box-shadow: 0 4px 12px var(--shadow); }
+.draft-scatter-groupby { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.85rem; color: var(--muted); }
+.draft-scatter-groupby select { background: var(--bg); border: 1px solid var(--border); color: var(--text); font-family: var(--sans); font-size: 0.85rem; padding: 6px 10px; border-radius: 6px; }
+
+.draft-scatter-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.legend-item {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  padding: 4px 10px; font-size: 0.78rem; color: var(--text);
+  cursor: pointer; font-family: var(--sans);
+}
+.legend-item:hover { border-color: var(--accent-dim); }
+.legend-item.dimmed { opacity: 0.4; }
+.legend-item i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }

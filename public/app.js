@@ -44,6 +44,8 @@ themeToggleBtn.addEventListener('click', () => {
   localStorage.setItem(THEME_STORAGE_KEY, next);
 });
 
+function round3(x) { return Math.round(x * 1000) / 1000; }
+
 // TrueSkill Fun Facts
 function renderFunFactsHtml(ff) {
   if (!ff) return '';
@@ -145,7 +147,7 @@ const historyRows = history.map((entry, idx) => {
   const rosterId = `roster-detail-${idx}`;
 
   const rosterList = (team) => (team?.roster || [])
-    .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating)} (${Math.round(m.mu)})</span></li>`)
+    .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating, m.mu)}</span></li>`)
     .join('');
 
   return `<tr>
@@ -158,9 +160,7 @@ const historyRows = history.map((entry, idx) => {
     <td>${Math.round((entry.predictedWinProb ?? 0) * 100)}%</td>
     <td>${entry.ownTeam?.avgConservativeRating ?? '–'}</td>
     <td>${entry.opponentTeam?.avgConservativeRating ?? '–'}</td>
-    <td>${renderTrueSkillValue(entry.conservativeRating)}</td>
-    <td>${entry.conservativeRating ?? '–'}</td>
-    <td>${entry.mu ?? '–'}</td>
+    <td>${renderTrueSkillValue(entry.conservativeRating, entry.mu)}</td>
     <td>${entry.sigma ?? '–'}</td>
   </tr>
   <tr id="${rosterId}" class="roster-detail-row" hidden>
@@ -267,7 +267,7 @@ function buildChartHtml(history) {
   }).join('');
 
   return `
-    <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" class="profile-chart-svg">
+    <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" class="draft-scatter-svg">
       ${gridlines}
       <path d="${trueskillPath}" fill="none" stroke="#2b6cb0" stroke-width="2" />
       ${dots}
@@ -1007,7 +1007,8 @@ function createTabTable({
   ownerKey,
   defaultSortColumn,
   defaultSortDirection = 'desc',
-  emptyMessage = 'No rows match the active filters'
+  emptyMessage = 'No rows match the active filters',
+  expandable
 }) {
   const state = {
     data: [],
@@ -1060,6 +1061,11 @@ function createTabTable({
   function rebuildHeader() {
     removePopoversOwnedBy(ownerKey);
     headerRowEl.innerHTML = '';
+    if (expandable) {
+      const toggleTh = document.createElement('th');
+      toggleTh.classList.add('not-sortable');
+      headerRowEl.appendChild(toggleTh);
+    }
     visibleColumns().forEach((col) => {
       const th = buildHeaderCell(col, state.sortColumn, state.sortDirection, state.filters, () => {
         renderBody();
@@ -1078,13 +1084,15 @@ function createTabTable({
       headerRowEl.appendChild(th);
     });
   }
+
   function renderBody() {
     const cols = visibleColumns();
+    const colspan = cols.length + (expandable ? 1 : 0);
     const filtered = applyColumnFilters(state.data, columns, state.filters);
     const sorted = sortRows(filtered, columns, state.sortColumn, state.sortDirection);
 
     if (sorted.length === 0) {
-      bodyEl.innerHTML = `<tr><td colspan="${cols.length}" class="empty">${escapeHtml(emptyMessage)}</td></tr>`;
+      bodyEl.innerHTML = `<tr><td colspan="${colspan}" class="empty">${escapeHtml(emptyMessage)}</td></tr>`;
       return;
     }
 
@@ -1104,7 +1112,17 @@ function createTabTable({
             return `<td${cls}>${escapeHtml(formatCell(val, col))}</td>`;
           })
           .join('');
-        return `<tr>${cells}</tr>`;
+
+        if (!expandable) return `<tr>${cells}</tr>`;
+
+        const detailId = `${ownerKey}-detail-${i}`;
+        return `<tr>
+          <td><button class="roster-toggle" data-target="${detailId}" aria-expanded="false">▶</button></td>
+          ${cells}
+        </tr>
+        <tr id="${detailId}" class="roster-detail-row" hidden>
+          <td colspan="${colspan}">${expandable.getDetailHtml(row)}</td>
+        </tr>`;
       })
       .join('');
   }
@@ -1148,9 +1166,10 @@ function renderRankBadge(rating) {
 
 // Combines the badge with the formatted number -- used anywhere a raw
 // TrueSkill/conservativeRating value is displayed.
-function renderTrueSkillValue(rating) {
+function renderTrueSkillValue(rating, mu) {
   if (rating === null || rating === undefined) return '–';
-  return `<span class="trueskill-cell">${renderRankBadge(rating)}${Math.round(rating * 100) / 100}</span>`;
+  if (mu === null || mu === undefined || isNaN(mu)) return `<span class="trueskill-cell">${renderRankBadge(rating)}${Math.round(rating * 100) / 100}</span>`;
+  return `<span class="trueskill-cell">${renderRankBadge(rating)}${Math.round(rating * 100) / 100} (${Math.round(mu * 100) / 100})</span>`;
 }
 
 // ==================== trueskill tab ====================
@@ -1211,12 +1230,558 @@ async function loadtrueskillData(forceRefresh) {
   trueskillLoaded = true;
 }
 
-tabButtons.forEach((btn) => {
-  if (btn.dataset.tab === 'trueskill') {
-    btn.addEventListener('click', () => loadtrueskillData(false));
-  }
+// ==================== Draft IQ tab ====================
+
+const DRAFT_IQ_COLUMNS = [
+  { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
+  { key: 'captain', label: 'Captain', sortable: true, hideable: false, filterable: true, type: 'string', className: 'group-name',
+    render: (val, row) => row.captainDisplay },
+  { key: 'avgDraftValue', label: 'Draft IQ (avg value)', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
+  { key: 'picksEvaluated', label: 'Picks Evaluated', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'bestPickLabel', label: 'Best Pick', sortable: true, hideable: true, filterable: false, type: 'string',
+    sortValue: (row) => row.bestPick?.value ?? -Infinity },
+  { key: 'worstPickLabel', label: 'Worst Pick', sortable: true, hideable: true, filterable: false, type: 'string',
+    sortValue: (row) => row.worstPick?.value ?? -Infinity }
+];
+
+const draftIQTable = createTabTable({
+  columns: DRAFT_IQ_COLUMNS,
+  headerRowEl: document.getElementById('draftIQHeaderRow'),
+  bodyEl: document.getElementById('draftIQBody'),
+  columnsBtnEl: document.getElementById('draftIQColumnsBtn'),
+  columnsPanelEl: document.getElementById('draftIQColumnsPanel'),
+  ownerKey: 'draftiq',
+  defaultSortColumn: 'avgDraftValue',
+  emptyMessage: 'No draft data available'
 });
 
+function openCaptainDraftHistory(captainName) {
+  if (!latestDraftAnalysis) return;
+  const picks = latestDraftAnalysis.picks.filter((p) => p.captain === captainName);
+  const byTournament = new Map(); // `${year}::${tournament}` -> picks[]
+  for (const p of picks) {
+    const key = `${p.year}::${p.tournament}`;
+    if (!byTournament.has(key)) byTournament.set(key, []);
+    byTournament.get(key).push(p);
+  }
+
+  const sections = [...byTournament.entries()]
+    .sort((a, b) => {
+      const [ay, at] = a[0].split('::');
+      const [by, bt] = b[0].split('::');
+      if (ay !== by) return by - ay; // most recent year first
+      return at.localeCompare(bt);
+    })
+    .map(([key, tournamentPicks]) => {
+      const [year, tournament] = key.split('::');
+      const avgValue = round1(tournamentPicks.reduce((s, p) => s + p.value, 0) / tournamentPicks.length);
+      const teamBalance = latestDraftAnalysis.teamBalance.find(
+        (t) => t.captain === captainName && t.tournament === tournament && Number(t.year) === Number(year)
+      );
+      const wins = teamBalance?.wins ?? '–';
+      const losses = teamBalance?.losses ?? '–';
+
+      const rows = [...tournamentPicks].sort((a, b) => a.pickOrder - b.pickOrder).map((p) => `
+        <tr>
+          <td>#${p.pickOrder}</td>
+          <td>${escapeHtml(p.displayName)}</td>
+          <td>#${p.entryRank}</td>
+          <td class="${p.value > 0 ? 'outcome-win' : p.value < 0 ? 'outcome-loss' : ''}">${p.value > 0 ? '+' : ''}${p.value}</td>
+        </tr>`).join('');
+      return `
+        <h4>${escapeHtml(tournament)} ${escapeHtml(year)} <span class="stat-formula">(avg value ${avgValue > 0 ? '+' : ''}${avgValue})</span></h4>
+        <h4>${wins}W ${losses}L</h4>
+        <table class="profile-history-table">
+          <thead><tr><th>Pick #</th><th>Player</th><th>Entering Rank</th><th>Value</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    });
+
+  const modal = ensureCaptainDraftModal();
+  modal.querySelector('.captain-draft-title').textContent = `${captainName} — Draft History`;
+  modal.querySelector('.captain-draft-body').innerHTML = sections.join('') || '<p>No draft history found.</p>';
+  modal.classList.add('open');
+}
+
+function round1(x) { return Math.round(x * 10) / 10; }
+
+function ensureCaptainDraftModal() {
+  let modal = document.getElementById('captainDraftModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'captainDraftModal';
+  modal.className = 'player-profile-modal'; // reuse existing modal chrome/CSS
+  modal.innerHTML = `
+    <div class="player-profile-backdrop" data-close="true"></div>
+    <div class="player-profile-panel">
+      <button class="player-profile-close" data-close="true">&times;</button>
+      <h2 class="captain-draft-title"></h2>
+      <div class="captain-draft-body"></div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => {
+    if (e.target.dataset.close === 'true') modal.classList.remove('open');
+  });
+  return modal;
+}
+
+// Scatter plot 
+function buildDraftScatterData(draftAnalysis) {
+  const picksByTeam = new Map(); // `${year}::${tournament}::${captain}` -> picks[]
+  for (const p of draftAnalysis.picks) {
+    const key = `${p.year}::${p.tournament}::${p.captain}`;
+    if (!picksByTeam.has(key)) picksByTeam.set(key, []);
+    picksByTeam.get(key).push(p);
+  }
+
+  return draftAnalysis.teamBalance
+    .map((team) => {
+      const key = `${team.year}::${team.tournament}::${team.captain}`;
+      const teamPicks = picksByTeam.get(key);
+      if (!teamPicks || teamPicks.length === 0 || team.games === 0) return null; // nothing to plot without both a draft value and a game record
+
+      const avgDraftValue = round3(teamPicks.reduce((s, p) => s + p.value, 0) / teamPicks.length);
+      return {
+        captain: team.captain,
+        year: team.year,
+        tournament: team.tournament,
+        avgDraftValue,
+        picksEvaluated: teamPicks.length,
+        wins: team.wins,
+        losses: team.losses,
+        draws: team.draws,
+        games: team.games,
+        winRate: team.winRate
+      };
+    })
+    .filter(Boolean);
+}
+
+
+// Assigns each distinct group key an evenly-spaced hue around the color
+// wheel. Works for arbitrary group counts (a handful of years, or dozens
+// of captains) without needing a hand-picked palette -- colors get closer
+// together as N grows, which is an honest tradeoff rather than reusing
+// colors and creating false-equivalence between unrelated groups.
+function colorForIndex(i, n) {
+  const hue = Math.round((i * 360) / Math.max(n, 1)) % 360;
+  return `hsl(${hue}deg 45% 60%)`;
+}
+
+function getGroupKey(p, groupBy) {
+  if (groupBy === 'captain') return p.captain;
+  if (groupBy === 'year') return String(p.year);
+  if (groupBy === 'yearTournament') return `${p.year} : ${p.tournament}`;
+  return null; // ungrouped -- every point shares one bucket, one color
+}
+
+function seasonRank(tournament) {
+  const t = String(tournament || '').toLowerCase();
+  if (t === 'winter') return 0;
+  if (t === 'summer') return 1;
+  return 2;
+}
+
+// Builds an ordered list of distinct group keys, sorted in a way that
+// reads sensibly in the legend (alphabetical for captains, chronological
+// for years/tournaments) rather than however Set iteration happens to
+// land.
+function buildGroupOrder(data, groupBy) {
+  if (groupBy === 'none') return [null];
+  const keys = [...new Set(data.map((p) => getGroupKey(p, groupBy)))];
+  if (groupBy === 'captain') return keys.sort((a, b) => a.localeCompare(b));
+  if (groupBy === 'year') return keys.sort((a, b) => Number(b) - Number(a)); // most recent first
+  if (groupBy === 'yearTournament') {
+    return keys.sort((a, b) => {
+      const [ay, at] = a.split(' : ');
+      const [by, bt] = b.split(' : ');
+      if (ay !== by) return Number(by) - Number(ay);
+      return seasonRank(at) - seasonRank(bt);
+    });
+  }
+  return keys;
+}
+
+let draftScatterBuilt = false;
+
+function initDraftScatterToggle() {
+  const box = document.getElementById('draftScatterBox');
+  if (!box) return;
+  const toggle = box.querySelector('.collapsible-toggle');
+  const body = box.querySelector('.collapsible-body');
+
+  toggle.addEventListener('click', () => {
+    const isOpen = !body.hidden;
+    body.hidden = isOpen;
+    toggle.setAttribute('aria-expanded', String(!isOpen));
+    toggle.textContent = (isOpen ? '▶' : '▼') + ' Draft IQ vs Win Rate';
+
+    if (!isOpen && !draftScatterBuilt && latestDraftAnalysis) {
+      renderDraftScatter(document.getElementById('draftScatterContainer'), buildDraftScatterData(latestDraftAnalysis));
+      draftScatterBuilt = true;
+    }
+  });
+}
+
+function renderDraftScatter(container, data) {
+  const width = 700, height = 420, padL = 55, padR = 20, padT = 20, padB = 45;
+  const plotW = width - padL - padR, plotH = height - padT - padB;
+
+
+  function computeRegressionLine(pts) {
+    const n = pts.length;
+    if (n < 2) return null;
+    const meanX = pts.reduce((s, p) => s + p.avgDraftValue, 0) / n;
+    const meanY = pts.reduce((s, p) => s + p.winRate, 0) / n;
+    const num = pts.reduce((s, p) => s + (p.avgDraftValue - meanX) * (p.winRate - meanY), 0);
+    const den = pts.reduce((s, p) => s + (p.avgDraftValue - meanX) ** 2, 0);
+    if (den === 0) return null;
+    const slope = num / den;
+    const intercept = meanY - slope * meanX;
+    return { slope, intercept };
+  }
+
+  const fullDomain = computeDomain(data);
+  let domain = { ...fullDomain };
+
+  function computeDomain(pts) {
+    const xs = pts.map((p) => p.avgDraftValue);
+    const ys = pts.map((p) => p.winRate);
+    const xPad = (Math.max(...xs) - Math.min(...xs)) * 0.1 || 1;
+    const yPad = (Math.max(...ys) - Math.min(...ys)) * 0.1 || 0.05;
+    return {
+      xMin: Math.min(...xs) - xPad, xMax: Math.max(...xs) + xPad,
+      yMin: Math.max(0, Math.min(...ys) - yPad), yMax: Math.min(1, Math.max(...ys) + yPad)
+    };
+  }
+
+  let selectedKey = null;      // isolates a single point (year::tournament::captain)
+  let selectedGroupKey = null; // isolates a whole group -- mutually exclusive with selectedKey
+  let groupBy = 'none';
+
+  const groupBySelect = document.getElementById('draftScatterGroupBySelect');
+  const legendEl = document.getElementById('draftScatterLegend');
+
+  function colorFor(p) {
+    if (groupBy === 'none') return 'var(--accent)';
+    const order = buildGroupOrder(data, groupBy);
+    const key = getGroupKey(p, groupBy);
+    const idx = order.indexOf(key);
+    return colorForIndex(idx, order.length);
+  }
+  function computeJitteredPositions(points) {
+    const groups = new Map();
+    for (const p of points) {
+      const posKey = `${p.avgDraftValue}:${p.winRate}`;
+      if (!groups.has(posKey)) groups.set(posKey, []);
+      groups.get(posKey).push(p);
+    }
+
+    const jitterOf = new Map();
+    for (const group of groups.values()) {
+      if (group.length === 1) {
+        jitterOf.set(group[0], { dxPx: 0, dyPx: 0 }); // fixed: was {dx, dy}
+        continue;
+      }
+      const jitterRadiusPx = 7;
+      group.forEach((p, i) => {
+        const angle = (i / group.length) * 2 * Math.PI;
+        jitterOf.set(p, { dxPx: Math.cos(angle) * jitterRadiusPx, dyPx: Math.sin(angle) * jitterRadiusPx });
+      });
+    }
+    return jitterOf;
+  }
+  function renderLegend() {
+    if (groupBy === 'none') {
+      legendEl.innerHTML = '';
+      legendEl.hidden = true;
+      return;
+    }
+    legendEl.hidden = false;
+    const order = buildGroupOrder(data, groupBy);
+    legendEl.innerHTML = order.map((key, i) => {
+      const isDimmed = selectedGroupKey && selectedGroupKey !== key;
+      return `<button type="button" class="legend-item${isDimmed ? ' dimmed' : ''}" data-group-key="${escapeHtml(key)}">
+        <i style="background:${colorForIndex(i, order.length)}"></i>${escapeHtml(key)}
+      </button>`;
+    }).join('');
+
+    legendEl.querySelectorAll('.legend-item').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        selectedKey = null; // legend selection and point selection are mutually exclusive
+        selectedGroupKey = selectedGroupKey === btn.dataset.groupKey ? null : btn.dataset.groupKey;
+        render();
+      });
+    });
+  }
+
+  function render() {
+    const xScale = (x) => padL + ((x - domain.xMin) / (domain.xMax - domain.xMin)) * plotW;
+    const yScale = (y) => padT + plotH - ((y - domain.yMin) / (domain.yMax - domain.yMin)) * plotH;
+
+    const xTicks = 5, yTicks = 5;
+    const gridlines = [
+      ...Array.from({ length: xTicks + 1 }, (_, i) => {
+        const val = domain.xMin + (domain.xMax - domain.xMin) * (i / xTicks);
+        const x = xScale(val);
+        return `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="var(--border)" stroke-width="1" />
+                <text x="${x}" y="${height - padB + 16}" text-anchor="middle" font-size="10" fill="var(--muted)">${val.toFixed(1)}</text>`;
+      }),
+      ...Array.from({ length: yTicks + 1 }, (_, i) => {
+        const val = domain.yMin + (domain.yMax - domain.yMin) * (i / yTicks);
+        const y = yScale(val);
+        return `<line x1="${padL}" y1="${y}" x2="${padL + plotW}" y2="${y}" stroke="var(--border)" stroke-width="1" />
+                <text x="${padL - 8}" y="${y + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${Math.round(val * 100)}%</text>`;
+      })
+    ].join('');
+
+    const visiblePoints = data.filter((p) =>
+      p.avgDraftValue >= domain.xMin && p.avgDraftValue <= domain.xMax &&
+      p.winRate >= domain.yMin && p.winRate <= domain.yMax
+    );
+
+    const jitterOf = computeJitteredPositions(visiblePoints);
+
+    const sortedForPaint = [...visiblePoints].sort((a, b) => {
+      const aKey = `${a.year}::${a.tournament}::${a.captain}`;
+      const bKey = `${b.year}::${b.tournament}::${b.captain}`;
+      const aHighlighted = aKey === selectedKey || (selectedGroupKey && getGroupKey(a, groupBy) === selectedGroupKey);
+      const bHighlighted = bKey === selectedKey || (selectedGroupKey && getGroupKey(b, groupBy) === selectedGroupKey);
+      return (aHighlighted ? 1 : 0) - (bHighlighted ? 1 : 0);
+    });
+
+    const dots = sortedForPaint.map((p) => {
+      const pointKey = `${p.year}::${p.tournament}::${p.captain}`;
+      const groupKey = getGroupKey(p, groupBy);
+      const isSelectedPoint = pointKey === selectedKey;
+      const isDimmedByPoint = selectedKey && !isSelectedPoint;
+      const isDimmedByGroup = selectedGroupKey && groupKey !== selectedGroupKey;
+      const isDimmed = isDimmedByPoint || isDimmedByGroup;
+      const r = 4 + Math.sqrt(p.games);
+      const fillColor = colorFor(p);
+      const jitter = jitterOf.get(p) || { dxPx: 0, dyPx: 0 };
+      const cx = xScale(p.avgDraftValue) + jitter.dxPx;
+      const cy = yScale(p.winRate) + jitter.dyPx;
+      return `<circle
+        class="scatter-point"
+        data-captain="${escapeHtml(p.captain)}"
+        data-key="${escapeHtml(pointKey)}"
+        cx="${cx}" cy="${cy}" r="${isSelectedPoint ? r + 2 : r}"
+        fill="${fillColor}" fill-opacity="${isDimmed ? 0.08 : 0.5}"
+        stroke="${isSelectedPoint ? 'var(--text)' : fillColor}"
+        stroke-opacity="${isDimmed ? 0.15 : isSelectedPoint ? 1 : 0.75}"
+        stroke-width="${isSelectedPoint ? 2.5 : 1.25}"
+        style="cursor:pointer" />`;
+    }).join('');
+
+    const regression = computeRegressionLine(data);
+    const regressionLine = regression ? (() => {
+      const y1 = regression.slope * domain.xMin + regression.intercept;
+      const y2 = regression.slope * domain.xMax + regression.intercept;
+      return `<line x1="${xScale(domain.xMin)}" y1="${yScale(y1)}" x2="${xScale(domain.xMax)}" y2="${yScale(y2)}"
+        stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3" clip-path="url(#draftScatterPlotClip)" />`;
+    })() : '';
+
+    container.innerHTML = `
+      <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" class="draft-scatter-svg">
+          <defs>
+            <clipPath id="draftScatterPlotClip">
+              <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" />
+            </clipPath>
+          </defs>
+          ${gridlines}
+          <line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" stroke="var(--muted)" stroke-width="1" />
+          <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" stroke="var(--muted)" stroke-width="1" />
+          <text x="${padL + plotW / 2}" y="${height - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">Draft IQ (avg pick value)</text>
+          <text x="14" y="${padT + plotH / 2}" text-anchor="middle" font-size="11" fill="var(--muted)" transform="rotate(-90 14 ${padT + plotH / 2})">Win Rate</text>
+          ${regressionLine}
+          <rect class="scatter-zoom-overlay" x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" style="cursor:crosshair" />
+          ${dots}
+          <rect class="scatter-drag-rect" x="0" y="0" width="0" height="0" fill="var(--accent)" fill-opacity="0.15" stroke="var(--accent)" stroke-width="1" style="display:none;pointer-events:none" />
+        </svg>
+        <div class="draft-scatter-controls">
+          <button class="scatter-reset-btn" type="button">Reset zoom / selection</button>
+          <span class="draft-scatter-hint">Drag to zoom · click a point or legend entry to highlight</span>
+        </div>
+        <div class="draft-scatter-tooltip" hidden></div>
+      `;
+
+      renderLegend();
+      wireInteractions();
+    }
+
+  function wireInteractions() {
+    const svg = container.querySelector('.draft-scatter-svg');
+    const overlay = container.querySelector('.scatter-zoom-overlay');
+    const dragRect = container.querySelector('.scatter-drag-rect');
+    const tooltip = container.querySelector('.draft-scatter-tooltip');
+    const resetBtn = container.querySelector('.scatter-reset-btn');
+
+    container.querySelectorAll('.scatter-point').forEach((circle) => {
+      circle.addEventListener('mouseenter', () => {
+        const key = circle.dataset.key;
+        const p = data.find((d) => `${d.year}::${d.tournament}::${d.captain}` === key);
+        if (!p) return;
+        tooltip.innerHTML = `<strong>${escapeHtml(p.captain)}</strong> <span style="color:var(--muted)">(${escapeHtml(p.tournament)} ${p.year})</span><br>
+          Draft value: ${p.avgDraftValue > 0 ? '+' : ''}${p.avgDraftValue} (${p.picksEvaluated} picks)<br>
+          Record: ${p.wins}W ${p.losses}L${p.draws ? ` ${p.draws}D` : ''} (${Math.round(p.winRate * 100)}%)`;
+        tooltip.hidden = false;
+        const rect = container.getBoundingClientRect();
+        tooltip.style.left = `${e.clientX - rect.left + 12}px`;
+        tooltip.style.top = `${e.clientY - rect.top + 12}px`;
+      });
+      circle.addEventListener('mousemove', (e) => {
+        const rect = container.getBoundingClientRect();
+        tooltip.style.left = `${e.clientX - rect.left + 12}px`;
+        tooltip.style.top = `${e.clientY - rect.top + 12}px`;
+      });
+      circle.addEventListener('mouseleave', () => { tooltip.hidden = true; });
+      circle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectedGroupKey = null; // point selection and group selection are mutually exclusive
+        selectedKey = selectedKey === circle.dataset.key ? null : circle.dataset.key;
+        render();
+      });
+    });
+
+    let dragStart = null;
+    const svgPoint = (evt) => {
+      const rect = svg.getBoundingClientRect();
+      // xMidYMid meet scales uniformly by whichever axis is more constrained,
+      // then centers the content on the other axis -- this replicates that
+      // math in reverse so mouse coordinates map back to viewBox coordinates
+      // correctly, without needing preserveAspectRatio="none"
+      const scale = Math.min(rect.width / width, rect.height / height);
+      const renderedWidth = width * scale;
+      const renderedHeight = height * scale;
+      const offsetX = (rect.width - renderedWidth) / 2;
+      const offsetY = (rect.height - renderedHeight) / 2;
+
+      return {
+        x: (evt.clientX - rect.left - offsetX) / scale,
+        y: (evt.clientY - rect.top - offsetY) / scale
+      };
+    };
+
+    overlay.addEventListener('mousedown', (e) => {
+      dragStart = svgPoint(e);
+      dragRect.style.display = 'block';
+    });
+    svg.addEventListener('mousemove', (e) => {
+      if (!dragStart) return;
+      const cur = svgPoint(e);
+      const x = Math.min(dragStart.x, cur.x), y = Math.min(dragStart.y, cur.y);
+      dragRect.setAttribute('x', x);
+      dragRect.setAttribute('y', y);
+      dragRect.setAttribute('width', Math.abs(cur.x - dragStart.x));
+      dragRect.setAttribute('height', Math.abs(cur.y - dragStart.y));
+    });
+    svg.addEventListener('mouseup', (e) => {
+      if (!dragStart) return;
+      const cur = svgPoint(e);
+      const x1 = Math.min(dragStart.x, cur.x), x2 = Math.max(dragStart.x, cur.x);
+      const y1 = Math.min(dragStart.y, cur.y), y2 = Math.max(dragStart.y, cur.y);
+      dragStart = null;
+      dragRect.style.display = 'none';
+      if (x2 - x1 < 8 || y2 - y1 < 8) return;
+
+      const invX = (px) => domain.xMin + ((px - padL) / plotW) * (domain.xMax - domain.xMin);
+      const invY = (py) => domain.yMin + ((padT + plotH - py) / plotH) * (domain.yMax - domain.yMin);
+      const newXMin = invX(x1), newXMax = invX(x2);
+      const newYMin = invY(y2), newYMax = invY(y1);
+      domain = { xMin: newXMin, xMax: newXMax, yMin: Math.max(0, newYMin), yMax: Math.min(1, newYMax) };
+      render();
+    });
+
+    resetBtn.addEventListener('click', () => {
+      domain = { ...fullDomain };
+      selectedKey = null;
+      selectedGroupKey = null;
+      render();
+    });
+  }
+
+  groupBySelect.value = 'none';
+  groupBySelect.addEventListener('change', () => {
+    groupBy = groupBySelect.value;
+    selectedKey = null;
+    selectedGroupKey = null;
+    render();
+  });
+
+  render();
+}
+
+// Formats a {displayName, pickOrder, entryRank, value} object into a
+// single readable string -- e.g. "Voidliss (pick #14, entering-rank #3,
+// value +11)". A positive value means they were rated better than where
+// they went (a steal); negative means they went earlier than their
+// entering rating justified (a reach).
+function formatDraftPick(pick) {
+  if (!pick) return '–';
+  const sign = pick.value > 0 ? '+' : '';
+  return `${pick.displayName} (pick #${pick.pickOrder}, entering-rank #${pick.entryRank}, value ${sign}${pick.value})`;
+}
+
+
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('.captain-draft-link');
+  if (!link) return;
+  e.preventDefault();
+  openCaptainDraftHistory(link.dataset.captain);
+});
+
+initDraftScatterToggle();
+
+// ==================== Team Balance tab ====================
+
+const TEAM_BALANCE_COLUMNS = [
+  { key: 'year', label: 'Year', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'tournament', label: 'Tournament', sortable: true, hideable: true, filterable: true, type: 'string', filterType: 'checkbox' },
+  { key: 'captain', label: 'Captain', sortable: true, hideable: false, filterable: true, type: 'string', className: 'group-name' },
+  { key: 'rosterSize', label: 'Roster Size', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'avgEntryRating', label: 'Avg Entry TrueSkill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
+  { key: 'games', label: 'Games', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'wins', label: 'Wins', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'losses', label: 'Losses', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'draws', label: 'Draws', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, defaultHidden: true },
+  { key: 'winRate', label: 'Win Rate', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, percentage: true }
+];
+
+const teamBalanceTable = createTabTable({
+  columns: TEAM_BALANCE_COLUMNS,
+  headerRowEl: document.getElementById('teamBalanceHeaderRow'),
+  bodyEl: document.getElementById('teamBalanceBody'),
+  columnsBtnEl: document.getElementById('teamBalanceColumnsBtn'),
+  columnsPanelEl: document.getElementById('teamBalanceColumnsPanel'),
+  ownerKey: 'teambalance',
+  defaultSortColumn: 'avgEntryRating',
+  emptyMessage: 'No team balance data available'
+});
+
+
+// ==================== Shared fetch: both tabs come from one endpoint ====================
+
+let draftAnalysisLoaded = false;
+let latestDraftAnalysis = null; // cache so the modal can filter without refetching
+
+async function loadDraftAnalysis() {
+  if (draftAnalysisLoaded) return;
+  const res = await fetch('/api/draft-analysis');
+  const data = await res.json();
+  latestDraftAnalysis = data;
+
+  const draftIQRows = data.captainDraftIQ.map((row) => ({
+    ...row,
+    captainDisplay: `<a href="#" class="captain-draft-link" data-captain="${escapeHtml(row.captain)}">${escapeHtml(row.captain)}</a>`,
+    bestPickLabel: formatDraftPick(row.bestPick),
+    worstPickLabel: formatDraftPick(row.worstPick)
+  }));
+  draftIQTable.setData(draftIQRows);
+  teamBalanceTable.setData(data.teamBalance);
+  draftAnalysisLoaded = true;
+
+}
 
 // ==================== Draft Data tab ====================
 const DRAFT_DATA_COLUMNS = [
@@ -1253,11 +1818,6 @@ async function loadDraftData() {
   draftDataLoaded = true;
 }
 
-tabButtons.forEach((btn) => {
-  if (btn.dataset.tab === 'draftdata') {
-    btn.addEventListener('click', () => loadDraftData(false));
-  }
-});
 
 document.getElementById('downloadDraftCsvBtn').addEventListener('click', () => {
   const a = document.createElement('a');
@@ -1269,6 +1829,18 @@ document.getElementById('downloadDraftCsvBtn').addEventListener('click', () => {
 });
 
 // ==================== Match Data tab ====================
+function renderMatchRosterDetail(row) {
+  const rosterList = (team) => (team?.roster || [])
+    .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue ? renderTrueSkillValue(m.conservativeRating, m.mu) : m.conservativeRating}</span></li>`)
+    .join('');
+  return `
+    <div class="roster-detail">
+      <div><strong>${escapeHtml(row._team1Roster?.name || row.team1)}</strong> - avg TrueSkill: ${renderTrueSkillValue(row._team1Roster?.avgConservativeRating, row._team1Roster?.avgMu)}
+        <ul>${rosterList(row._team1Roster)}</ul></div>
+      <div><strong>${escapeHtml(row._team2Roster?.name || row.team2)}</strong> - avg TrueSkill: ${renderTrueSkillValue(row._team2Roster?.avgConservativeRating, row._team2Roster?.avgMu)}
+        <ul>${rosterList(row._team2Roster)}</ul></div>
+    </div>`;
+}
 
 const MATCH_DATA_COLUMNS = [
   { key: 'year', label: 'Year', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
@@ -1289,8 +1861,10 @@ const matchDataTable = createTabTable({
   columnsPanelEl: document.getElementById('matchColumnsPanel'),
   ownerKey: 'matchdata',
   defaultSortColumn: 'year',
-  emptyMessage: 'No rows match the active filters'
+  emptyMessage: 'No rows match the active filters',
+  expandable: { getDetailHtml: renderMatchRosterDetail }
 });
+
 let matchDataLoaded = false;
 async function loadMatchData() {
   if (matchDataLoaded) return;
@@ -1301,11 +1875,6 @@ async function loadMatchData() {
   matchDataLoaded = true;
 }
 
-tabButtons.forEach((btn) => {
-  if (btn.dataset.tab === 'matchdata') {
-    btn.addEventListener('click', () => loadMatchData(false));
-  }
-});
 
 document.getElementById('downloadMatchCsvBtn').addEventListener('click', () => {
   const a = document.createElement('a');
@@ -1315,6 +1884,23 @@ document.getElementById('downloadMatchCsvBtn').addEventListener('click', () => {
   a.click();
   document.body.removeChild(a);
 });
+
+// ==================== Tab Buttons ====================
+tabButtons.forEach((btn) => {
+  if (btn.dataset.tab === 'trueskill') {
+    btn.addEventListener('click', () => loadtrueskillData(false));
+  }
+  if (btn.dataset.tab === 'matchdata') {
+    btn.addEventListener('click', () => loadMatchData(false));
+  }
+  if (btn.dataset.tab === 'draftdata') {
+    btn.addEventListener('click', () => loadDraftData(false));
+  }
+  if (btn.dataset.tab === 'draftiq' || btn.dataset.tab === 'teambalance') {
+    btn.addEventListener('click', () => loadDraftAnalysis());
+  }
+}
+);
 
 // ==================== URL query param state ====================
 
@@ -1326,6 +1912,7 @@ function readStateFromURL() {
   setActiveTab(tab);
   if (tab === 'draftdata') loadDraftData();
   if (tab === 'matchdata') loadMatchData();
+  if (tab === 'draftiq' || tab === 'teambalance') loadDraftAnalysis();
 }
 
 function writeStateToURL() {
@@ -1341,7 +1928,6 @@ function scheduleUrlUpdate() {
   clearTimeout(urlDebounceTimer);
   urlDebounceTimer = setTimeout(writeStateToURL, 150);
 }
-
 // ==================== Init ====================
 
 (async function init() {
