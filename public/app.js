@@ -186,7 +186,7 @@ const historyRows = history.map((entry, idx) => {
     ratingRows,
     buildChartHtml(history),
     historyRows
-      ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Captain</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
+      ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Captain</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill (μ)</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
       : '<p>No match history available.</p>'
   ].join('');
 }

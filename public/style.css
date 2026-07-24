@@ -610,7 +610,6 @@ header {
 .trueskill-cell {
   display: inline-flex;
   align-items: center; /* This handles the vertical centering */
-  gap: 4px; /* Adds a clean space between the icon and the number */
 }
 
 .rank-badge {
