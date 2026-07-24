@@ -1739,14 +1739,48 @@ const TEAM_BALANCE_COLUMNS = [
   { key: 'year', label: 'Year', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'tournament', label: 'Tournament', sortable: true, hideable: true, filterable: true, type: 'string', filterType: 'checkbox' },
   { key: 'captain', label: 'Captain', sortable: true, hideable: false, filterable: true, type: 'string', className: 'group-name' },
-  { key: 'rosterSize', label: 'Roster Size', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'avgEntryRating', label: 'Avg Entry TrueSkill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
-  { key: 'games', label: 'Games', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'finalStage', label: 'Final Stage', sortable: true, hideable: true, filterable: true, type: 'string', filterType: 'checkbox' },
   { key: 'wins', label: 'Wins', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'losses', label: 'Losses', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'draws', label: 'Draws', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, defaultHidden: true },
   { key: 'winRate', label: 'Win Rate', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, percentage: true }
 ];
+
+function renderTeamMatchList(row) {
+  const roster = row.roster || [];
+  const matches = row.matches || [];
+
+  const rosterHtml = roster.length
+    ? `<ul class="roster-detail-list">${roster
+        .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${m.conservativeRating}</span></li>`)
+        .join('')}</ul>`
+    : '<p>No roster on file.</p>';
+
+  const matchesHtml = matches.length
+    ? `<table class="profile-history-table">
+        <thead><tr><th>Opponent</th><th>Result</th><th>Stage</th><th>Pred. Win %</th></tr></thead>
+        <tbody>${matches.map((m) => {
+          const outcomeClass = m.outcome === 'win' ? 'outcome-win' : m.outcome === 'loss' ? 'outcome-loss' : 'outcome-draw';
+          return `<tr>
+            <td>${escapeHtml(m.opponentName)}</td>
+            <td class="${outcomeClass}">${escapeHtml(m.outcome)}</td>
+            <td>${m.matchStage ? escapeHtml(m.matchStage) : '–'}</td>
+            <td>${Math.round((m.predictedWinProb ?? 0) * 100)}%</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`
+    : '<p>No matches recorded.</p>';
+
+  return `
+    <div class="roster-detail">
+      <div><strong>Roster</strong>${rosterHtml}</div>
+    </div>
+    <div class="team-matches-section">
+      <strong>Matches</strong>
+      ${matchesHtml}
+    </div>`;
+}
 
 const teamBalanceTable = createTabTable({
   columns: TEAM_BALANCE_COLUMNS,
@@ -1756,7 +1790,8 @@ const teamBalanceTable = createTabTable({
   columnsPanelEl: document.getElementById('teamBalanceColumnsPanel'),
   ownerKey: 'teambalance',
   defaultSortColumn: 'avgEntryRating',
-  emptyMessage: 'No team balance data available'
+  emptyMessage: 'No team balance data available',
+  expandable: { getDetailHtml: renderTeamMatchList }
 });
 
 

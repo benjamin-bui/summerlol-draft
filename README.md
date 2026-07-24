@@ -1,4 +1,4 @@
-# LoL Draft Player Rankings
+# Summer LoL Draft
 
 Small Express app: adjust a risk-aversion slider, see per-player mean,
 std dev, and risk-adjusted average recalculated live across all

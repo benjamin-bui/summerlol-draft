@@ -302,12 +302,39 @@ app.get('/api/draft-analysis', (req, res) => {
 
   const trueskillResult = computeTrueSkillFromMatches(matches, allRows, identityMap, {});
   const { mu, sigma, conservativeK } = trueskillResult.params;
-  const defaultConservativeRating = Math.round((mu - conservativeK * sigma) * 1000) / 1000
+  const defaultConservativeRating = Math.round((mu - conservativeK * sigma) * 1000) / 1000;
 
   const { picks, captainDraftIQ } = computeDraftIQ(allRows, trueskillResult.tournamentEntryRatings, defaultConservativeRating);
   const teamBalance = computeTeamBalance(allRows, trueskillResult.tournamentEntryRatings, trueskillResult.games, identityMap, defaultConservativeRating);
 
-  res.json({ captainDraftIQ, picks, teamBalance });
+  // Attach each team-instance's own games directly, so the client can
+  // show a match list per row without needing a second endpoint or
+  // re-deriving identity resolution client-side.
+  const resolve = (name) => {
+    const identity = identityMap.get(name);
+    return identity ? identity.identityKey : name;
+  };
+  const teamBalanceWithGames = teamBalance.map((team) => {
+    const captainKey = resolve(team.captain);
+    const teamGames = trueskillResult.games
+      .filter((g) => g.year === team.year && g.tournament === team.tournament &&
+        (g.team1.key === captainKey || g.team2.key === captainKey))
+      .map((g) => {
+        const isTeam1 = g.team1.key === captainKey;
+        const own = isTeam1 ? g.team1 : g.team2;
+        const opp = isTeam1 ? g.team2 : g.team1;
+        const outcome = g.winner === 'draw' ? 'draw' : ((g.winner === 'team1') === isTeam1 ? 'win' : 'loss');
+        return {
+          opponentName: opp.name,
+          outcome,
+          matchStage: g.matchStage,
+          predictedWinProb: isTeam1 ? g.predictedWinProbTeam1 : Math.round((1 - g.predictedWinProbTeam1) * 1000) / 1000
+        };
+      });
+    return { ...team, matches: teamGames };
+  });
+
+  res.json({ captainDraftIQ, picks, teamBalance: teamBalanceWithGames });
 });
 
 app.get('/api/player/:key', (req, res) => {

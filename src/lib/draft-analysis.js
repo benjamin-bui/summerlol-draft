@@ -99,10 +99,6 @@ function computeTeamBalance(draftRows, tournamentEntryRatings, games, identityMa
   };
   const entryLookup = buildEntryRatingLookup(tournamentEntryRatings);
 
-  // Precompute which (year, tournament) groups have real signal, same
-  // check as computeDraftIQ -- a team's "average entry rating" is just as
-  // meaningless as an individual pick's entryRank when everyone started
-  // from the identical default.
   const groupsByTournament = new Map();
   for (const row of draftRows) {
     if (!Number.isFinite(row.year) || !row.captain) continue;
@@ -118,61 +114,71 @@ function computeTeamBalance(draftRows, tournamentEntryRatings, games, identityMa
       .map(([key]) => key)
   );
 
-  const rosterStrength = new Map(); // `${year}::${tournament}::${resolvedCaptainKey}` -> {sum, count, memberKeys, displayName}
-  const addMember = (year, tournament, captainKey, captainDisplayName, identityKey) => {
+  const rosterStrength = new Map(); // key -> {members: [{identityKey, displayName, conservativeRating}], displayName}
+  const addMember = (year, tournament, captainKey, captainDisplayName, identityKey, displayName) => {
     const entry = entryLookup.get(`${identityKey}::${year}::${tournament}`);
     if (!entry) return;
     const key = `${year}::${tournament}::${captainKey}`;
-    if (!rosterStrength.has(key)) rosterStrength.set(key, { sum: 0, count: 0, memberKeys: new Set(), displayName: captainDisplayName });
+    if (!rosterStrength.has(key)) rosterStrength.set(key, { members: [], seenKeys: new Set(), displayName: captainDisplayName });
     const s = rosterStrength.get(key);
-    if (s.memberKeys.has(identityKey)) return;
-    s.memberKeys.add(identityKey);
-    s.sum += entry.conservativeRating;
-    s.count += 1;
+    if (s.seenKeys.has(identityKey)) return;
+    s.seenKeys.add(identityKey);
+    s.members.push({ identityKey, displayName, conservativeRating: entry.conservativeRating });
   };
 
   for (const row of draftRows) {
     if (!Number.isFinite(row.year) || !row.captain) continue;
+    if (!tournamentsWithSignal.has(`${row.year}::${row.tournament}`)) continue;
     const captainKey = resolve(row.captain);
-    addMember(row.year, row.tournament, captainKey, row.captain, row.identityKey);
-    addMember(row.year, row.tournament, captainKey, row.captain, captainKey);
+    addMember(row.year, row.tournament, captainKey, row.captain, row.identityKey, row.displayName);
+    addMember(row.year, row.tournament, captainKey, row.captain, captainKey, row.captain); // captain force-included, same as buildRosterMap
   }
 
-  const performance = new Map(); // `${year}::${tournament}::${resolvedCaptainKey}` -> {wins, losses, draws, games}
-  for (const g of games) {
-    for (const [team, outcome] of [
-      [g.team1, g.winner === 'team1' ? 'win' : g.winner === 'draw' ? 'draw' : 'loss'],
-      [g.team2, g.winner === 'team2' ? 'win' : g.winner === 'draw' ? 'draw' : 'loss']
-    ]) {
-      const key = `${g.year}::${g.tournament}::${team.key}`; // team.key is already resolved -- now matches rosterStrength's key exactly
-      if (!performance.has(key)) performance.set(key, { wins: 0, losses: 0, draws: 0, games: 0 });
-      const p = performance.get(key);
-      p.games += 1;
-      if (outcome === 'win') p.wins += 1;
-      else if (outcome === 'loss') p.losses += 1;
-      else p.draws += 1;
+  const performance = new Map();
+    // `games` is already walked in strict chronological match_order (that's
+    // what the rating engine depends on), so the LAST time a team appears
+    // here for a given tournament is, by construction, their final/deepest
+    // recorded match that tournament -- no need to hardcode a ranking of
+    // stage names (Group Stage < Semis < Finals etc), which would be
+    // fragile against however this specific league happens to label things.
+    const lastStageByKey = new Map(); // `${year}::${tournament}::${teamKey}` -> matchStage (may be null)
+
+    for (const g of games) {
+      for (const [team, outcome] of [
+        [g.team1, g.winner === 'team1' ? 'win' : g.winner === 'draw' ? 'draw' : 'loss'],
+        [g.team2, g.winner === 'team2' ? 'win' : g.winner === 'draw' ? 'draw' : 'loss']
+      ]) {
+        const key = `${g.year}::${g.tournament}::${team.key}`;
+        if (!performance.has(key)) performance.set(key, { wins: 0, losses: 0, draws: 0, games: 0 });
+        const p = performance.get(key);
+        p.games += 1;
+        if (outcome === 'win') p.wins += 1;
+        else if (outcome === 'loss') p.losses += 1;
+        else p.draws += 1;
+
+        lastStageByKey.set(key, g.matchStage || null); // unconditional overwrite -- last one processed wins, by design
+      }
     }
-  }
 
-  const teams = [...rosterStrength.entries()].map(([key, strength]) => {
-    const [year, tournament, captainKey] = key.split('::');
-    const perf = performance.get(key);
-    const avgEntryRating = round3(strength.sum / strength.count);
-    const winRate = perf && perf.games > 0 ? round3(perf.wins / perf.games) : null;
-    return {
-      year: parseInt(year, 10),
-      tournament,
-      captain: strength.displayName, // human-readable, not the resolved key
-      rosterSize: strength.count,
-      avgEntryRating,
-      games: perf?.games ?? 0,
-      wins: perf?.wins ?? 0,
-      losses: perf?.losses ?? 0,
-      draws: perf?.draws ?? 0,
-      winRate
-    };
-  });
-
+    const teams = [...rosterStrength.entries()].map(([key, strength]) => {
+      const [year, tournament, captainKey] = key.split('::');
+      const perf = performance.get(key);
+      const avgEntryRating = round3(strength.members.reduce((s, m) => s + m.conservativeRating, 0) / strength.members.length);
+      const winRate = perf && perf.games > 0 ? round3(perf.wins / perf.games) : null;
+      return {
+        year: parseInt(year, 10),
+        tournament,
+        captain: strength.displayName,
+        roster: strength.members,
+        avgEntryRating,
+        finalStage: lastStageByKey.get(key) ?? null, // NEW -- replaces Games as the visible column
+        games: perf?.games ?? 0, // kept internally for winRate + the match-list dropdown
+        wins: perf?.wins ?? 0,
+        losses: perf?.losses ?? 0,
+        draws: perf?.draws ?? 0,
+        winRate
+      };
+    });
   teams.sort((a, b) => b.avgEntryRating - a.avgEntryRating);
   return teams;
 }

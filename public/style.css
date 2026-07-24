@@ -685,3 +685,43 @@ header {
 .legend-item:hover { border-color: var(--accent-dim); }
 .legend-item.dimmed { opacity: 0.4; }
 .legend-item i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+
+/* ---- Roster Detail Dropdown ---- */
+.roster-detail-list { list-style: none; margin: 4px 0 0; padding: 0; font-size: 13px; }
+.roster-detail-list li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.roster-detail-row td {
+  background: var(--bg); /* back to your original neutral background, not the strong accent tint */
+  border-left: 3px solid var(--accent-dim); /* this is now doing the main "distinct section" signaling */
+  padding: 14px 16px 14px 13px;
+}
+
+/* Section headers ("Roster", "Matches") need breathing room from
+   whatever the dropdown's own top border/padding is, and from the
+   table that follows -- currently sitting flush against both. */
+.roster-detail-row h4,
+.roster-detail-row strong:first-child {
+  display: block;
+  margin: 4px 0 10px;
+}
+
+/* Matches heading specifically needs top margin to separate it from the
+   roster list above it, since both are stacked in the same cell. */
+.roster-detail .team-matches-section,
+.roster-detail-row .team-matches-section {
+  margin-top: 18px;
+}
+
+/* The inner match/roster table was inheriting row-border styling from
+   .roster-detail-row's own tint, which is why every cell inside it also
+   picked up a heavy pink border in the screenshot -- scope borders back
+   to just the outer dropdown row, not every nested table cell. */
+.profile-history-table th,
+.profile-history-table td {
+  border-bottom: 1px solid var(--border);
+  border-left: none;
+}
+
+.profile-history-table thead th {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
