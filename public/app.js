@@ -1168,8 +1168,14 @@ function renderRankBadge(rating) {
 // TrueSkill/conservativeRating value is displayed.
 function renderTrueSkillValue(rating, mu) {
   if (rating === null || rating === undefined) return '–';
-  if (mu === null || mu === undefined || isNaN(mu)) return `<span class="trueskill-cell">${renderRankBadge(rating)}${Math.round(rating * 100) / 100}</span>`;
-  return `<span class="trueskill-cell">${renderRankBadge(rating)}${Math.round(rating * 100) / 100} (${Math.round(mu * 100) / 100})</span>`;
+
+  const formatRating = (n) =>
+    `<span class="rating-number">${Math.round(n)}</span>`;
+
+  if (mu === null || mu === undefined || isNaN(mu)) {
+    return `<span class="trueskill-cell">${renderRankBadge(rating)}${formatRating(rating)}</span>`;
+  }
+  return `<span class="trueskill-cell">${renderRankBadge(rating)}${formatRating(rating)} (${formatRating(mu)})</span>`;
 }
 
 // ==================== trueskill tab ====================
@@ -1753,7 +1759,7 @@ function renderTeamMatchList(row) {
 
   const rosterHtml = roster.length
     ? `<ul class="roster-detail-list">${roster
-        .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${m.conservativeRating}</span></li>`)
+        .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating)}</span></li>`)
         .join('')}</ul>`
     : '<p>No roster on file.</p>';
 

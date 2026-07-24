@@ -601,6 +601,12 @@ header {
 }
 
 /* -----Rank Icon---- */
+.rating-number {
+  display: inline-block;
+  min-width: 3.5ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .trueskill-cell {
   display: inline-flex;
   align-items: center; /* This handles the vertical centering */
