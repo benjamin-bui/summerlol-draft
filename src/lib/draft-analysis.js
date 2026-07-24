@@ -154,7 +154,6 @@ function computeTeamBalance(draftRows, tournamentEntryRatings, games, identityMa
         p.games += 1;
         if (outcome === 'win') p.wins += 1;
         else if (outcome === 'loss') p.losses += 1;
-        else p.draws += 1;
 
         lastStageByKey.set(key, g.matchStage || null); // unconditional overwrite -- last one processed wins, by design
       }

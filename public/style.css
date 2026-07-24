@@ -657,7 +657,6 @@ header {
 
 .outcome-win { color: var(--accent); font-weight: 600; }
 .outcome-loss { color: var(--danger); font-weight: 600; }
-.outcome-draw { color: var(--muted); }
 
 .roster-toggle { border: none; background: none; cursor: pointer; font-size: 12px; padding: 2px 6px; color: var(--muted); }
 .roster-detail-row td { background: var(--bg); padding: 10px 14px; }

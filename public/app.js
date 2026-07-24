@@ -49,8 +49,12 @@ function round3(x) { return Math.round(x * 1000) / 1000; }
 // TrueSkill Fun Facts
 function renderFunFactsHtml(ff) {
   if (!ff) return '';
-  const pctRows = ff.percentileCutoffs.map((p) =>
-    `<tr><td>${escapeHtml(p.name)}</td><td>${p.percentile}%</td><td>${p.ratingCutoff ?? '–'}</td></tr>`).join('');
+  const pctRows = ff.staticCutoffs
+    .map((p) => {
+      const cutoffDisplay = Number.isFinite(p.ratingCutoff) ? p.ratingCutoff : '–';
+      const badgeHtml = renderRankBadge(p.name);
+      return `<tr><td class="rank-cell">${badgeHtml} <span>${escapeHtml(p.name)}</span></td><td>${p.percentile}%</td><td>${cutoffDisplay}</td></tr>`;
+    }).join('');
 
 
   const facts = [];
@@ -75,7 +79,13 @@ function renderFunFactsHtml(ff) {
   }
   if (ff.mostActiveRivalry) {
     const r = ff.mostActiveRivalry;
-    facts.push(`<strong>Most active rivalry:</strong> ${escapeHtml(r.teamAName)} vs ${escapeHtml(r.teamBName)}, ${r.gamesPlayed} games played (${r.teamAWins}-${r.teamBWins}${r.draws ? `-${r.draws} draws` : ''})`);
+    facts.push(`<strong>Most active rivalry:</strong> ${escapeHtml(r.teamAName)} vs ${escapeHtml(r.teamBName)}, ${r.gamesPlayed} games played (${r.teamAWins}-${r.teamBWins})`);
+  }
+  if (ff.everMaster) {
+    const playerList = ff.everMaster
+      .map((p) => escapeHtml(p.group || p.displayName))
+      .join(', ');
+    facts.push( `<strong>Ever hit Master rank (${ff.everMaster.length}):</strong> ${playerList}`);
   }
 
   return `
@@ -279,7 +289,6 @@ function buildChartHtml(history) {
       <span><i style="background:#2b6cb0"></i> TrueSkill (skill estimate)</span>
       <span><i style="background:#2e7d32"></i> win</span>
       <span><i style="background:#c62828"></i> loss</span>
-      <span><i style="background:#757757"></i> draw</span>
     </div>
   `;
 }
@@ -1147,21 +1156,31 @@ function getRankTier(rating) {
   if (rating === null || rating === undefined || Number.isNaN(rating)) return null;
   if (!globalRankTiers || globalRankTiers.length === 0) return null;
 
-  return globalRankTiers.find((tier, index, arr) => {
-    // Return true if the rating meets the cutoff, 
-    // OR if we are evaluating the very last tier in the array (acting as the floor).
-    return rating >= tier.ratingCutoff || index === arr.length - 1;
-  });
+  const tier = globalRankTiers.find((t) => rating >= t.ratingCutoff);
+
+  return tier || { name: 'Iron', ratingCutoff: 0 };
 }
 
-function renderRankBadge(rating) {
-  const tier = getRankTier(rating);
-  if (!tier) return '';
-  const tierName = tier && tier.name ? tier.name.toLowerCase() : 'unranked';
-  const iconPath = `/icons/${tierName}.webp`;
-  
-  return `<img src="${iconPath}" alt="${tier.name} rank badge" class="rank-badge" />`;
+function renderRankBadge(input) {
+  let tierName = 'unranked';
+  let displayName = 'Unranked';
 
+  if (typeof input === 'string') {
+    // Passed a tier name directly (e.g. 'Iron', 'Master')
+    tierName = input.toLowerCase();
+    displayName = input;
+  } else if (typeof input === 'object' && input?.name) {
+    // Passed a tier object directly (e.g. { name: 'Iron' })
+    tierName = input.name.toLowerCase();
+    displayName = input.name;
+  } else if (typeof input === 'number' && !Number.isNaN(input)) {
+    // Passed a numeric rating (e.g. 1050)
+    const tier = getRankTier(input);
+    tierName = tier?.name ? tier.name.toLowerCase() : 'unranked';
+    displayName = tier?.name || 'Unranked';
+  }
+
+  return `<img src="/icons/${tierName}.webp" alt="${escapeHtml(displayName)} rank badge" class="rank-badge" />`;
 }
 
 // Combines the badge with the formatted number -- used anywhere a raw
@@ -1229,7 +1248,7 @@ async function loadtrueskillData(forceRefresh) {
   if (trueskillLoaded && !forceRefresh) return;
   const res = await fetch(`/api/trueskill`);
   const data = await res.json();
-  globalRankTiers = data.funFacts.percentileCutoffs;
+  globalRankTiers = data.funFacts.staticCutoffs;
 
   document.getElementById('trueskill-fun-facts').innerHTML = renderFunFactsHtml(data.funFacts);
   trueskillTable.setData(data.players);
@@ -1355,7 +1374,6 @@ function buildDraftScatterData(draftAnalysis) {
         picksEvaluated: teamPicks.length,
         wins: team.wins,
         losses: team.losses,
-        draws: team.draws,
         games: team.games,
         winRate: team.winRate
       };
@@ -1630,7 +1648,7 @@ function renderDraftScatter(container, data) {
         if (!p) return;
         tooltip.innerHTML = `<strong>${escapeHtml(p.captain)}</strong> <span style="color:var(--muted)">(${escapeHtml(p.tournament)} ${p.year})</span><br>
           Draft value: ${p.avgDraftValue > 0 ? '+' : ''}${p.avgDraftValue} (${p.picksEvaluated} picks)<br>
-          Record: ${p.wins}W ${p.losses}L${p.draws ? ` ${p.draws}D` : ''} (${Math.round(p.winRate * 100)}%)`;
+          Record: ${p.wins}W ${p.losses}L (${Math.round(p.winRate * 100)}%)`;
         tooltip.hidden = false;
         const rect = container.getBoundingClientRect();
         tooltip.style.left = `${e.clientX - rect.left + 12}px`;
@@ -1749,7 +1767,6 @@ const TEAM_BALANCE_COLUMNS = [
   { key: 'finalStage', label: 'Final Stage', sortable: true, hideable: true, filterable: true, type: 'string', filterType: 'checkbox' },
   { key: 'wins', label: 'Wins', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'losses', label: 'Losses', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'draws', label: 'Draws', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, defaultHidden: true },
   { key: 'winRate', label: 'Win Rate', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, percentage: true }
 ];
 

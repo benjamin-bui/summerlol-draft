@@ -1,6 +1,6 @@
 # Summer LoL Draft
 
-Express app for a fantasy League of Legends captain-draft league. Two
+Express app for a League of Legends captain-draft tournaments. Two
 CSV-sourced datasets — who was drafted onto which team, and individual
 head-to-head match results — feed six tabs: classic Pick Value
 **Rankings**, a **TrueSkill** rating system with full match history and

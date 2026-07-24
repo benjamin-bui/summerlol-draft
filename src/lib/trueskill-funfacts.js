@@ -1,24 +1,29 @@
 const { round3 } = require('./trueskill-matches');
 
 const LOL_RANK_CUTOFFS = [
-  { name: 'Master', percentile: 99.153 },
-  { name: 'Diamond', percentile: 95.531 },
-  { name: 'Emerald', percentile: 83.895 },
-  { name: 'Platinum', percentile: 66.230 },
-  { name: 'Gold', percentile: 42.280 },
-  { name: 'Silver', percentile: 20.373 },
-  { name: 'Bronze', percentile: 3.692 }
-];
+  { name: 'Master', ratingCutoff: 1200 },
+  { name: 'Diamond', ratingCutoff: 1065 },
+  { name: 'Emerald', ratingCutoff: 925 },
+  { name: 'Platinum', ratingCutoff: 800 },
+  { name: 'Gold', ratingCutoff: 675 },
+  { name: 'Silver', ratingCutoff: 540 },
+  { name: 'Bronze', ratingCutoff: 440 },
+  { name: 'Iron', ratingCutoff: -Infinity }
+];  
 
 function computeFunFacts(result, { rankCutoffs = LOL_RANK_CUTOFFS } = {}) {
   const { players, games } = result;
 
   // ---- Percentile cutoffs, labeled by LoL rank equivalent ----
   const sorted = [...players].map((p) => p.conservativeRating).sort((a, b) => a - b);
-  const percentileCutoffs = rankCutoffs.map(({ name, percentile }) => {
-    if (sorted.length === 0) return { name, percentile, ratingCutoff: null };
-    const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((percentile / 100) * sorted.length) - 1));
-    return { name, percentile: round3(percentile), ratingCutoff: sorted[idx] };
+  const staticCutoffs = rankCutoffs.map(({ name, ratingCutoff }) => {
+    if (sorted.length === 0) return { name, ratingCutoff, percentile: 0 };
+
+    // Count how many players fall below this static rating cutoff
+    const countBelow = sorted.filter((rating) => rating < ratingCutoff).length;
+    const percentile = (countBelow / sorted.length) * 100;
+
+    return { name, ratingCutoff, percentile: round3(percentile) };
   });
 
 
@@ -114,15 +119,21 @@ const biggestUpsetFact = biggestUpset ? formatUpset(biggestUpset) : null;
     ? players.reduce((best, p) => (p.games > best.games ? p : best))
     : null;
 
+  const cutoffMaster = rankCutoffs.find(c => c.name === 'Master')?.ratingCutoff;
+  const everMaster = players.filter((p) =>
+    p.history.some((h) => h.conservativeRating >= cutoffMaster)
+  )
+
   return {
-    percentileCutoffs,
+    staticCutoffs,
     biggestUpset: biggestUpsetFact,
     longestStreak,
     longestLossStreak,
     peakRating,
     troughRating,
     mostGamesPlayed: mostGames ? { displayName: mostGames.group, games: mostGames.games } : null,
-    mostActiveRivalry
+    mostActiveRivalry,
+    everMaster
   };
 }
 
