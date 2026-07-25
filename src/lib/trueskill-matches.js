@@ -88,6 +88,7 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
 
   const roster = buildRosterMap(draftRows, identityMap);
   const tournamentEntryRating = new Map();
+  const tournamentExitRating = new Map();
   const ratings = new Map();  // identityKey -> Rating
   const history = new Map();  // identityKey -> [{year, tournament, opponent, result, mu, sigma, conservativeRating, conservativeK}]
   const games = [];
@@ -184,18 +185,26 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
       return members.map((key, i) => {
         const pre = preRatings[i];
         const preConservative = round3(pre.mu - conservativeK * pre.sigma);
+        ratings.set(key, updatedRatings[i]);
+        if (!history.has(key)) history.set(key, []);
+
+        const opponentDisplay = displayInfo(opponentKey).displayName || opponentKey;
+        const postConservative = round3(updatedRatings[i].mu - conservativeK * updatedRatings[i].sigma);
+
         const entryKey = `${key}::${m.year}::${m.tournament}`;
         if (!tournamentEntryRating.has(entryKey)) {
           tournamentEntryRating.set(entryKey, {
             mu: round3(pre.mu),
             sigma: round3(pre.sigma),
-            conservativeRating: round3(pre.mu - conservativeK * pre.sigma)
+            conservativeRating: preConservative
           });
         }
-        ratings.set(key, updatedRatings[i]);
-        if (!history.has(key)) history.set(key, []);
-        const opponentDisplay = displayInfo(opponentKey).displayName || opponentKey;
-        const postConservative = round3(updatedRatings[i].mu - conservativeK * updatedRatings[i].sigma);
+        tournamentExitRating.set(entryKey, {
+          mu: round3(updatedRatings[i].mu),
+          sigma: round3(updatedRatings[i].sigma),
+          conservativeRating: postConservative
+        });
+
         const entry = {
           gameIndex: m.rowIndex ?? m.id ?? 0,
           year: m.year,
@@ -273,14 +282,18 @@ function computeTrueSkillFromMatches(matches, draftRows, identityMap, {
     const [identityKey, year, tournament] = key.split('::');
     return { identityKey, year: parseInt(year, 10), tournament, ...val };
   });
-
+  const tournamentExitRatings = [...tournamentExitRating.entries()].map(([key, val]) => {
+    const [identityKey, year, tournament] = key.split('::');
+    return { identityKey, year: parseInt(year, 10), tournament, ...val };
+  });
   return {
     params: { mu, sigma, beta, tau, drawProbability, conservativeK },
     gamesProcessed: ordered.length,
     players,
     unresolvedTeams,
     games,
-    tournamentEntryRatings
+    tournamentEntryRatings,
+    tournamentExitRatings,
   };
 }
 

@@ -18,15 +18,18 @@ function tournamentHasSignal(group, defaultConservativeRating) {
 // draftRows: identity-resolved rows from getAllRows()+resolveIdentities()
 //   (needs identityKey, captain, year, tournament, pickOrder)
 // tournamentEntryRatings: from computeTrueSkillFromMatches()'s return value
-function computeDraftIQ(draftRows, tournamentEntryRatings, defaultConservativeRating) {
+function computeDraftIQ(draftRows, tournamentEntryRatings, tournamentExitRatings, defaultConservativeRating) {
   const entryLookup = buildEntryRatingLookup(tournamentEntryRatings);
-  const byTournament = new Map();
+  const exitLookup = buildEntryRatingLookup(tournamentExitRatings); // same helper works on either snapshot shape
 
+  const byTournament = new Map();
   for (const row of draftRows) {
     if (!Number.isFinite(row.year) || !row.captain || !Number.isFinite(row.pickOrder)) continue;
-    const entryKey = `${row.identityKey}::${row.year}::${row.tournament}`;
-    const entry = entryLookup.get(entryKey);
+    const key = `${row.identityKey}::${row.year}::${row.tournament}`;
+    const entry = entryLookup.get(key);
     if (!entry) continue;
+
+    const exit = exitLookup.get(key); // may be missing in rare edge cases (e.g. rostered but never actually played) -- handled as null below
 
     const groupKey = `${row.year}::${row.tournament}`;
     if (!byTournament.has(groupKey)) byTournament.set(groupKey, []);
@@ -35,34 +38,41 @@ function computeDraftIQ(draftRows, tournamentEntryRatings, defaultConservativeRa
       displayName: row.displayName,
       captain: row.captain,
       pickOrder: row.pickOrder,
-      entryConservativeRating: entry.conservativeRating
+      entryConservativeRating: entry.conservativeRating,
+      exitConservativeRating: exit ? exit.conservativeRating : null
     });
   }
 
   const picks = [];
   for (const [groupKey, group] of byTournament.entries()) {
-    if (!tournamentHasSignal(group, defaultConservativeRating)) continue; // skip tied-start tournaments entirely
+    if (!tournamentHasSignal(group.map((p) => ({ entryConservativeRating: p.entryConservativeRating })), defaultConservativeRating)) continue;
 
     const [year, tournament] = groupKey.split('::');
-    const rankedByRating = [...group].sort((a, b) => b.entryConservativeRating - a.entryConservativeRating);
-    const entryRankByKey = new Map(rankedByRating.map((p, i) => [p.identityKey, i + 1]));
+
+    const rankedByEntry = [...group].sort((a, b) => b.entryConservativeRating - a.entryConservativeRating);
+    const entryRankByKey = new Map(rankedByEntry.map((p, i) => [p.identityKey, i + 1]));
+
+    // Exit ranking only among players who actually have an exit rating
+    // -- someone missing one (never played) can't be hindsight-ranked.
+    const withExit = group.filter((p) => p.exitConservativeRating !== null);
+    const rankedByExit = [...withExit].sort((a, b) => b.exitConservativeRating - a.exitConservativeRating);
+    const exitRankByKey = new Map(rankedByExit.map((p, i) => [p.identityKey, i + 1]));
 
     for (const pick of group) {
       const entryRank = entryRankByKey.get(pick.identityKey);
+      const exitRank = exitRankByKey.get(pick.identityKey) ?? null;
       picks.push({
         ...pick,
         year: parseInt(year, 10),
         tournament,
         entryRank,
-        value:  pick.pickOrder - entryRank
+        value: entryRank - pick.pickOrder,                       // existing: forward-looking (pre-tournament) value
+        exitRank,
+        leavingValue: exitRank !== null ? exitRank - pick.pickOrder : null // NEW: backward-looking (hindsight) value
       });
     }
   }
 
-  // Aggregate per captain: average value across every pick they've ever
-  // made. This is "Draft IQ" -- consistently positive means a captain
-  // reliably identifies undervalued players; consistently negative means
-  // they tend to reach.
   const byCaptain = new Map();
   for (const pick of picks) {
     if (!byCaptain.has(pick.captain)) byCaptain.set(pick.captain, []);
@@ -73,12 +83,23 @@ function computeDraftIQ(draftRows, tournamentEntryRatings, defaultConservativeRa
     const avgValue = captainPicks.reduce((sum, p) => sum + p.value, 0) / captainPicks.length;
     const best = [...captainPicks].sort((a, b) => b.value - a.value)[0];
     const worst = [...captainPicks].sort((a, b) => a.value - b.value)[0];
+
+    // Same idea, but ranked by hindsight (leaving) value instead of
+    // entry value -- "best/worst pick relative to their final skill
+    // level leaving the tournament." Only considers picks that actually
+    // have a leavingValue (excludes anyone who never played a game).
+    const withLeaving = captainPicks.filter((p) => p.leavingValue !== null);
+    const bestLeaving = withLeaving.length ? [...withLeaving].sort((a, b) => b.leavingValue - a.leavingValue)[0] : null;
+    const worstLeaving = withLeaving.length ? [...withLeaving].sort((a, b) => a.leavingValue - b.leavingValue)[0] : null;
+
     return {
       captain,
       picksEvaluated: captainPicks.length,
       avgDraftValue: round3(avgValue),
       bestPick: best ? { displayName: best.displayName, pickOrder: best.pickOrder, entryRank: best.entryRank, value: best.value } : null,
-      worstPick: worst ? { displayName: worst.displayName, pickOrder: worst.pickOrder, entryRank: worst.entryRank, value: worst.value } : null
+      worstPick: worst ? { displayName: worst.displayName, pickOrder: worst.pickOrder, entryRank: worst.entryRank, value: worst.value } : null,
+      bestPickLeaving: bestLeaving ? { displayName: bestLeaving.displayName, pickOrder: bestLeaving.pickOrder, exitRank: bestLeaving.exitRank, value: bestLeaving.leavingValue } : null,
+      worstPickLeaving: worstLeaving ? { displayName: worstLeaving.displayName, pickOrder: worstLeaving.pickOrder, exitRank: worstLeaving.exitRank, value: worstLeaving.leavingValue } : null
     };
   });
   captainDraftIQ.sort((a, b) => b.avgDraftValue - a.avgDraftValue);

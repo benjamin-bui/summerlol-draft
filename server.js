@@ -304,7 +304,12 @@ app.get('/api/draft-analysis', (req, res) => {
   const { mu, sigma, conservativeK } = trueskillResult.params;
   const defaultConservativeRating = Math.round((mu - conservativeK * sigma) * 1000) / 1000;
 
-  const { picks, captainDraftIQ } = computeDraftIQ(allRows, trueskillResult.tournamentEntryRatings, defaultConservativeRating);
+  const { picks, captainDraftIQ } = computeDraftIQ(
+    allRows,
+    trueskillResult.tournamentEntryRatings,
+    trueskillResult.tournamentExitRatings, // NEW
+    defaultConservativeRating
+  );
   const teamBalance = computeTeamBalance(allRows, trueskillResult.tournamentEntryRatings, trueskillResult.games, identityMap, defaultConservativeRating);
 
   // Attach each team-instance's own games directly, so the client can

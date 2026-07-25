@@ -71,9 +71,9 @@ function renderFunFactsHtml(ff) {
   if (ff.peakRating) {
     facts.push(`<strong>Highest TrueSkill ever reached:</strong> ${escapeHtml(ff.peakRating.displayName)}, ${ff.peakRating.conservativeRating} (${ff.peakRating.tournament} ${ff.peakRating.year})`);
   }
-  if (ff.troughRating) {
-    facts.push(`<strong>Lowest TrueSkill ever reached:</strong> ${escapeHtml(ff.troughRating.displayName)}, ${ff.troughRating.conservativeRating} (${ff.troughRating.tournament} ${ff.troughRating.year})`);
-  }
+  // if (ff.troughRating) {
+  //   facts.push(`<strong>Lowest TrueSkill ever reached:</strong> ${escapeHtml(ff.troughRating.displayName)}, ${ff.troughRating.conservativeRating} (${ff.troughRating.tournament} ${ff.troughRating.year})`);
+  // }
   if (ff.mostGamesPlayed) {
     facts.push(`<strong>Most games played:</strong> ${escapeHtml(ff.mostGamesPlayed.displayName)}, ${ff.mostGamesPlayed.games} games`);
   }
@@ -143,7 +143,7 @@ function renderPlayerProfileContent(player) {
 
   const ratingRows = [
     `<div class="profile-summary">`,
-    `<span>TrueSkill: ${player?.conservativeRating ?? '–'} <span class="stat-formula">(μ ${player?.mu ?? '–'} − ${player?.conservativeK ?? 1}σ)</span></span>`,
+    `<span>TrueSkill: ${renderRankBadge(player.conservativeRating)} ${player?.conservativeRating ?? '–'} <span class="stat-formula">(μ ${player?.mu ?? '–'} − ${player?.conservativeK ?? 1}σ)</span></span>`,
     `<span>μ: ${player?.mu ?? '–'}</span>`,
     `<span>σ: ${player?.sigma ?? '–'}</span>`,
     `</div>`
@@ -1266,7 +1266,11 @@ const DRAFT_IQ_COLUMNS = [
   { key: 'bestPickLabel', label: 'Best Pick', sortable: true, hideable: true, filterable: false, type: 'string',
     sortValue: (row) => row.bestPick?.value ?? -Infinity },
   { key: 'worstPickLabel', label: 'Worst Pick', sortable: true, hideable: true, filterable: false, type: 'string',
-    sortValue: (row) => row.worstPick?.value ?? -Infinity }
+    sortValue: (row) => row.worstPick?.value ?? -Infinity },
+  { key: 'bestPickLeavingLabel', label: 'Best Pick (Leaving)', sortable: true, hideable: true, filterable: false, type: 'string',
+    sortValue: (row) => row.bestPickLeaving?.value ?? -Infinity },
+  { key: 'worstPickLeavingLabel', label: 'Worst Pick (Leaving)', sortable: true, hideable: true, filterable: false, type: 'string',
+    sortValue: (row) => row.worstPickLeaving?.value ?? -Infinity }
 ];
 
 const draftIQTable = createTabTable({
@@ -1283,7 +1287,7 @@ const draftIQTable = createTabTable({
 function openCaptainDraftHistory(captainName) {
   if (!latestDraftAnalysis) return;
   const picks = latestDraftAnalysis.picks.filter((p) => p.captain === captainName);
-  const byTournament = new Map(); // `${year}::${tournament}` -> picks[]
+  const byTournament = new Map();
   for (const p of picks) {
     const key = `${p.year}::${p.tournament}`;
     if (!byTournament.has(key)) byTournament.set(key, []);
@@ -1294,15 +1298,24 @@ function openCaptainDraftHistory(captainName) {
     .sort((a, b) => {
       const [ay, at] = a[0].split('::');
       const [by, bt] = b[0].split('::');
-      if (ay !== by) return by - ay; // most recent year first
+      if (ay !== by) return by - ay;
       return at.localeCompare(bt);
     })
     .map(([key, tournamentPicks]) => {
       const [year, tournament] = key.split('::');
-      const avgValue = round1(tournamentPicks.reduce((s, p) => s + p.value, 0) / tournamentPicks.length);
       const teamBalance = latestDraftAnalysis.teamBalance.find(
         (t) => t.captain === captainName && t.tournament === tournament && Number(t.year) === Number(year)
       );
+      const avgValue = round1(tournamentPicks.reduce((s, p) => s + p.value, 0) / tournamentPicks.length);
+
+      // Leaving/hindsight average -- only over picks that actually have a
+      // leavingValue (a player who never played a game has none), same
+      // guard as the main-table best/worst-leaving aggregation.
+      const withLeaving = tournamentPicks.filter((p) => p.leavingValue !== null);
+      const avgLeavingValue = withLeaving.length
+        ? round1(withLeaving.reduce((s, p) => s + p.leavingValue, 0) / withLeaving.length)
+        : null;
+
       const wins = teamBalance?.wins ?? '–';
       const losses = teamBalance?.losses ?? '–';
 
@@ -1312,12 +1325,17 @@ function openCaptainDraftHistory(captainName) {
           <td>${escapeHtml(p.displayName)}</td>
           <td>#${p.entryRank}</td>
           <td class="${p.value > 0 ? 'outcome-win' : p.value < 0 ? 'outcome-loss' : ''}">${p.value > 0 ? '+' : ''}${p.value}</td>
+          <td>${p.exitRank !== null ? '#' + p.exitRank : '–'}</td>
+          <td class="${p.leavingValue > 0 ? 'outcome-win' : p.leavingValue < 0 ? 'outcome-loss' : ''}">${p.leavingValue !== null ? (p.leavingValue > 0 ? '+' : '') + p.leavingValue : '–'}</td>
         </tr>`).join('');
+
       return `
-        <h4>${escapeHtml(tournament)} ${escapeHtml(year)} <span class="stat-formula">(avg value ${avgValue > 0 ? '+' : ''}${avgValue})</span></h4>
+        <h4>${escapeHtml(tournament)} ${escapeHtml(year)}
+          <span class="stat-formula">(avg entering value ${avgValue > 0 ? '+' : ''}${avgValue}${avgLeavingValue !== null ? ` · avg leaving value ${avgLeavingValue > 0 ? '+' : ''}${avgLeavingValue}` : ''})</span>
+        </h4>
         <h4>${wins}W ${losses}L</h4>
         <table class="profile-history-table">
-          <thead><tr><th>Pick #</th><th>Player</th><th>Entering Rank</th><th>Value</th></tr></thead>
+          <thead><tr><th>Pick #</th><th>Player</th><th>Entering Rank</th><th>Value</th><th>Leaving Rank</th><th>Value (Leaving)</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
     });
@@ -1741,10 +1759,11 @@ function renderDraftScatter(container, data) {
 // value +11)". A positive value means they were rated better than where
 // they went (a steal); negative means they went earlier than their
 // entering rating justified (a reach).
-function formatDraftPick(pick) {
+function formatDraftPick(pick, rankLabel = 'entering-rank') {
   if (!pick) return '–';
   const sign = pick.value > 0 ? '+' : '';
-  return `${pick.displayName} (pick #${pick.pickOrder}, entering-rank #${pick.entryRank}, value ${sign}${pick.value})`;
+  const rank = pick.entryRank ?? pick.exitRank;
+  return `${pick.displayName} (pick #${pick.pickOrder}, ${rankLabel} #${rank}, value ${sign}${pick.value})`;
 }
 
 
@@ -1832,8 +1851,10 @@ async function loadDraftAnalysis() {
   const draftIQRows = data.captainDraftIQ.map((row) => ({
     ...row,
     captainDisplay: `<a href="#" class="captain-draft-link" data-captain="${escapeHtml(row.captain)}">${escapeHtml(row.captain)}</a>`,
-    bestPickLabel: formatDraftPick(row.bestPick),
-    worstPickLabel: formatDraftPick(row.worstPick)
+    bestPickLabel: formatDraftPick(row.bestPick, 'entering-rank'),
+    worstPickLabel: formatDraftPick(row.worstPick, 'entering-rank'),
+    bestPickLeavingLabel: formatDraftPick(row.bestPickLeaving, 'leaving-rank'),
+    worstPickLeavingLabel: formatDraftPick(row.worstPickLeaving, 'leaving-rank')
   }));
   draftIQTable.setData(draftIQRows);
   teamBalanceTable.setData(data.teamBalance);
