@@ -5,95 +5,116 @@
 // immediately (not inside the async init below) so there's no flash of
 // the wrong theme while data is still loading.
 
-const THEME_STORAGE_KEY = 'lol-draft-theme';
-const themeToggleBtn = document.getElementById('themeToggle');
+const THEME_STORAGE_KEY = "lol-draft-theme";
+const themeToggleBtn = document.getElementById("themeToggle");
 
 function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  themeToggleBtn.textContent = theme === 'light' ? '☀️' : '🌙';
+  document.documentElement.setAttribute("data-theme", theme);
+  themeToggleBtn.textContent = theme === "light" ? "☀️" : "🌙";
 }
 
 function currentTheme() {
-  return document.documentElement.getAttribute('data-theme') || 'dark';
+  return document.documentElement.getAttribute("data-theme") || "dark";
 }
 
 (function initTheme() {
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === 'light' || stored === 'dark') {
+  if (stored === "light" || stored === "dark") {
     applyTheme(stored);
     return;
   }
   // No explicit choice saved yet — follow the system preference.
   const prefersLight =
-    window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
-  applyTheme(prefersLight ? 'light' : 'dark');
+    window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: light)").matches;
+  applyTheme(prefersLight ? "light" : "dark");
 })();
 
 // If the user hasn't manually overridden the theme, keep following the
 // system preference live (e.g. their OS switches at sunset).
 if (window.matchMedia) {
-  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
-    if (localStorage.getItem(THEME_STORAGE_KEY)) return; // manual override wins
-    applyTheme(e.matches ? 'light' : 'dark');
-  });
+  window
+    .matchMedia("(prefers-color-scheme: light)")
+    .addEventListener("change", (e) => {
+      if (localStorage.getItem(THEME_STORAGE_KEY)) return; // manual override wins
+      applyTheme(e.matches ? "light" : "dark");
+    });
 }
 
-themeToggleBtn.addEventListener('click', () => {
-  const next = currentTheme() === 'light' ? 'dark' : 'light';
+themeToggleBtn.addEventListener("click", () => {
+  const next = currentTheme() === "light" ? "dark" : "light";
   applyTheme(next);
   localStorage.setItem(THEME_STORAGE_KEY, next);
 });
 
-function round3(x) { return Math.round(x * 1000) / 1000; }
+function round3(x) {
+  return Math.round(x * 1000) / 1000;
+}
 
 function escapeHtml(str) {
-	  return String(str)
-	    .replace(/&/g, '&amp;')
-	    .replace(/</g, '&lt;')
-	    .replace(/>/g, '&gt;')
-	    .replace(/"/g, '&quot;');
-	}
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 // TrueSkill Fun Facts
 function renderFunFactsHtml(ff) {
-  if (!ff) return '';
+  if (!ff) return "";
   const pctRows = ff.staticCutoffs
     .map((p) => {
-      const cutoffDisplay = Number.isFinite(p.ratingCutoff) ? p.ratingCutoff : '–';
+      const cutoffDisplay = Number.isFinite(p.ratingCutoff)
+        ? p.ratingCutoff
+        : "–";
       const badgeHtml = renderRankBadge(p.name);
       return `<tr><td class="rank-cell">${badgeHtml} <span>${escapeHtml(p.name)}</span></td><td>${p.percentile}%</td><td>${cutoffDisplay}</td></tr>`;
-    }).join('');
-
+    })
+    .join("");
 
   const facts = [];
   if (ff.biggestUpset) {
     const u = ff.biggestUpset;
-    facts.push(`<strong>Biggest upset:</strong> ${escapeHtml(u.winnerName)} (avg ${u.winnerAvgBefore}) over ${escapeHtml(u.loserName)} (avg ${u.loserAvgBefore}) in ${u.tournament} ${u.year} - only a ${Math.round(u.predictedWinProbForWinner * 100)}% predicted chance. ${u.mvpName ? `${escapeHtml(u.mvpName)} swung ${u.mvpRatingChange > 0 ? '+' : ''}${u.mvpRatingChange} TrueSkill.` : ''}`);
+    facts.push(
+      `<strong>Biggest upset:</strong> ${escapeHtml(u.winnerName)} (avg ${u.winnerAvgBefore}) over ${escapeHtml(u.loserName)} (avg ${u.loserAvgBefore}) in ${u.tournament} ${u.year} - only a ${Math.round(u.predictedWinProbForWinner * 100)}% predicted chance. ${u.mvpName ? `${escapeHtml(u.mvpName)} swung ${u.mvpRatingChange > 0 ? "+" : ""}${u.mvpRatingChange} TrueSkill.` : ""}`,
+    );
   }
   if (ff.longestStreak) {
-    facts.push(`<strong>Longest win streak:</strong> ${escapeHtml(ff.longestStreak.displayName)}, ${ff.longestStreak.streak} games`);
+    facts.push(
+      `<strong>Longest win streak:</strong> ${escapeHtml(ff.longestStreak.displayName)}, ${ff.longestStreak.streak} games`,
+    );
   }
   if (ff.longestLossStreak) {
-    facts.push(`<strong>Longest losing streak:</strong> ${escapeHtml(ff.longestLossStreak.displayName)}, ${ff.longestLossStreak.streak} games`);
+    facts.push(
+      `<strong>Longest losing streak:</strong> ${escapeHtml(ff.longestLossStreak.displayName)}, ${ff.longestLossStreak.streak} games`,
+    );
   }
   if (ff.peakRating) {
-    facts.push(`<strong>Highest TrueSkill ever reached:</strong> ${escapeHtml(ff.peakRating.displayName)}, ${ff.peakRating.conservativeRating} (${ff.peakRating.tournament} ${ff.peakRating.year})`);
+    facts.push(
+      `<strong>Highest TrueSkill ever reached:</strong> ${escapeHtml(ff.peakRating.displayName)}, ${ff.peakRating.conservativeRating} (${ff.peakRating.tournament} ${ff.peakRating.year})`,
+    );
   }
   // if (ff.troughRating) {
   //   facts.push(`<strong>Lowest TrueSkill ever reached:</strong> ${escapeHtml(ff.troughRating.displayName)}, ${ff.troughRating.conservativeRating} (${ff.troughRating.tournament} ${ff.troughRating.year})`);
   // }
   if (ff.mostGamesPlayed) {
-    facts.push(`<strong>Most games played:</strong> ${escapeHtml(ff.mostGamesPlayed.displayName)}, ${ff.mostGamesPlayed.games} games`);
+    facts.push(
+      `<strong>Most games played:</strong> ${escapeHtml(ff.mostGamesPlayed.displayName)}, ${ff.mostGamesPlayed.games} games`,
+    );
   }
   if (ff.mostActiveRivalry) {
     const r = ff.mostActiveRivalry;
-    facts.push(`<strong>Most active rivalry:</strong> ${escapeHtml(r.teamAName)} vs ${escapeHtml(r.teamBName)}, ${r.gamesPlayed} games played (${r.teamAWins}-${r.teamBWins})`);
+    facts.push(
+      `<strong>Most active rivalry:</strong> ${escapeHtml(r.teamAName)} vs ${escapeHtml(r.teamBName)}, ${r.gamesPlayed} games played (${r.teamAWins}-${r.teamBWins})`,
+    );
   }
   if (ff.everMaster) {
     const playerList = ff.everMaster
       .map((p) => escapeHtml(p.group || p.displayName))
-      .join(', ');
-    facts.push( `<strong>Ever hit Master rank (${ff.everMaster.length}):</strong> ${playerList}`);
+      .join(", ");
+    facts.push(
+      `<strong>Ever hit Master rank (${ff.everMaster.length}):</strong> ${playerList}`,
+    );
   }
 
   return `
@@ -103,105 +124,126 @@ function renderFunFactsHtml(ff) {
         <h4>TrueSkill percentile cutoffs (League of Legends rank equivalent)</h4>
         <table class="fun-facts-table"><thead><tr><th>Rank</th><th>Percentile</th><th>Rating cutoff</th></tr></thead>
           <tbody>${pctRows}</tbody></table>
-        <ul class="fun-facts-list">${facts.map((f) => `<li>${f}</li>`).join('')}</ul>
+        <ul class="fun-facts-list">${facts.map((f) => `<li>${f}</li>`).join("")}</ul>
       </div>
     </div>`;
 }
 
-document.addEventListener('click', (e) => {
-  const toggle = e.target.closest('.fun-facts-toggle');
+document.addEventListener("click", (e) => {
+  const toggle = e.target.closest(".fun-facts-toggle");
   if (!toggle) return;
   const body = toggle.nextElementSibling;
   const isOpen = !body.hidden;
   body.hidden = isOpen;
-  toggle.setAttribute('aria-expanded', String(!isOpen));
-  toggle.textContent = (isOpen ? '▶' : '▼') + ' Fun facts';
+  toggle.setAttribute("aria-expanded", String(!isOpen));
+  toggle.textContent = (isOpen ? "▶" : "▼") + " Fun facts";
 });
 // Modal Player Profile
-const playerProfileModal = document.getElementById('playerProfileModal');
-const playerProfileCloseBtn = document.getElementById('playerProfileClose');
-const playerProfileContent = document.getElementById('playerProfileContent');
-const playerProfileTitle = document.getElementById('playerProfileTitle');
+const playerProfileModal = document.getElementById("playerProfileModal");
+const playerProfileCloseBtn = document.getElementById("playerProfileClose");
+const playerProfileContent = document.getElementById("playerProfileContent");
+const playerProfileTitle = document.getElementById("playerProfileTitle");
 
 function closePlayerProfile() {
   if (!playerProfileModal) return;
-  playerProfileModal.classList.remove('open');
-  playerProfileModal.setAttribute('aria-hidden', 'true');
-  playerProfileContent.innerHTML = 'Loading…';
+  playerProfileModal.classList.remove("open");
+  playerProfileModal.setAttribute("aria-hidden", "true");
+  playerProfileContent.innerHTML = "Loading…";
 }
 
-
 function renderPlayerProfileContent(player) {
-  const title = escapeHtml(player?.group || player?.identityKey || 'Player');
+  const title = escapeHtml(player?.group || player?.identityKey || "Player");
   const summaryRows = [
     `<div class="profile-summary">`,
     `<span><strong>${title}</strong></span>`,
-    `<span>${player?.identified ? 'Identified' : 'Unidentified'}</span>`,
-    player?.profileUrl ? `<a href="${escapeHtml(player.profileUrl)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>` : '',
-    `</div>`
-  ].filter(Boolean).join('');
+    `<span>${player?.identified ? "Identified" : "Unidentified"}</span>`,
+    player?.profileUrl
+      ? `<a href="${escapeHtml(player.profileUrl)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>`
+      : "",
+    `</div>`,
+  ]
+    .filter(Boolean)
+    .join("");
 
   const statsRows = [
     `<div class="profile-summary">`,
-    `<span>Games: ${player?.games ?? '–'}</span>`,
-    `<span>Wins: ${player?.wins ?? '–'}</span>`,
-    `<span>Losses: ${player?.losses ?? '–'}</span>`,
-    `</div>`
-  ].join('');
+    `<span>Games: ${player?.games ?? "–"}</span>`,
+    `<span>Wins: ${player?.wins ?? "–"}</span>`,
+    `<span>Losses: ${player?.losses ?? "–"}</span>`,
+    `</div>`,
+  ].join("");
 
   const ratingRows = [
     `<div class="profile-summary">`,
-    `<span>TrueSkill: ${renderRankBadge(player.conservativeRating)} ${player?.conservativeRating ?? '–'} <span class="stat-formula">(μ ${player?.mu ?? '–'} − ${player?.conservativeK ?? 1}σ)</span></span>`,
-    `<span>μ: ${player?.mu ?? '–'}</span>`,
-    `<span>σ: ${player?.sigma ?? '–'}</span>`,
-    `</div>`
-  ].join('');
+    `<span>TrueSkill: ${renderRankBadge(player.conservativeRating)} ${player?.conservativeRating ?? "–"} <span class="stat-formula">(μ ${player?.mu ?? "–"} − ${player?.conservativeK ?? 1}σ)</span></span>`,
+    `<span>μ: ${player?.mu ?? "–"}</span>`,
+    `<span>σ: ${player?.sigma ?? "–"}</span>`,
+    `</div>`,
+  ].join("");
 
   const history = player?.history || [];
   const conservativeK = player?.conservativeK ?? 3;
 
-  const historyRows = history.map((entry, idx) => {
-    const outcomeClass = entry.outcome === 'win' ? 'outcome-win' : entry.outcome === 'loss' ? 'outcome-loss' : 'outcome-draw';
-    const rosterId = `roster-detail-${idx}`;
+  const historyRows = history
+    .map((entry, idx) => {
+      const outcomeClass =
+        entry.outcome === "win"
+          ? "outcome-win"
+          : entry.outcome === "loss"
+            ? "outcome-loss"
+            : "outcome-draw";
+      const rosterId = `roster-detail-${idx}`;
 
-    const rosterList = (team) => (team?.roster || [])
-      .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating)}</span></li>`)
-      .join('');
+      const rosterList = (team) =>
+        (team?.roster || [])
+          .map(
+            (m) =>
+              `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating)}</span></li>`,
+          )
+          .join("");
 
-    const changeClass = entry.ratingChange > 0 ? 'outcome-win' : entry.ratingChange < 0 ? 'outcome-loss' : '';
-    const changeLabel = entry.ratingChange > 0 ? `+${entry.ratingChange}` : `${entry.ratingChange}`;
+      const changeClass =
+        entry.ratingChange > 0
+          ? "outcome-win"
+          : entry.ratingChange < 0
+            ? "outcome-loss"
+            : "";
+      const changeLabel =
+        entry.ratingChange > 0
+          ? `+${entry.ratingChange}`
+          : `${entry.ratingChange}`;
 
-    return `<tr>
+      return `<tr>
       <td><button class="roster-toggle" data-target="${rosterId}" aria-expanded="false">▶</button></td>
-      <td>${escapeHtml(entry.year ?? '–')}</td>
-      <td>${escapeHtml(entry.tournament || '–')}${entry.matchStage ? ` <span class="match-stage">(${escapeHtml(entry.matchStage)})</span>` : ''}</td>
-      <td>${escapeHtml(entry.ownTeam?.name || '–')}</td>
-      <td>${escapeHtml(entry.opponent || '–')}</td>
-      <td class="${outcomeClass}">${escapeHtml(entry.outcome || '–')}</td>
+      <td>${escapeHtml(entry.year ?? "–")}</td>
+      <td>${escapeHtml(entry.tournament || "–")}${entry.matchStage ? ` <span class="match-stage">(${escapeHtml(entry.matchStage)})</span>` : ""}</td>
+      <td>${escapeHtml(entry.ownTeam?.name || "–")}</td>
+      <td>${escapeHtml(entry.opponent || "–")}</td>
+      <td class="${outcomeClass}">${escapeHtml(entry.outcome || "–")}</td>
       <td>${Math.round((entry.predictedWinProb ?? 0) * 100)}%</td>
-      <td>${entry.ownTeam?.avgConservativeRating ?? '–'}</td>
-      <td>${entry.opponentTeam?.avgConservativeRating ?? '–'}</td>
+      <td>${entry.ownTeam?.avgConservativeRating ?? "–"}</td>
+      <td>${entry.opponentTeam?.avgConservativeRating ?? "–"}</td>
       <td>${renderTrueSkillValue(entry.conservativeRating)}</td>
       <td class="${changeClass}">${changeLabel}</td>
-      <td>${entry.mu ?? '–'}</td>
-      <td>${entry.sigma ?? '–'}</td>
+      <td>${entry.mu ?? "–"}</td>
+      <td>${entry.sigma ?? "–"}</td>
     </tr>
     <tr id="${rosterId}" class="roster-detail-row" hidden>
 	    <td colspan="12">
 	      <div class="roster-detail">
 	        <div>
-	          <strong>${escapeHtml(entry.ownTeam?.name || 'Your team')} - </strong> avg TrueSkill: ${entry.ownTeam?.avgConservativeRating ?? '–'} (${entry.ownTeam?.avgMu ?? '-'})
+	          <strong>${escapeHtml(entry.ownTeam?.name || "Your team")} - </strong> avg TrueSkill: ${entry.ownTeam?.avgConservativeRating ?? "–"} (${entry.ownTeam?.avgMu ?? "-"})
 	          <ul>${rosterList(entry.ownTeam)}</ul>
 	        </div>
 	        <div>
-	          <strong>${escapeHtml(entry.opponentTeam?.name || 'Opponent')} - </strong> avg TrueSkill: ${entry.opponentTeam?.avgConservativeRating ?? '–'} (${entry.opponentTeam?.avgMu ?? '-'})
+	          <strong>${escapeHtml(entry.opponentTeam?.name || "Opponent")} - </strong> avg TrueSkill: ${entry.opponentTeam?.avgConservativeRating ?? "–"} (${entry.opponentTeam?.avgMu ?? "-"})
 	          <ul>${rosterList(entry.opponentTeam)}</ul>
 	        </div>
 	      </div>
 	    </td>
 	  </tr>`;
-	}).join('');
-
+    })
+    .join("");
 
   playerProfileTitle.textContent = title;
   return [
@@ -211,8 +253,8 @@ function renderPlayerProfileContent(player) {
     buildChartHtml(history),
     historyRows
       ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Captain</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill</th><th>Change</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
-      : '<p>No match history available.</p>'
-  ].join('');
+      : "<p>No match history available.</p>",
+  ].join("");
 }
 
 // Returns an inline SVG (as a string, to fit the innerHTML-based render
@@ -223,8 +265,14 @@ function buildChartHtml(history) {
     return '<p class="profile-chart-empty">No games recorded yet.</p>';
   }
 
-  const width = 900, height = 260, padL = 45, padR = 15, padT = 15, padB = 30;
-  const plotW = width - padL - padR, plotH = height - padT - padB;
+  const width = 900,
+    height = 260,
+    padL = 45,
+    padR = 15,
+    padT = 15,
+    padB = 30;
+  const plotW = width - padL - padR,
+    plotH = height - padT - padB;
 
   const points = history.map((h, i) => ({
     x: i + 1,
@@ -234,11 +282,14 @@ function buildChartHtml(history) {
     outcome: h.outcome,
     opponent: h.opponent,
     year: h.year,
-    tournament: h.tournament
+    tournament: h.tournament,
   }));
 
   const xScale = (x) => padL + ((x - 1) / Math.max(1, xMax - 1)) * plotW;
-  const yScale = (y) => padT + plotH - ((y - (yMin - yPad)) / ((yMax + yPad) - (yMin - yPad))) * plotH;
+  const yScale = (y) =>
+    padT +
+    plotH -
+    ((y - (yMin - yPad)) / (yMax + yPad - (yMin - yPad))) * plotH;
 
   const xMax = points.length;
   const yMin = Math.min(...points.map((p) => p.trueskill));
@@ -249,46 +300,54 @@ function buildChartHtml(history) {
   const badgeSize = 16;
   const badgeOffset = 6; // How many pixels above the dot the badge should float
 
-  const badges = points.map((p) => {
-    // Re-use your existing logic to determine the tier
-    const tier = getRankTier(p.trueskill);
-    const tierName = tier && tier.name ? tier.name.toLowerCase() : 'unranked';
-    const iconPath = `/icons/${tierName}.webp`;
+  const badges = points
+    .map((p) => {
+      // Re-use your existing logic to determine the tier
+      const tier = getRankTier(p.trueskill);
+      const tierName = tier && tier.name ? tier.name.toLowerCase() : "unranked";
+      const iconPath = `/icons/${tierName}.webp`;
 
-    // Calculate center of the dot
-    const cx = xScale(p.x);
-    const cy = yScale(p.trueskill);
+      // Calculate center of the dot
+      const cx = xScale(p.x);
+      const cy = yScale(p.trueskill);
 
-    // SVG <image> x/y coordinates map to the top-left corner of the image
-    const imgX = cx - (badgeSize / 2);
-    const imgY = cy - badgeSize - badgeOffset;
+      // SVG <image> x/y coordinates map to the top-left corner of the image
+      const imgX = cx - badgeSize / 2;
+      const imgY = cy - badgeSize - badgeOffset;
 
-    return `
+      return `
       <image href="${iconPath}" x="${imgX}" y="${imgY}" width="${badgeSize}" height="${badgeSize}">
-        <title>${tier ? tier.name : 'Unranked'} Rank</title>
+        <title>${tier ? tier.name : "Unranked"} Rank</title>
       </image>
     `;
-  }).join('');
+    })
+    .join("");
 
+  const trueskillPath = points
+    .map(
+      (p, i) => `${i === 0 ? "M" : "L"} ${xScale(p.x)} ${yScale(p.trueskill)}`,
+    )
+    .join(" ");
 
-
-  const trueskillPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(p.x)} ${yScale(p.trueskill)}`).join(' ');
-
-  const outcomeColor = { win: '#2e7d32', loss: '#c62828' };
-  const dots = points.map((p) => `
-    <circle cx="${xScale(p.x)}" cy="${yScale(p.trueskill)}" r="3.5" fill="${outcomeColor[p.outcome] || '#888'}">
-    <title>${escapeHtml(`${p.year} ${p.tournament}${p.matchStage ? ' (' + p.matchStage + ')' : ''} vs ${p.opponent}: ${p.outcome} (TrueSkill = ${p.trueskill}, μ=${p.mu}, σ=${p.sigma})`)}</title>
+  const outcomeColor = { win: "#2e7d32", loss: "#c62828" };
+  const dots = points
+    .map(
+      (p) => `
+    <circle cx="${xScale(p.x)}" cy="${yScale(p.trueskill)}" r="3.5" fill="${outcomeColor[p.outcome] || "#888"}">
+    <title>${escapeHtml(`${p.year} ${p.tournament}${p.matchStage ? " (" + p.matchStage + ")" : ""} vs ${p.opponent}: ${p.outcome} (TrueSkill = ${p.trueskill}, μ=${p.mu}, σ=${p.sigma})`)}</title>
     </circle>
-  `).join('');
+  `,
+    )
+    .join("");
   const ticks = 4;
   const gridlines = Array.from({ length: ticks + 1 }, (_, i) => {
-    const val = (yMin - yPad) + ((yMax + yPad) - (yMin - yPad)) * (i / ticks);
+    const val = yMin - yPad + (yMax + yPad - (yMin - yPad)) * (i / ticks);
     const y = yScale(val);
     return `
       <line x1="${padL}" y1="${y}" x2="${width - padR}" y2="${y}" stroke="#eee" stroke-width="1" />
       <text x="${padL - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="#888">${val.toFixed(1)}</text>
     `;
-  }).join('');
+  }).join("");
 
   return `
     <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" class="draft-scatter-svg">
@@ -309,22 +368,22 @@ function buildChartHtml(history) {
 
 async function openPlayerProfile(identityKey) {
   if (!identityKey || !playerProfileModal) return;
-  playerProfileModal.classList.add('open');
-  playerProfileModal.setAttribute('aria-hidden', 'false');
-  playerProfileContent.innerHTML = 'Loading…';
+  playerProfileModal.classList.add("open");
+  playerProfileModal.setAttribute("aria-hidden", "false");
+  playerProfileContent.innerHTML = "Loading…";
 
   try {
     const res = await fetch(`/api/player/${encodeURIComponent(identityKey)}`);
-    if (!res.ok) throw new Error('Player profile not found');
+    if (!res.ok) throw new Error("Player profile not found");
     const player = await res.json();
     playerProfileContent.innerHTML = renderPlayerProfileContent(player);
   } catch (err) {
-    playerProfileContent.innerHTML = `<p>${escapeHtml(err.message || 'Unable to load player profile')}</p>`;
+    playerProfileContent.innerHTML = `<p>${escapeHtml(err.message || "Unable to load player profile")}</p>`;
   }
 }
 
 function renderPlayerCell(row) {
-  const name = escapeHtml(row.group || row.displayName || '');
+  const name = escapeHtml(row.group || row.displayName || "");
   const identityKey = row.identityKey || row._playerIdentityKey || null;
   if (identityKey) {
     return `<a href="#" class="player-link" data-player-key="${escapeHtml(identityKey)}">${name}</a>`;
@@ -335,44 +394,48 @@ function renderPlayerCell(row) {
   return name;
 }
 
-document.addEventListener('click', (event) => {
-  const link = event.target.closest('.player-link[data-player-key]');
+document.addEventListener("click", (event) => {
+  const link = event.target.closest(".player-link[data-player-key]");
   if (!link) return;
   event.preventDefault();
   openPlayerProfile(link.dataset.playerKey);
 });
 
-document.addEventListener('click', (e) => {
-  const toggle = e.target.closest('.roster-toggle');
+document.addEventListener("click", (e) => {
+  const toggle = e.target.closest(".roster-toggle");
   if (!toggle) return;
   const target = document.getElementById(toggle.dataset.target);
   if (!target) return;
   const isOpen = !target.hidden;
   target.hidden = isOpen;
-  toggle.setAttribute('aria-expanded', String(!isOpen));
-  toggle.textContent = isOpen ? '▶' : '▼';
+  toggle.setAttribute("aria-expanded", String(!isOpen));
+  toggle.textContent = isOpen ? "▶" : "▼";
 });
 
-playerProfileCloseBtn?.addEventListener('click', closePlayerProfile);
-playerProfileModal?.addEventListener('click', (event) => {
-  if (event.target.classList.contains('player-profile-backdrop') || event.target.dataset.close === 'true') {
+playerProfileCloseBtn?.addEventListener("click", closePlayerProfile);
+playerProfileModal?.addEventListener("click", (event) => {
+  if (
+    event.target.classList.contains("player-profile-backdrop") ||
+    event.target.dataset.close === "true"
+  ) {
     closePlayerProfile();
   }
 });
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && playerProfileModal?.classList.contains('open')) {
+document.addEventListener("keydown", (event) => {
+  if (
+    event.key === "Escape" &&
+    playerProfileModal?.classList.contains("open")
+  ) {
     closePlayerProfile();
   }
 });
-
 
 // ==================== Column configuration ====================
 
-
 function formatCell(value, col) {
-  if (value === null || value === undefined) return '–';
-  if (col.type === 'number' && typeof value === 'number') {
-    if (col.percentage) return (value * 100).toFixed(col.decimals) + '%';
+  if (value === null || value === undefined) return "–";
+  if (col.type === "number" && typeof value === "number") {
+    if (col.percentage) return (value * 100).toFixed(col.decimals) + "%";
     return value.toFixed(col.decimals);
   }
   return String(value);
@@ -382,17 +445,17 @@ function formatCell(value, col) {
 
 function sortRows(rows, columns, sortColumn, sortDirection) {
   const col = columns.find((c) => c.key === sortColumn);
-  const dir = sortDirection === 'asc' ? 1 : -1;
+  const dir = sortDirection === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {
-    if (sortColumn === 'latestGameTournament') {
+    if (sortColumn === "latestGameTournament") {
       const parseTournamentValue = (row) => {
-        const raw = String(row.latestGameTournament || '').trim();
+        const raw = String(row.latestGameTournament || "").trim();
         const match = raw.match(/^(winter|summer)\s*(\d{4})?$/i);
         if (!match) return { year: 0, seasonRank: 2, raw };
         return {
-          year: parseInt(match[2] || '0', 10),
-          seasonRank: match[1].toLowerCase() === 'winter' ? 0 : 1,
-          raw
+          year: parseInt(match[2] || "0", 10),
+          seasonRank: match[1].toLowerCase() === "winter" ? 0 : 1,
+          raw,
         };
       };
       const av = parseTournamentValue(a);
@@ -402,15 +465,22 @@ function sortRows(rows, columns, sortColumn, sortDirection) {
       return dir * String(av.raw).localeCompare(String(bv.raw));
     }
 
-    const av = col && typeof col.sortValue === 'function' ? col.sortValue(a) : a[sortColumn];
-    const bv = col && typeof col.sortValue === 'function' ? col.sortValue(b) : b[sortColumn];
+    const av =
+      col && typeof col.sortValue === "function"
+        ? col.sortValue(a)
+        : a[sortColumn];
+    const bv =
+      col && typeof col.sortValue === "function"
+        ? col.sortValue(b)
+        : b[sortColumn];
     if (av === null || av === undefined) return 1;
     if (bv === null || bv === undefined) return -1;
-    if (typeof av === 'number' || typeof bv === 'number') {
+    if (typeof av === "number" || typeof bv === "number") {
       return dir * (Number(av) - Number(bv));
     }
-    if (col && col.type === 'string') return dir * String(av).localeCompare(String(bv));
-    if (typeof av === 'string' || typeof bv === 'string') {
+    if (col && col.type === "string")
+      return dir * String(av).localeCompare(String(bv));
+    if (typeof av === "string" || typeof bv === "string") {
       return dir * String(av).localeCompare(String(bv));
     }
     return dir * (av - bv);
@@ -424,26 +494,29 @@ function rowPassesFilter(row, col, filter) {
   if (!filter) return true;
   const value = row[col.key];
 
-  if (filter.type === 'checkbox') {
+  if (filter.type === "checkbox") {
     if (!filter.values || filter.values.length === 0) return true;
-    return filter.values.includes(String(value ?? ''));
+    return filter.values.includes(String(value ?? ""));
   }
 
-  if (filter.type === 'regex') {
+  if (filter.type === "regex") {
     if (!filter.pattern) return true;
     try {
-      const re = new RegExp(filter.pattern, 'i');
-      return re.test(String(value ?? ''));
+      const re = new RegExp(filter.pattern, "i");
+      return re.test(String(value ?? ""));
     } catch {
       return true; // invalid regex already blocked at input time; fail open just in case
     }
   }
   // Numeric filters: a row with no value can't satisfy any comparison
-  if (value === null || value === undefined || Number.isNaN(value)) return false;
+  if (value === null || value === undefined || Number.isNaN(value))
+    return false;
 
-  if (filter.type === 'gt') return filter.value !== null && value > filter.value;
-  if (filter.type === 'lt') return filter.value !== null && value < filter.value;
-  if (filter.type === 'between') {
+  if (filter.type === "gt")
+    return filter.value !== null && value > filter.value;
+  if (filter.type === "lt")
+    return filter.value !== null && value < filter.value;
+  if (filter.type === "between") {
     if (filter.min === null || filter.max === null) return true;
     return value >= filter.min && value <= filter.max;
   }
@@ -453,26 +526,36 @@ function rowPassesFilter(row, col, filter) {
 function applyColumnFilters(rows, columns, filterState) {
   const activeCols = columns.filter((c) => filterState[c.key]);
   if (activeCols.length === 0) return rows;
-  return rows.filter((row) => activeCols.every((col) => rowPassesFilter(row, col, filterState[col.key])));
+  return rows.filter((row) =>
+    activeCols.every((col) => rowPassesFilter(row, col, filterState[col.key])),
+  );
 }
 
 // Builds the inner HTML for a column's filter popover, based on its type.
 function filterPopoverInnerHTML(col, rows, filterState) {
-  if (col.type === 'string' && col.filterType === 'checkbox') {
-    const values = [...new Set(rows
-      .map((row) => row[col.key])
-      .filter((value) => value !== null && value !== undefined && String(value).trim() !== ''))]
-      .map((value) => String(value));
+  if (col.type === "string" && col.filterType === "checkbox") {
+    const values = [
+      ...new Set(
+        rows
+          .map((row) => row[col.key])
+          .filter(
+            (value) =>
+              value !== null &&
+              value !== undefined &&
+              String(value).trim() !== "",
+          ),
+      ),
+    ].map((value) => String(value));
 
     const orderedValues = values.sort((a, b) => {
       const parseTournamentValue = (value) => {
-        const raw = String(value || '').trim();
+        const raw = String(value || "").trim();
         const match = raw.match(/^(winter|summer)\s*(\d{4})?$/i);
         if (!match) return { year: 0, seasonRank: 2, raw };
         return {
-          year: parseInt(match[2] || '0', 10),
-          seasonRank: match[1].toLowerCase() === 'summer' ? 0 : 1,
-          raw
+          year: parseInt(match[2] || "0", 10),
+          seasonRank: match[1].toLowerCase() === "summer" ? 0 : 1,
+          raw,
         };
       };
       const av = parseTournamentValue(a);
@@ -483,10 +566,14 @@ function filterPopoverInnerHTML(col, rows, filterState) {
     });
 
     const optionsHtml = orderedValues.length
-      ? orderedValues.map((value) => {
-          const checked = filterState[col.key]?.values?.includes(value) ? 'checked' : '';
-          return `<label class="filter-option"><input type="checkbox" class="filter-checkbox-option" value="${escapeHtml(value)}" ${checked} /> ${escapeHtml(value)}</label>`;
-        }).join('')
+      ? orderedValues
+          .map((value) => {
+            const checked = filterState[col.key]?.values?.includes(value)
+              ? "checked"
+              : "";
+            return `<label class="filter-option"><input type="checkbox" class="filter-checkbox-option" value="${escapeHtml(value)}" ${checked} /> ${escapeHtml(value)}</label>`;
+          })
+          .join("")
       : '<div class="filter-empty">No values</div>';
 
     return `
@@ -496,10 +583,10 @@ function filterPopoverInnerHTML(col, rows, filterState) {
         <button type="button" class="filter-clear-btn">Clear</button>
       </div>`;
   }
-  if (col.type === 'string') {
+  if (col.type === "string") {
     // Free-text/regex filter -- default for open-ended string columns
     // like Player, Captain, Team 1, Team 2, Result.
-    const existing = filterState[col.key]?.pattern || '';
+    const existing = filterState[col.key]?.pattern || "";
     return `
       <label>Filter (regex, case-insensitive)</label>
       <input type="text" class="filter-regex-input" placeholder="e.g. voidliss" value="${escapeHtml(existing)}" />
@@ -507,11 +594,11 @@ function filterPopoverInnerHTML(col, rows, filterState) {
         <button type="button" class="filter-clear-btn">Clear</button>
       </div>`;
   }
-  const placeholder = col.percentage ? 'e.g. 50 for 50%' : 'value';
-  const minPlaceholder = col.percentage ? 'min %' : 'min';
-  const maxPlaceholder = col.percentage ? 'max %' : 'max';
+  const placeholder = col.percentage ? "e.g. 50 for 50%" : "value";
+  const minPlaceholder = col.percentage ? "min %" : "min";
+  const maxPlaceholder = col.percentage ? "max %" : "max";
   return `
-    <label>Filter${col.percentage ? ' (enter as a percentage, e.g. 50 for 50%)' : ''}</label>
+    <label>Filter${col.percentage ? " (enter as a percentage, e.g. 50 for 50%)" : ""}</label>
     <select class="filter-op-select">
       <option value="gt">Greater than</option>
       <option value="lt">Less than</option>
@@ -533,36 +620,48 @@ function filterPopoverInnerHTML(col, rows, filterState) {
 // inside `th`). Calls onChange() whenever the filter state changes, which
 // should re-render the table BODY only — never rebuild the header, or
 // popovers lose focus/state mid-interaction.
-function wireFilterPopover(th, col, popover, filterState, onChange, closeAllPopovers) {
-  const icon = th.querySelector('.filter-icon');
+function wireFilterPopover(
+  th,
+  col,
+  popover,
+  filterState,
+  onChange,
+  closeAllPopovers,
+) {
+  const icon = th.querySelector(".filter-icon");
 
-  icon.addEventListener('click', (e) => {
+  icon.addEventListener("click", (e) => {
     e.stopPropagation();
-    const isHidden = popover.classList.contains('hidden');
+    const isHidden = popover.classList.contains("hidden");
     closeAllPopovers();
     if (isHidden) {
       const rect = th.getBoundingClientRect();
       const popoverWidth = 240; // matches .filter-popover's min-width
-      const clampedLeft = Math.min(rect.left, window.innerWidth - popoverWidth - 12);
+      const clampedLeft = Math.min(
+        rect.left,
+        window.innerWidth - popoverWidth - 12,
+      );
       popover.style.top = `${rect.bottom + 4}px`;
       popover.style.left = `${Math.max(8, clampedLeft)}px`;
-      popover.classList.remove('hidden');
+      popover.classList.remove("hidden");
     }
   });
-  popover.addEventListener('click', (e) => e.stopPropagation());
+  popover.addEventListener("click", (e) => e.stopPropagation());
 
   function setActive(isActive) {
-    icon.classList.toggle('active', isActive);
+    icon.classList.toggle("active", isActive);
   }
 
-   if (col.type === 'string' && col.filterType === 'checkbox') {
-    const checkboxes = [...popover.querySelectorAll('.filter-checkbox-option')];
-    const clearBtn = popover.querySelector('.filter-clear-btn');
+  if (col.type === "string" && col.filterType === "checkbox") {
+    const checkboxes = [...popover.querySelectorAll(".filter-checkbox-option")];
+    const clearBtn = popover.querySelector(".filter-clear-btn");
 
     function updateFromCheckboxes() {
-      const values = checkboxes.filter((box) => box.checked).map((box) => box.value);
+      const values = checkboxes
+        .filter((box) => box.checked)
+        .map((box) => box.value);
       if (values.length > 0) {
-        filterState[col.key] = { type: 'checkbox', values };
+        filterState[col.key] = { type: "checkbox", values };
         setActive(true);
       } else {
         delete filterState[col.key];
@@ -571,8 +670,10 @@ function wireFilterPopover(th, col, popover, filterState, onChange, closeAllPopo
       onChange();
     }
 
-    checkboxes.forEach((box) => box.addEventListener('change', updateFromCheckboxes));
-    clearBtn.addEventListener('click', () => {
+    checkboxes.forEach((box) =>
+      box.addEventListener("change", updateFromCheckboxes),
+    );
+    clearBtn.addEventListener("click", () => {
       checkboxes.forEach((box) => {
         box.checked = false;
       });
@@ -580,48 +681,47 @@ function wireFilterPopover(th, col, popover, filterState, onChange, closeAllPopo
       setActive(false);
       onChange();
     });
-  } else if (col.type === 'string') {
-    const input = popover.querySelector('.filter-regex-input');
-    const clearBtn = popover.querySelector('.filter-clear-btn');
+  } else if (col.type === "string") {
+    const input = popover.querySelector(".filter-regex-input");
+    const clearBtn = popover.querySelector(".filter-clear-btn");
 
     function updateFromInput() {
       const pattern = input.value.trim();
-      if (pattern === '') {
+      if (pattern === "") {
         delete filterState[col.key];
         setActive(false);
-        input.classList.remove('invalid');
+        input.classList.remove("invalid");
         onChange();
         return;
       }
       try {
-        new RegExp(pattern, 'i'); // validate before storing -- bad regex shouldn't silently filter everything out
-        filterState[col.key] = { type: 'regex', pattern };
-        input.classList.remove('invalid');
+        new RegExp(pattern, "i"); // validate before storing -- bad regex shouldn't silently filter everything out
+        filterState[col.key] = { type: "regex", pattern };
+        input.classList.remove("invalid");
         setActive(true);
       } catch {
-        input.classList.add('invalid');
+        input.classList.add("invalid");
         // don't update filterState with an invalid pattern -- keep last-good filter active
       }
       onChange();
     }
 
-    input.addEventListener('input', updateFromInput);
-    clearBtn.addEventListener('click', () => {
-      input.value = '';
+    input.addEventListener("input", updateFromInput);
+    clearBtn.addEventListener("click", () => {
+      input.value = "";
       delete filterState[col.key];
       setActive(false);
-      input.classList.remove('invalid');
+      input.classList.remove("invalid");
       onChange();
     });
   } else {
-
-    const opSelect = popover.querySelector('.filter-op-select');
-    const singleWrap = popover.querySelector('.filter-value-single');
-    const betweenWrap = popover.querySelector('.filter-value-between');
-    const valueInput = popover.querySelector('.filter-value-input');
-    const minInput = popover.querySelector('.filter-min-input');
-    const maxInput = popover.querySelector('.filter-max-input');
-    const clearBtn = popover.querySelector('.filter-clear-btn');
+    const opSelect = popover.querySelector(".filter-op-select");
+    const singleWrap = popover.querySelector(".filter-value-single");
+    const betweenWrap = popover.querySelector(".filter-value-between");
+    const valueInput = popover.querySelector(".filter-value-input");
+    const minInput = popover.querySelector(".filter-min-input");
+    const maxInput = popover.querySelector(".filter-max-input");
+    const clearBtn = popover.querySelector(".filter-clear-btn");
 
     function updateFromInputs() {
       // Percentage columns display value*100 with a "%" suffix, but the
@@ -631,18 +731,21 @@ function wireFilterPopover(th, col, popover, filterState, onChange, closeAllPopo
       // back down before it's stored as a filter threshold.
       const scale = col.percentage ? 0.01 : 1;
       const op = opSelect.value;
-      if (op === 'between') {
-        const min = minInput.value === '' ? null : parseFloat(minInput.value) * scale;
-        const max = maxInput.value === '' ? null : parseFloat(maxInput.value) * scale;
+      if (op === "between") {
+        const min =
+          minInput.value === "" ? null : parseFloat(minInput.value) * scale;
+        const max =
+          maxInput.value === "" ? null : parseFloat(maxInput.value) * scale;
         if (min !== null && max !== null) {
-          filterState[col.key] = { type: 'between', min, max };
+          filterState[col.key] = { type: "between", min, max };
           setActive(true);
         } else {
           delete filterState[col.key];
           setActive(false);
         }
       } else {
-        const val = valueInput.value === '' ? null : parseFloat(valueInput.value) * scale;
+        const val =
+          valueInput.value === "" ? null : parseFloat(valueInput.value) * scale;
         if (val !== null) {
           filterState[col.key] = { type: op, value: val };
           setActive(true);
@@ -654,22 +757,22 @@ function wireFilterPopover(th, col, popover, filterState, onChange, closeAllPopo
       onChange();
     }
 
-    opSelect.addEventListener('change', () => {
-      const isBetween = opSelect.value === 'between';
-      singleWrap.classList.toggle('hidden', isBetween);
-      betweenWrap.classList.toggle('hidden', !isBetween);
+    opSelect.addEventListener("change", () => {
+      const isBetween = opSelect.value === "between";
+      singleWrap.classList.toggle("hidden", isBetween);
+      betweenWrap.classList.toggle("hidden", !isBetween);
       updateFromInputs();
     });
-    valueInput.addEventListener('input', updateFromInputs);
-    minInput.addEventListener('input', updateFromInputs);
-    maxInput.addEventListener('input', updateFromInputs);
-    clearBtn.addEventListener('click', () => {
-      valueInput.value = '';
-      minInput.value = '';
-      maxInput.value = '';
-      opSelect.value = 'gt';
-      singleWrap.classList.remove('hidden');
-      betweenWrap.classList.add('hidden');
+    valueInput.addEventListener("input", updateFromInputs);
+    minInput.addEventListener("input", updateFromInputs);
+    maxInput.addEventListener("input", updateFromInputs);
+    clearBtn.addEventListener("click", () => {
+      valueInput.value = "";
+      minInput.value = "";
+      maxInput.value = "";
+      opSelect.value = "gt";
+      singleWrap.classList.remove("hidden");
+      betweenWrap.classList.add("hidden");
       delete filterState[col.key];
       setActive(false);
       onChange();
@@ -683,8 +786,8 @@ function wireFilterPopover(th, col, popover, filterState, onChange, closeAllPopo
 // header gets rebuilt, since portaled popovers are no longer removed
 // automatically by clearing the header row's innerHTML.
 const allPopovers = [];
-document.addEventListener('click', () => {
-  allPopovers.forEach((p) => p.classList.add('hidden'));
+document.addEventListener("click", () => {
+  allPopovers.forEach((p) => p.classList.add("hidden"));
 });
 // Popovers escape the table's overflow box via fixed positioning (see
 // wireFilterPopover), but that means scrolling anywhere would leave one
@@ -693,13 +796,13 @@ document.addEventListener('click', () => {
 // Capture:true is required since scroll events don't bubble, but they
 // are still observable during the capture phase.
 window.addEventListener(
-  'scroll',
-  () => allPopovers.forEach((p) => p.classList.add('hidden')),
-  true
+  "scroll",
+  () => allPopovers.forEach((p) => p.classList.add("hidden")),
+  true,
 );
 
 function closeAllPopovers() {
-  allPopovers.forEach((p) => p.classList.add('hidden'));
+  allPopovers.forEach((p) => p.classList.add("hidden"));
 }
 
 function removePopoversOwnedBy(owner) {
@@ -715,46 +818,70 @@ function removePopoversOwnedBy(owner) {
 // handling and (if filterable) a filter icon + popover. `owner` tags the
 // popover so removePopoversOwnedBy() can clean up stale ones when this
 // table's header gets rebuilt (e.g. on a column-visibility change).
-function buildHeaderCell(col, sortColumn, sortDirection, filterState, onFilterChange, owner, rows) {
-  const th = document.createElement('th');
+function buildHeaderCell(
+  col,
+  sortColumn,
+  sortDirection,
+  filterState,
+  onFilterChange,
+  owner,
+  rows,
+) {
+  const th = document.createElement("th");
   th.dataset.sort = col.key;
-  if (!col.sortable) th.classList.add('not-sortable');
-  if (col.key === sortColumn) th.classList.add(sortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+  if (!col.sortable) th.classList.add("not-sortable");
+  if (col.key === sortColumn)
+    th.classList.add(sortDirection === "asc" ? "sorted-asc" : "sorted-desc");
 
-  const labelSpan = document.createElement('span');
+  const labelSpan = document.createElement("span");
   labelSpan.textContent = col.label;
   th.appendChild(labelSpan);
 
   if (col.filterable !== false) {
-    const icon = document.createElement('span');
-    icon.className = 'filter-icon';
-    icon.textContent = '▾';
-    if (filterState[col.key]) icon.classList.add('active');
+    const icon = document.createElement("span");
+    icon.className = "filter-icon";
+    icon.textContent = "▾";
+    if (filterState[col.key]) icon.classList.add("active");
     th.appendChild(icon);
 
     // Appended to document.body (not `th`) and positioned `fixed` so it
     // escapes the table container's overflow clipping entirely — see the
     // comment in wireFilterPopover for why that clipping happens.
-    const popover = document.createElement('div');
-    popover.className = 'filter-popover hidden';
+    const popover = document.createElement("div");
+    popover.className = "filter-popover hidden";
     popover.dataset.owner = owner;
     popover.innerHTML = filterPopoverInnerHTML(col, rows, filterState);
     document.body.appendChild(popover);
     allPopovers.push(popover);
 
-    wireFilterPopover(th, col, popover, filterState, onFilterChange, closeAllPopovers);
+    wireFilterPopover(
+      th,
+      col,
+      popover,
+      filterState,
+      onFilterChange,
+      closeAllPopovers,
+    );
   }
 
   return th;
 }
 
 // Freezes contiguous run of columns flagged `sticky: true`
-function applyStickyColumns(headerRowEl, bodyEl, visibleColumns, hasToggleCol = false) {
+function applyStickyColumns(
+  headerRowEl,
+  bodyEl,
+  visibleColumns,
+  hasToggleCol = false,
+) {
   const runStart = visibleColumns.findIndex((c) => c.sticky);
   if (runStart === -1) return;
 
   let runEnd = runStart;
-  while (runEnd + 1 < visibleColumns.length && visibleColumns[runEnd + 1].sticky) {
+  while (
+    runEnd + 1 < visibleColumns.length &&
+    visibleColumns[runEnd + 1].sticky
+  ) {
     runEnd++;
   }
 
@@ -771,34 +898,34 @@ function applyStickyColumns(headerRowEl, bodyEl, visibleColumns, hasToggleCol = 
   // contribute any offset to where the run pins.
   let cumulativeLeft = 0;
   if (toggleIsSticky && headerCells[0]) {
-    headerCells[0].classList.add('sticky-col');
-    headerCells[0].style.left = '0px';
+    headerCells[0].classList.add("sticky-col");
+    headerCells[0].style.left = "0px";
     cumulativeLeft = headerCells[0].getBoundingClientRect().width;
   }
 
   for (let i = runStart; i <= runEnd; i++) {
     const th = headerCells[i + domOffset];
     if (!th) continue;
-    th.classList.add('sticky-col');
-    if (i === runEnd) th.classList.add('sticky-col-last');
+    th.classList.add("sticky-col");
+    if (i === runEnd) th.classList.add("sticky-col-last");
     th.style.left = `${cumulativeLeft}px`;
     cumulativeLeft += th.getBoundingClientRect().width;
   }
 
   [...bodyEl.children].forEach((tr) => {
-    if (tr.classList.contains('roster-detail-row')) return;
+    if (tr.classList.contains("roster-detail-row")) return;
     const cells = [...tr.children];
     let left = 0;
     if (toggleIsSticky && cells[0]) {
-      cells[0].classList.add('sticky-col');
-      cells[0].style.left = '0px';
+      cells[0].classList.add("sticky-col");
+      cells[0].style.left = "0px";
       left = cells[0].getBoundingClientRect().width;
     }
     for (let i = runStart; i <= runEnd; i++) {
       const td = cells[i + domOffset];
       if (!td) continue;
-      td.classList.add('sticky-col');
-      if (i === runEnd) td.classList.add('sticky-col-last');
+      td.classList.add("sticky-col");
+      if (i === runEnd) td.classList.add("sticky-col-last");
       td.style.left = `${left}px`;
       left += td.getBoundingClientRect().width;
     }
@@ -807,21 +934,24 @@ function applyStickyColumns(headerRowEl, bodyEl, visibleColumns, hasToggleCol = 
 
 // ==================== Tabs ====================
 
-const tabButtons = document.querySelectorAll('.tab-btn');
-const tabPanels = document.querySelectorAll('.tab-panel');
+const tabButtons = document.querySelectorAll(".tab-btn");
+const tabPanels = document.querySelectorAll(".tab-panel");
 
 function setActiveTab(tabName) {
-  tabButtons.forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tabName));
-  tabPanels.forEach((panel) => panel.classList.toggle('active', panel.id === `tab-${tabName}`));
+  tabButtons.forEach((btn) =>
+    btn.classList.toggle("active", btn.dataset.tab === tabName),
+  );
+  tabPanels.forEach((panel) =>
+    panel.classList.toggle("active", panel.id === `tab-${tabName}`),
+  );
 }
 
 tabButtons.forEach((btn) => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener("click", () => {
     setActiveTab(btn.dataset.tab);
     scheduleUrlUpdate();
   });
 });
-
 
 // Converts every value in a genuinely-numeric column from string to a
 // real JS number, once, right when the raw data loads. Fixes two bugs at
@@ -838,15 +968,18 @@ function coerceNumericColumns(columns, rows) {
     let sawValue = false;
     const allNumericOrBlank = rows.every((row) => {
       const val = row[colName];
-      if (val === null || val === undefined || val === '') return true;
+      if (val === null || val === undefined || val === "") return true;
       sawValue = true;
-      return !Number.isNaN(parseFloat(val)) && String(val).trim() !== '';
+      return !Number.isNaN(parseFloat(val)) && String(val).trim() !== "";
     });
 
     if (allNumericOrBlank && sawValue) {
       rows.forEach((row) => {
         const val = row[colName];
-        row[colName] = val === null || val === undefined || val === '' ? null : parseFloat(val);
+        row[colName] =
+          val === null || val === undefined || val === ""
+            ? null
+            : parseFloat(val);
       });
     }
   });
@@ -880,45 +1013,51 @@ function createTabTable({
   columnsPanelEl,
   ownerKey,
   defaultSortColumn,
-  defaultSortDirection = 'desc',
-  emptyMessage = 'No rows match the active filters',
-  expandable
+  defaultSortDirection = "desc",
+  emptyMessage = "No rows match the active filters",
+  expandable,
 }) {
   const state = {
     data: [],
     sortColumn: defaultSortColumn,
     sortDirection: defaultSortDirection,
-    hiddenColumns: new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key)),
+    hiddenColumns: new Set(
+      columns.filter((c) => c.defaultHidden).map((c) => c.key),
+    ),
     filters: {},
-    externalFilter: null
+    externalFilter: null,
   };
 
-  columns.filter((c) => c.hideable).forEach((col) => {
-    const label = document.createElement('label');
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = !state.hiddenColumns.has(col.key);
-    checkbox.dataset.col = col.key;
-    checkbox.addEventListener('change', () => {
-      if (checkbox.checked) state.hiddenColumns.delete(col.key);
-      else state.hiddenColumns.add(col.key);
-      rebuildHeader();
-      renderBody();
+  columns
+    .filter((c) => c.hideable)
+    .forEach((col) => {
+      const label = document.createElement("label");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = !state.hiddenColumns.has(col.key);
+      checkbox.dataset.col = col.key;
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) state.hiddenColumns.delete(col.key);
+        else state.hiddenColumns.add(col.key);
+        rebuildHeader();
+        renderBody();
+      });
+      label.appendChild(checkbox);
+      label.appendChild(document.createTextNode(col.label));
+      columnsPanelEl.appendChild(label);
     });
-    label.appendChild(checkbox);
-    label.appendChild(document.createTextNode(col.label));
-    columnsPanelEl.appendChild(label);
-  });
 
-  columnsBtnEl.addEventListener('click', (e) => {
+  columnsBtnEl.addEventListener("click", (e) => {
     e.stopPropagation();
-    const isHidden = columnsPanelEl.classList.contains('hidden');
+    const isHidden = columnsPanelEl.classList.contains("hidden");
     closeAllPopovers();
-    columnsPanelEl.classList.toggle('hidden');
-    if (isHidden) columnsPanelEl.classList.remove('hidden');
+    columnsPanelEl.classList.toggle("hidden");
+    if (isHidden) columnsPanelEl.classList.remove("hidden");
   });
-  columnsPanelEl.addEventListener('click', (e) => e.stopPropagation());
-  document.addEventListener('click', () => columnsPanelEl.classList.add('hidden'));
+  columnsPanelEl.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () =>
+    columnsPanelEl.classList.add("hidden"),
+  );
 
   function visibleColumns() {
     return columns.filter((c) => !state.hiddenColumns.has(c.key));
@@ -926,32 +1065,42 @@ function createTabTable({
 
   function updateSortIndicators() {
     [...headerRowEl.children].forEach((th) => {
-      th.classList.remove('sorted-asc', 'sorted-desc');
+      th.classList.remove("sorted-asc", "sorted-desc");
       if (th.dataset.sort === state.sortColumn) {
-        th.classList.add(state.sortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+        th.classList.add(
+          state.sortDirection === "asc" ? "sorted-asc" : "sorted-desc",
+        );
       }
     });
   }
 
   function rebuildHeader() {
     removePopoversOwnedBy(ownerKey);
-    headerRowEl.innerHTML = '';
+    headerRowEl.innerHTML = "";
     if (expandable) {
-      const toggleTh = document.createElement('th');
-      toggleTh.classList.add('not-sortable');
+      const toggleTh = document.createElement("th");
+      toggleTh.classList.add("not-sortable");
       headerRowEl.appendChild(toggleTh);
     }
     visibleColumns().forEach((col) => {
-      const th = buildHeaderCell(col, state.sortColumn, state.sortDirection, state.filters, () => {
-        renderBody();
-      }, ownerKey, state.data);
-      th.addEventListener('click', () => {
+      const th = buildHeaderCell(
+        col,
+        state.sortColumn,
+        state.sortDirection,
+        state.filters,
+        () => {
+          renderBody();
+        },
+        ownerKey,
+        state.data,
+      );
+      th.addEventListener("click", () => {
         if (!col.sortable) return;
         if (state.sortColumn === col.key) {
-          state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+          state.sortDirection = state.sortDirection === "asc" ? "desc" : "asc";
         } else {
           state.sortColumn = col.key;
-          state.sortDirection = col.key === 'group' ? 'asc' : 'desc';
+          state.sortDirection = col.key === "group" ? "asc" : "desc";
         }
         updateSortIndicators();
         renderBody();
@@ -966,7 +1115,12 @@ function createTabTable({
     const colspan = cols.length + (expandable ? 1 : 0);
     let filtered = applyColumnFilters(state.data, columns, state.filters);
     if (state.externalFilter) filtered = filtered.filter(state.externalFilter);
-    const sorted = sortRows(filtered, columns, state.sortColumn, state.sortDirection);
+    const sorted = sortRows(
+      filtered,
+      columns,
+      state.sortColumn,
+      state.sortDirection,
+    );
 
     if (sorted.length === 0) {
       bodyEl.innerHTML = `<tr><td colspan="${colspan}" class="empty">${escapeHtml(emptyMessage)}</td></tr>`;
@@ -977,18 +1131,26 @@ function createTabTable({
       .map((row, i) => {
         const cells = cols
           .map((col) => {
-            if (col.playerLink || col.key === 'group') {
+            if (col.playerLink || col.key === "group") {
               const playerRow = col.playerLink
-                ? { group: row[col.key], profileUrl: row._playerProfileUrl, identityKey: row._playerIdentityKey }
+                ? {
+                    group: row[col.key],
+                    profileUrl: row._playerProfileUrl,
+                    identityKey: row._playerIdentityKey,
+                  }
                 : row;
               return `<td class="group-name">${renderPlayerCell(playerRow)}</td>`;
             }
-            const val = col.key === 'rank' ? i + 1 : row[col.key];
-            const cls = col.className ? ` class="${col.className}"` : col.key === 'rank' ? ' class="rank"' : '';
+            const val = col.key === "rank" ? i + 1 : row[col.key];
+            const cls = col.className
+              ? ` class="${col.className}"`
+              : col.key === "rank"
+                ? ' class="rank"'
+                : "";
             if (col.render) return `<td${cls}>${col.render(val, row)}</td>`;
             return `<td${cls}>${escapeHtml(formatCell(val, col))}</td>`;
           })
-          .join('');
+          .join("");
 
         if (!expandable) return `<tr>${cells}</tr>`;
 
@@ -1001,7 +1163,7 @@ function createTabTable({
           <td colspan="${colspan}">${expandable.getDetailHtml(row)}</td>
         </tr>`;
       })
-      .join('');
+      .join("");
     refreshStickyColumns();
   }
   function refreshStickyColumns() {
@@ -1018,7 +1180,7 @@ function createTabTable({
     setExternalFilter(predicateFn) {
       state.externalFilter = predicateFn; // pass null to clear
       renderBody();
-    }
+    },
   };
 }
 // Splits pasted/uploaded text into individual name strings -- accepts
@@ -1043,7 +1205,9 @@ function buildNameMatcher(names) {
   const normalized = new Set(names.map((n) => n.trim().toLowerCase()));
   return {
     matches(player) {
-      const candidates = [player.group, player.identityKey].filter(Boolean).map((s) => s.trim().toLowerCase());
+      const candidates = [player.group, player.identityKey]
+        .filter(Boolean)
+        .map((s) => s.trim().toLowerCase());
       return candidates.some((c) => normalized.has(c));
     },
     checkCoverage(players) {
@@ -1055,83 +1219,94 @@ function buildNameMatcher(names) {
         });
       });
       const unmatched = [...normalized].filter((n) => !matchedNames.has(n));
-      return { matchedCount: matchedNames.size, totalCount: normalized.size, unmatched };
-    }
+      return {
+        matchedCount: matchedNames.size,
+        totalCount: normalized.size,
+        unmatched,
+      };
+    },
   };
 }
 
 function applyNameFilter(rawText) {
   const names = parseNameList(rawText);
-  const summaryEl = document.getElementById('nameFilterSummary');
+  const summaryEl = document.getElementById("nameFilterSummary");
 
   if (names.length === 0) {
     trueskillTable.setExternalFilter(null);
-    summaryEl.textContent = '';
+    summaryEl.textContent = "";
     return;
   }
 
   const matcher = buildNameMatcher(names);
   const playersForCoverageCheck = latestTrueskillPlayers || [];
-  const { matchedCount, totalCount, unmatched } = matcher.checkCoverage(playersForCoverageCheck);
+  const { matchedCount, totalCount, unmatched } = matcher.checkCoverage(
+    playersForCoverageCheck,
+  );
 
   trueskillTable.setExternalFilter((row) => matcher.matches(row));
 
   summaryEl.textContent = unmatched.length
-    ? `Matched ${matchedCount}/${totalCount}. Not found: ${unmatched.join(', ')}`
+    ? `Matched ${matchedCount}/${totalCount}. Not found: ${unmatched.join(", ")}`
     : `Matched all ${matchedCount} names.`;
-  summaryEl.className = unmatched.length ? 'name-filter-summary has-misses' : 'name-filter-summary';
+  summaryEl.className = unmatched.length
+    ? "name-filter-summary has-misses"
+    : "name-filter-summary";
 }
 
-document.getElementById('nameFilterApplyBtn').addEventListener('click', () => {
-  const text = document.getElementById('nameFilterInput').value;
+document.getElementById("nameFilterApplyBtn").addEventListener("click", () => {
+  const text = document.getElementById("nameFilterInput").value;
   applyNameFilter(text);
 });
 
-document.getElementById('nameFilterClearBtn').addEventListener('click', () => {
-  document.getElementById('nameFilterInput').value = '';
-  document.getElementById('nameFilterFile').value = '';
+document.getElementById("nameFilterClearBtn").addEventListener("click", () => {
+  document.getElementById("nameFilterInput").value = "";
+  document.getElementById("nameFilterFile").value = "";
   trueskillTable.setExternalFilter(null);
-  document.getElementById('nameFilterSummary').textContent = '';
+  document.getElementById("nameFilterSummary").textContent = "";
 });
 
-document.getElementById('nameFilterFile').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const text = await file.text();
-  document.getElementById('nameFilterInput').value = text; // mirror into the textarea so it's visible/editable
-  applyNameFilter(text);
-});
+document
+  .getElementById("nameFilterFile")
+  .addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    document.getElementById("nameFilterInput").value = text; // mirror into the textarea so it's visible/editable
+    applyNameFilter(text);
+  });
 
 // ====================Rank Tier====================
 // Determines categorical rank from numeric TrueSKill and displays corresponding icon
 let globalRankTiers = null;
 
 function getRankTier(rating) {
-  if (rating === null || rating === undefined || Number.isNaN(rating)) return null;
+  if (rating === null || rating === undefined || Number.isNaN(rating))
+    return null;
   if (!globalRankTiers || globalRankTiers.length === 0) return null;
 
   const tier = globalRankTiers.find((t) => rating >= t.ratingCutoff);
 
-  return tier || { name: 'Iron', ratingCutoff: 0 };
+  return tier || { name: "Iron", ratingCutoff: 0 };
 }
 
 function renderRankBadge(input) {
-  let tierName = 'unranked';
-  let displayName = 'Unranked';
+  let tierName = "unranked";
+  let displayName = "Unranked";
 
-  if (typeof input === 'string') {
+  if (typeof input === "string") {
     // Passed a tier name directly (e.g. 'Iron', 'Master')
     tierName = input.toLowerCase();
     displayName = input;
-  } else if (typeof input === 'object' && input?.name) {
+  } else if (typeof input === "object" && input?.name) {
     // Passed a tier object directly (e.g. { name: 'Iron' })
     tierName = input.name.toLowerCase();
     displayName = input.name;
-  } else if (typeof input === 'number' && !Number.isNaN(input)) {
+  } else if (typeof input === "number" && !Number.isNaN(input)) {
     // Passed a numeric rating (e.g. 1050)
     const tier = getRankTier(input);
-    tierName = tier?.name ? tier.name.toLowerCase() : 'unranked';
-    displayName = tier?.name || 'Unranked';
+    tierName = tier?.name ? tier.name.toLowerCase() : "unranked";
+    displayName = tier?.name || "Unranked";
   }
 
   return `<img src="/icons/${tierName}.webp" alt="${escapeHtml(displayName)} rank badge" class="rank-badge" />`;
@@ -1140,7 +1315,7 @@ function renderRankBadge(input) {
 // Combines the badge with the formatted number -- used anywhere a raw
 // TrueSkill/conservativeRating value is displayed.
 function renderTrueSkillValue(rating, mu) {
-  if (rating === null || rating === undefined) return '–';
+  if (rating === null || rating === undefined) return "–";
 
   const formatRating = (n) =>
     `<span class="rating-number">${Math.round(n)}</span>`;
@@ -1153,47 +1328,135 @@ function renderTrueSkillValue(rating, mu) {
 
 // ==================== trueskill tab ====================
 
-const TRUESKILL_COLUMNS= [
-  { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false},
-  { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, className: 'group-name', type: 'string', sticky: true  },
-  { key: 'latestGameTournament', label: 'Latest Tournament', sortable: true, hideable: true, filterable: true, type: 'string', sortValue: (row) => {
-    const raw = String(row.latestGameTournament || '').trim();
-    const match = raw.match(/^(winter|summer)\s*(\d{4})?$/i);
-    if (!match) return 2_000_000;
-    const seasonRank = match[1].toLowerCase() === 'summer' ? 0 : 1;
-    const year = parseInt(match[2] || '0', 10);
-    return seasonRank * 1_000_000 + year;
-  } },
-  { key: 'conservativeRating', label: 'TrueSkill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg', render:renderTrueSkillValue },
-  { key: 'mu', label: 'μ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
-  { key: 'sigma', label: 'σ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 },
-  { key: 'games', label: 'Games', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'tournaments', label: 'Tournaments', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'wins', label: 'Wins', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'losses', label: 'Losses', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'winrate', label: 'Win Rate %', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0,
+const TRUESKILL_COLUMNS = [
+  {
+    key: "rank",
+    label: "#",
+    sortable: false,
+    hideable: false,
+    filterable: false,
+  },
+  {
+    key: "group",
+    label: "Player",
+    sortable: true,
+    hideable: false,
+    filterable: true,
+    className: "group-name",
+    type: "string",
+    sticky: true,
+  },
+  {
+    key: "latestGameTournament",
+    label: "Latest Tournament",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
     sortValue: (row) => {
-          if (!row.games || row.games === 0) return 0;
-          return row.wins / row.games;
+      const raw = String(row.latestGameTournament || "").trim();
+      const match = raw.match(/^(winter|summer)\s*(\d{4})?$/i);
+      if (!match) return 2_000_000;
+      const seasonRank = match[1].toLowerCase() === "summer" ? 0 : 1;
+      const year = parseInt(match[2] || "0", 10);
+      return seasonRank * 1_000_000 + year;
+    },
+  },
+  {
+    key: "conservativeRating",
+    label: "TrueSkill",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+    className: "adj-avg",
+    render: renderTrueSkillValue,
+  },
+  {
+    key: "mu",
+    label: "μ",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+    className: "adj-avg",
+  },
+  {
+    key: "sigma",
+    label: "σ",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+  },
+  {
+    key: "games",
+    label: "Games",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "tournaments",
+    label: "Tournaments",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "wins",
+    label: "Wins",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "losses",
+    label: "Losses",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "winrate",
+    label: "Win Rate %",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+    sortValue: (row) => {
+      if (!row.games || row.games === 0) return 0;
+      return row.wins / row.games;
     },
     render: (val, row) => {
       const games = row.games || 0;
       const wins = row.wins || 0;
-      if (games === 0) return '0.0%';
-      return ((wins / games) * 100).toFixed(1) + '%';
-    }
+      if (games === 0) return "0.0%";
+      return ((wins / games) * 100).toFixed(1) + "%";
+    },
   },
-
 ];
 
 const trueskillTable = createTabTable({
   columns: TRUESKILL_COLUMNS,
-  headerRowEl: document.getElementById('trueskillHeaderRow'),
-  bodyEl: document.getElementById('trueskillBody'),
-  columnsBtnEl: document.getElementById('trueskillColumnsBtn'),
-  columnsPanelEl: document.getElementById('trueskillColumnsPanel'),
-  ownerKey: 'trueskill',
-  defaultSortColumn: 'conservativeRating'
+  headerRowEl: document.getElementById("trueskillHeaderRow"),
+  bodyEl: document.getElementById("trueskillBody"),
+  columnsBtnEl: document.getElementById("trueskillColumnsBtn"),
+  columnsPanelEl: document.getElementById("trueskillColumnsPanel"),
+  ownerKey: "trueskill",
+  defaultSortColumn: "conservativeRating",
 });
 
 let trueskillLoaded = false;
@@ -1205,7 +1468,9 @@ async function loadtrueskillData(forceRefresh) {
   const data = await res.json();
   latestTrueskillPlayers = data.players;
   globalRankTiers = data.funFacts.staticCutoffs;
-  document.getElementById('trueskill-fun-facts').innerHTML = renderFunFactsHtml(data.funFacts);
+  document.getElementById("trueskill-fun-facts").innerHTML = renderFunFactsHtml(
+    data.funFacts,
+  );
   trueskillTable.setData(data.players);
   trueskillLoaded = true;
 }
@@ -1213,9 +1478,9 @@ async function loadtrueskillData(forceRefresh) {
 // ==================== Naive Pick Order vs Results ====================
 
 let totalN = 40;
-const totalNInput = document.getElementById('totalN');
+const totalNInput = document.getElementById("totalN");
 
-totalNInput.addEventListener('input', () => {
+totalNInput.addEventListener("input", () => {
   const val = parseInt(totalNInput.value, 10);
   if (!Number.isFinite(val) || val < 2) return;
   totalN = val;
@@ -1223,16 +1488,101 @@ totalNInput.addEventListener('input', () => {
   rankingsTable.setData(latestStats);
 });
 const RANKINGS_COLUMNS = [
-  { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
-  { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, className: 'group-name', type: 'string', sticky: 'true' },
-  { key: 'adjAvg', label: 'Adjusted Pick Value', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg', sticky: 'true' },
-  { key: 'n', label: 'n', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'mean', label: 'Unadjusted Pick Value', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, defaultHidden: true },
-  { key: 'sd', label: 'Std. Dev.', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, defaultHidden: true },
-  { key: 'avgPickPercentile', label: 'Avg. Pick %', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, percentage: true },
-  { key: 'estPickOrder', label: 'Est. Pick Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 },
-  { key: 'avgRankPercentile', label: 'Avg. Rank %', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, percentage: true },
-  { key: 'estRankOrder', label: 'Est. Rank Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 }
+  {
+    key: "rank",
+    label: "#",
+    sortable: false,
+    hideable: false,
+    filterable: false,
+  },
+  {
+    key: "group",
+    label: "Player",
+    sortable: true,
+    hideable: false,
+    filterable: true,
+    className: "group-name",
+    type: "string",
+    sticky: "true",
+  },
+  {
+    key: "adjAvg",
+    label: "Adjusted Pick Value",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+    className: "adj-avg",
+    sticky: "true",
+  },
+  {
+    key: "n",
+    label: "n",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "mean",
+    label: "Unadjusted Pick Value",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+    defaultHidden: true,
+  },
+  {
+    key: "sd",
+    label: "Std. Dev.",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+    defaultHidden: true,
+  },
+  {
+    key: "avgPickPercentile",
+    label: "Avg. Pick %",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+    percentage: true,
+  },
+  {
+    key: "estPickOrder",
+    label: "Est. Pick Order",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 1,
+  },
+  {
+    key: "avgRankPercentile",
+    label: "Avg. Rank %",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+    percentage: true,
+  },
+  {
+    key: "estRankOrder",
+    label: "Est. Rank Order",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 1,
+  },
 ];
 
 const rankingsTable = createTabTable({
@@ -1241,9 +1591,9 @@ const rankingsTable = createTabTable({
   bodyEl: statsBody,
   columnsBtnEl: columnsBtn,
   columnsPanelEl: columnsPanel,
-  ownerKey: 'rankings',
-  defaultSortColumn: 'adjAvg',
-  emptyMessage: 'No players match the active filters'
+  ownerKey: "rankings",
+  defaultSortColumn: "adjAvg",
+  emptyMessage: "No players match the active filters",
 });
 
 const RANKINGS_RISK = 0.25;
@@ -1273,46 +1623,115 @@ function applyTotalN() {
   // pick count (see server.js's per-year normalization).
   const numTeams = totalN / 4;
   latestStats.forEach((row) => {
-    row.estPickOrder = row.avgPickPercentile === null ? null : row.avgPickPercentile * (totalN - 1) + 1;
-    row.estRankOrder = row.avgRankPercentile === null ? null : row.avgRankPercentile * (numTeams - 1) + 1;
+    row.estPickOrder =
+      row.avgPickPercentile === null
+        ? null
+        : row.avgPickPercentile * (totalN - 1) + 1;
+    row.estRankOrder =
+      row.avgRankPercentile === null
+        ? null
+        : row.avgRankPercentile * (numTeams - 1) + 1;
   });
 }
 // ==================== Draft IQ tab ====================
 
 const DRAFT_IQ_COLUMNS = [
-  { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
-  { key: 'captain', label: 'Captain', sortable: true, hideable: false, filterable: true, type: 'string', className: 'group-name', sticky: true,
-    render: (val, row) => row.captainDisplay },
-  { key: 'avgDraftValue', label: 'Draft IQ (avg value)', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg', sticky: true },
-  { key: 'picksEvaluated', label: 'Picks Evaluated', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'bestPickLabel', label: 'Best Pick', sortable: true, hideable: true, filterable: false, type: 'string',
+  {
+    key: "rank",
+    label: "#",
+    sortable: false,
+    hideable: false,
+    filterable: false,
+  },
+  {
+    key: "captain",
+    label: "Captain",
+    sortable: true,
+    hideable: false,
+    filterable: true,
+    type: "string",
+    className: "group-name",
+    sticky: true,
+    render: (val, row) => row.captainDisplay,
+  },
+  {
+    key: "avgDraftValue",
+    label: "Draft IQ (avg value)",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+    className: "adj-avg",
+    sticky: true,
+  },
+  {
+    key: "picksEvaluated",
+    label: "Picks Evaluated",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "bestPickLabel",
+    label: "Best Pick",
+    sortable: true,
+    hideable: true,
+    filterable: false,
+    type: "string",
     sortValue: (row) => row.bestPick?.value ?? -Infinity,
-    render: (val) => val },
-  { key: 'worstPickLabel', label: 'Worst Pick', sortable: true, hideable: true, filterable: false, type: 'string',
+    render: (val) => val,
+  },
+  {
+    key: "worstPickLabel",
+    label: "Worst Pick",
+    sortable: true,
+    hideable: true,
+    filterable: false,
+    type: "string",
     sortValue: (row) => row.worstPick?.value ?? -Infinity,
-    render: (val) => val },
-  { key: 'bestPickLeavingLabel', label: 'Best Pick (Leaving)', sortable: true, hideable: true, filterable: false, type: 'string',
+    render: (val) => val,
+  },
+  {
+    key: "bestPickLeavingLabel",
+    label: "Best Pick (Leaving)",
+    sortable: true,
+    hideable: true,
+    filterable: false,
+    type: "string",
     sortValue: (row) => row.bestPickLeaving?.value ?? -Infinity,
-    render: (val) => val },
-  { key: 'worstPickLeavingLabel', label: 'Worst Pick (Leaving)', sortable: true, hideable: true, filterable: false, type: 'string',
+    render: (val) => val,
+  },
+  {
+    key: "worstPickLeavingLabel",
+    label: "Worst Pick (Leaving)",
+    sortable: true,
+    hideable: true,
+    filterable: false,
+    type: "string",
     sortValue: (row) => row.worstPickLeaving?.value ?? -Infinity,
-    render: (val) => val }
+    render: (val) => val,
+  },
 ];
 
 const draftIQTable = createTabTable({
   columns: DRAFT_IQ_COLUMNS,
-  headerRowEl: document.getElementById('draftIQHeaderRow'),
-  bodyEl: document.getElementById('draftIQBody'),
-  columnsBtnEl: document.getElementById('draftIQColumnsBtn'),
-  columnsPanelEl: document.getElementById('draftIQColumnsPanel'),
-  ownerKey: 'draftiq',
-  defaultSortColumn: 'avgDraftValue',
-  emptyMessage: 'No draft data available'
+  headerRowEl: document.getElementById("draftIQHeaderRow"),
+  bodyEl: document.getElementById("draftIQBody"),
+  columnsBtnEl: document.getElementById("draftIQColumnsBtn"),
+  columnsPanelEl: document.getElementById("draftIQColumnsPanel"),
+  ownerKey: "draftiq",
+  defaultSortColumn: "avgDraftValue",
+  emptyMessage: "No draft data available",
 });
 
 function openCaptainDraftHistory(captainName) {
   if (!latestDraftAnalysis) return;
-  const picks = latestDraftAnalysis.picks.filter((p) => p.captain === captainName);
+  const picks = latestDraftAnalysis.picks.filter(
+    (p) => p.captain === captainName,
+  );
   const byTournament = new Map();
   for (const p of picks) {
     const key = `${p.year}::${p.tournament}`;
@@ -1322,42 +1741,58 @@ function openCaptainDraftHistory(captainName) {
 
   const sections = [...byTournament.entries()]
     .sort((a, b) => {
-      const [ay, at] = a[0].split('::');
-      const [by, bt] = b[0].split('::');
+      const [ay, at] = a[0].split("::");
+      const [by, bt] = b[0].split("::");
       if (ay !== by) return by - ay;
       return at.localeCompare(bt);
     })
     .map(([key, tournamentPicks]) => {
-      const [year, tournament] = key.split('::');
+      const [year, tournament] = key.split("::");
       const teamBalance = latestDraftAnalysis.teamBalance.find(
-        (t) => t.captain === captainName && t.tournament === tournament && Number(t.year) === Number(year)
+        (t) =>
+          t.captain === captainName &&
+          t.tournament === tournament &&
+          Number(t.year) === Number(year),
       );
-      const avgValue = round1(tournamentPicks.reduce((s, p) => s + p.value, 0) / tournamentPicks.length);
+      const avgValue = round1(
+        tournamentPicks.reduce((s, p) => s + p.value, 0) /
+          tournamentPicks.length,
+      );
 
       // Leaving/hindsight average -- only over picks that actually have a
       // leavingValue (a player who never played a game has none), same
       // guard as the main-table best/worst-leaving aggregation.
-      const withLeaving = tournamentPicks.filter((p) => p.leavingValue !== null);
+      const withLeaving = tournamentPicks.filter(
+        (p) => p.leavingValue !== null,
+      );
       const avgLeavingValue = withLeaving.length
-        ? round1(withLeaving.reduce((s, p) => s + p.leavingValue, 0) / withLeaving.length)
+        ? round1(
+            withLeaving.reduce((s, p) => s + p.leavingValue, 0) /
+              withLeaving.length,
+          )
         : null;
 
-      const wins = teamBalance?.wins ?? '–';
-      const losses = teamBalance?.losses ?? '–';
+      const wins = teamBalance?.wins ?? "–";
+      const losses = teamBalance?.losses ?? "–";
 
-      const rows = [...tournamentPicks].sort((a, b) => a.pickOrder - b.pickOrder).map((p) => `
+      const rows = [...tournamentPicks]
+        .sort((a, b) => a.pickOrder - b.pickOrder)
+        .map(
+          (p) => `
         <tr>
           <td>#${p.pickOrder}</td>
           <td>${escapeHtml(p.displayName)}</td>
           <td>#${p.entryRank}</td>
-          <td class="${p.value > 0 ? 'outcome-win' : p.value < 0 ? 'outcome-loss' : ''}">${p.value > 0 ? '+' : ''}${p.value}</td>
-          <td>${p.exitRank !== null ? '#' + p.exitRank : '–'}</td>
-          <td class="${p.leavingValue > 0 ? 'outcome-win' : p.leavingValue < 0 ? 'outcome-loss' : ''}">${p.leavingValue !== null ? (p.leavingValue > 0 ? '+' : '') + p.leavingValue : '–'}</td>
-        </tr>`).join('');
+          <td class="${p.value > 0 ? "outcome-win" : p.value < 0 ? "outcome-loss" : ""}">${p.value > 0 ? "+" : ""}${p.value}</td>
+          <td>${p.exitRank !== null ? "#" + p.exitRank : "–"}</td>
+          <td class="${p.leavingValue > 0 ? "outcome-win" : p.leavingValue < 0 ? "outcome-loss" : ""}">${p.leavingValue !== null ? (p.leavingValue > 0 ? "+" : "") + p.leavingValue : "–"}</td>
+        </tr>`,
+        )
+        .join("");
 
       return `
         <h4>${escapeHtml(tournament)} ${escapeHtml(year)}
-          <span class="stat-formula">(avg entering value ${avgValue > 0 ? '+' : ''}${avgValue}${avgLeavingValue !== null ? ` · avg leaving value ${avgLeavingValue > 0 ? '+' : ''}${avgLeavingValue}` : ''})</span>
+          <span class="stat-formula">(avg entering value ${avgValue > 0 ? "+" : ""}${avgValue}${avgLeavingValue !== null ? ` · avg leaving value ${avgLeavingValue > 0 ? "+" : ""}${avgLeavingValue}` : ""})</span>
         </h4>
         <h4>${wins}W ${losses}L</h4>
         <table class="profile-history-table">
@@ -1367,19 +1802,23 @@ function openCaptainDraftHistory(captainName) {
     });
 
   const modal = ensureCaptainDraftModal();
-  modal.querySelector('.captain-draft-title').textContent = `${captainName} — Draft History`;
-  modal.querySelector('.captain-draft-body').innerHTML = sections.join('') || '<p>No draft history found.</p>';
-  modal.classList.add('open');
+  modal.querySelector(".captain-draft-title").textContent =
+    `${captainName} — Draft History`;
+  modal.querySelector(".captain-draft-body").innerHTML =
+    sections.join("") || "<p>No draft history found.</p>";
+  modal.classList.add("open");
 }
 
-function round1(x) { return Math.round(x * 10) / 10; }
+function round1(x) {
+  return Math.round(x * 10) / 10;
+}
 
 function ensureCaptainDraftModal() {
-  let modal = document.getElementById('captainDraftModal');
+  let modal = document.getElementById("captainDraftModal");
   if (modal) return modal;
-  modal = document.createElement('div');
-  modal.id = 'captainDraftModal';
-  modal.className = 'player-profile-modal'; // reuse existing modal chrome/CSS
+  modal = document.createElement("div");
+  modal.id = "captainDraftModal";
+  modal.className = "player-profile-modal"; // reuse existing modal chrome/CSS
   modal.innerHTML = `
     <div class="player-profile-backdrop" data-close="true"></div>
     <div class="player-profile-panel">
@@ -1388,13 +1827,13 @@ function ensureCaptainDraftModal() {
       <div class="captain-draft-body"></div>
     </div>`;
   document.body.appendChild(modal);
-  modal.addEventListener('click', (e) => {
-    if (e.target.dataset.close === 'true') modal.classList.remove('open');
+  modal.addEventListener("click", (e) => {
+    if (e.target.dataset.close === "true") modal.classList.remove("open");
   });
   return modal;
 }
 
-// Scatter plot 
+// Scatter plot
 function buildDraftScatterData(draftAnalysis) {
   const picksByTeam = new Map(); // `${year}::${tournament}::${captain}` -> picks[]
   for (const p of draftAnalysis.picks) {
@@ -1409,7 +1848,9 @@ function buildDraftScatterData(draftAnalysis) {
       const teamPicks = picksByTeam.get(key);
       if (!teamPicks || teamPicks.length === 0 || team.games === 0) return null; // nothing to plot without both a draft value and a game record
 
-      const avgDraftValue = round3(teamPicks.reduce((s, p) => s + p.value, 0) / teamPicks.length);
+      const avgDraftValue = round3(
+        teamPicks.reduce((s, p) => s + p.value, 0) / teamPicks.length,
+      );
       return {
         captain: team.captain,
         year: team.year,
@@ -1419,12 +1860,11 @@ function buildDraftScatterData(draftAnalysis) {
         wins: team.wins,
         losses: team.losses,
         games: team.games,
-        winRate: team.winRate
+        winRate: team.winRate,
       };
     })
     .filter(Boolean);
 }
-
 
 // Assigns each distinct group key an evenly-spaced hue around the color
 // wheel. Works for arbitrary group counts (a handful of years, or dozens
@@ -1437,16 +1877,16 @@ function colorForIndex(i, n) {
 }
 
 function getGroupKey(p, groupBy) {
-  if (groupBy === 'captain') return p.captain;
-  if (groupBy === 'year') return String(p.year);
-  if (groupBy === 'yearTournament') return `${p.year} : ${p.tournament}`;
+  if (groupBy === "captain") return p.captain;
+  if (groupBy === "year") return String(p.year);
+  if (groupBy === "yearTournament") return `${p.year} : ${p.tournament}`;
   return null; // ungrouped -- every point shares one bucket, one color
 }
 
 function seasonRank(tournament) {
-  const t = String(tournament || '').toLowerCase();
-  if (t === 'winter') return 0;
-  if (t === 'summer') return 1;
+  const t = String(tournament || "").toLowerCase();
+  if (t === "winter") return 0;
+  if (t === "summer") return 1;
   return 2;
 }
 
@@ -1455,14 +1895,14 @@ function seasonRank(tournament) {
 // for years/tournaments) rather than however Set iteration happens to
 // land.
 function buildGroupOrder(data, groupBy) {
-  if (groupBy === 'none') return [null];
+  if (groupBy === "none") return [null];
   const keys = [...new Set(data.map((p) => getGroupKey(p, groupBy)))];
-  if (groupBy === 'captain') return keys.sort((a, b) => a.localeCompare(b));
-  if (groupBy === 'year') return keys.sort((a, b) => Number(b) - Number(a)); // most recent first
-  if (groupBy === 'yearTournament') {
+  if (groupBy === "captain") return keys.sort((a, b) => a.localeCompare(b));
+  if (groupBy === "year") return keys.sort((a, b) => Number(b) - Number(a)); // most recent first
+  if (groupBy === "yearTournament") {
     return keys.sort((a, b) => {
-      const [ay, at] = a.split(' : ');
-      const [by, bt] = b.split(' : ');
+      const [ay, at] = a.split(" : ");
+      const [by, bt] = b.split(" : ");
       if (ay !== by) return Number(by) - Number(ay);
       return seasonRank(at) - seasonRank(bt);
     });
@@ -1473,35 +1913,46 @@ function buildGroupOrder(data, groupBy) {
 let draftScatterBuilt = false;
 
 function initDraftScatterToggle() {
-  const box = document.getElementById('draftScatterBox');
+  const box = document.getElementById("draftScatterBox");
   if (!box) return;
-  const toggle = box.querySelector('.collapsible-toggle');
-  const body = box.querySelector('.collapsible-body');
+  const toggle = box.querySelector(".collapsible-toggle");
+  const body = box.querySelector(".collapsible-body");
 
-  toggle.addEventListener('click', () => {
+  toggle.addEventListener("click", () => {
     const isOpen = !body.hidden;
     body.hidden = isOpen;
-    toggle.setAttribute('aria-expanded', String(!isOpen));
-    toggle.textContent = (isOpen ? '▶' : '▼') + ' Draft IQ vs Win Rate';
+    toggle.setAttribute("aria-expanded", String(!isOpen));
+    toggle.textContent = (isOpen ? "▶" : "▼") + " Draft IQ vs Win Rate";
 
     if (!isOpen && !draftScatterBuilt && latestDraftAnalysis) {
-      renderDraftScatter(document.getElementById('draftScatterContainer'), buildDraftScatterData(latestDraftAnalysis));
+      renderDraftScatter(
+        document.getElementById("draftScatterContainer"),
+        buildDraftScatterData(latestDraftAnalysis),
+      );
       draftScatterBuilt = true;
     }
   });
 }
 
 function renderDraftScatter(container, data) {
-  const width = 700, height = 420, padL = 55, padR = 20, padT = 20, padB = 45;
-  const plotW = width - padL - padR, plotH = height - padT - padB;
-
+  const width = 700,
+    height = 420,
+    padL = 55,
+    padR = 20,
+    padT = 20,
+    padB = 45;
+  const plotW = width - padL - padR,
+    plotH = height - padT - padB;
 
   function computeRegressionLine(pts) {
     const n = pts.length;
     if (n < 2) return null;
     const meanX = pts.reduce((s, p) => s + p.avgDraftValue, 0) / n;
     const meanY = pts.reduce((s, p) => s + p.winRate, 0) / n;
-    const num = pts.reduce((s, p) => s + (p.avgDraftValue - meanX) * (p.winRate - meanY), 0);
+    const num = pts.reduce(
+      (s, p) => s + (p.avgDraftValue - meanX) * (p.winRate - meanY),
+      0,
+    );
     const den = pts.reduce((s, p) => s + (p.avgDraftValue - meanX) ** 2, 0);
     if (den === 0) return null;
     const slope = num / den;
@@ -1518,20 +1969,22 @@ function renderDraftScatter(container, data) {
     const xPad = (Math.max(...xs) - Math.min(...xs)) * 0.1 || 1;
     const yPad = (Math.max(...ys) - Math.min(...ys)) * 0.1 || 0.05;
     return {
-      xMin: Math.min(...xs) - xPad, xMax: Math.max(...xs) + xPad,
-      yMin: Math.max(0, Math.min(...ys) - yPad), yMax: Math.min(1, Math.max(...ys) + yPad)
+      xMin: Math.min(...xs) - xPad,
+      xMax: Math.max(...xs) + xPad,
+      yMin: Math.max(0, Math.min(...ys) - yPad),
+      yMax: Math.min(1, Math.max(...ys) + yPad),
     };
   }
 
-  let selectedKey = null;      // isolates a single point (year::tournament::captain)
+  let selectedKey = null; // isolates a single point (year::tournament::captain)
   let selectedGroupKey = null; // isolates a whole group -- mutually exclusive with selectedKey
-  let groupBy = 'none';
+  let groupBy = "none";
 
-  const groupBySelect = document.getElementById('draftScatterGroupBySelect');
-  const legendEl = document.getElementById('draftScatterLegend');
+  const groupBySelect = document.getElementById("draftScatterGroupBySelect");
+  const legendEl = document.getElementById("draftScatterLegend");
 
   function colorFor(p) {
-    if (groupBy === 'none') return 'var(--accent)';
+    if (groupBy === "none") return "var(--accent)";
     const order = buildGroupOrder(data, groupBy);
     const key = getGroupKey(p, groupBy);
     const idx = order.indexOf(key);
@@ -1554,40 +2007,51 @@ function renderDraftScatter(container, data) {
       const jitterRadiusPx = 7;
       group.forEach((p, i) => {
         const angle = (i / group.length) * 2 * Math.PI;
-        jitterOf.set(p, { dxPx: Math.cos(angle) * jitterRadiusPx, dyPx: Math.sin(angle) * jitterRadiusPx });
+        jitterOf.set(p, {
+          dxPx: Math.cos(angle) * jitterRadiusPx,
+          dyPx: Math.sin(angle) * jitterRadiusPx,
+        });
       });
     }
     return jitterOf;
   }
   function renderLegend() {
-    if (groupBy === 'none') {
-      legendEl.innerHTML = '';
+    if (groupBy === "none") {
+      legendEl.innerHTML = "";
       legendEl.hidden = true;
       return;
     }
     legendEl.hidden = false;
     const order = buildGroupOrder(data, groupBy);
-    legendEl.innerHTML = order.map((key, i) => {
-      const isDimmed = selectedGroupKey && selectedGroupKey !== key;
-      return `<button type="button" class="legend-item${isDimmed ? ' dimmed' : ''}" data-group-key="${escapeHtml(key)}">
+    legendEl.innerHTML = order
+      .map((key, i) => {
+        const isDimmed = selectedGroupKey && selectedGroupKey !== key;
+        return `<button type="button" class="legend-item${isDimmed ? " dimmed" : ""}" data-group-key="${escapeHtml(key)}">
         <i style="background:${colorForIndex(i, order.length)}"></i>${escapeHtml(key)}
       </button>`;
-    }).join('');
+      })
+      .join("");
 
-    legendEl.querySelectorAll('.legend-item').forEach((btn) => {
-      btn.addEventListener('click', () => {
+    legendEl.querySelectorAll(".legend-item").forEach((btn) => {
+      btn.addEventListener("click", () => {
         selectedKey = null; // legend selection and point selection are mutually exclusive
-        selectedGroupKey = selectedGroupKey === btn.dataset.groupKey ? null : btn.dataset.groupKey;
+        selectedGroupKey =
+          selectedGroupKey === btn.dataset.groupKey
+            ? null
+            : btn.dataset.groupKey;
         render();
       });
     });
   }
 
   function render() {
-    const xScale = (x) => padL + ((x - domain.xMin) / (domain.xMax - domain.xMin)) * plotW;
-    const yScale = (y) => padT + plotH - ((y - domain.yMin) / (domain.yMax - domain.yMin)) * plotH;
+    const xScale = (x) =>
+      padL + ((x - domain.xMin) / (domain.xMax - domain.xMin)) * plotW;
+    const yScale = (y) =>
+      padT + plotH - ((y - domain.yMin) / (domain.yMax - domain.yMin)) * plotH;
 
-    const xTicks = 5, yTicks = 5;
+    const xTicks = 5,
+      yTicks = 5;
     const gridlines = [
       ...Array.from({ length: xTicks + 1 }, (_, i) => {
         const val = domain.xMin + (domain.xMax - domain.xMin) * (i / xTicks);
@@ -1600,12 +2064,15 @@ function renderDraftScatter(container, data) {
         const y = yScale(val);
         return `<line x1="${padL}" y1="${y}" x2="${padL + plotW}" y2="${y}" stroke="var(--border)" stroke-width="1" />
                 <text x="${padL - 8}" y="${y + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${Math.round(val * 100)}%</text>`;
-      })
-    ].join('');
+      }),
+    ].join("");
 
-    const visiblePoints = data.filter((p) =>
-      p.avgDraftValue >= domain.xMin && p.avgDraftValue <= domain.xMax &&
-      p.winRate >= domain.yMin && p.winRate <= domain.yMax
+    const visiblePoints = data.filter(
+      (p) =>
+        p.avgDraftValue >= domain.xMin &&
+        p.avgDraftValue <= domain.xMax &&
+        p.winRate >= domain.yMin &&
+        p.winRate <= domain.yMax,
     );
 
     const jitterOf = computeJitteredPositions(visiblePoints);
@@ -1613,42 +2080,51 @@ function renderDraftScatter(container, data) {
     const sortedForPaint = [...visiblePoints].sort((a, b) => {
       const aKey = `${a.year}::${a.tournament}::${a.captain}`;
       const bKey = `${b.year}::${b.tournament}::${b.captain}`;
-      const aHighlighted = aKey === selectedKey || (selectedGroupKey && getGroupKey(a, groupBy) === selectedGroupKey);
-      const bHighlighted = bKey === selectedKey || (selectedGroupKey && getGroupKey(b, groupBy) === selectedGroupKey);
+      const aHighlighted =
+        aKey === selectedKey ||
+        (selectedGroupKey && getGroupKey(a, groupBy) === selectedGroupKey);
+      const bHighlighted =
+        bKey === selectedKey ||
+        (selectedGroupKey && getGroupKey(b, groupBy) === selectedGroupKey);
       return (aHighlighted ? 1 : 0) - (bHighlighted ? 1 : 0);
     });
 
-    const dots = sortedForPaint.map((p) => {
-      const pointKey = `${p.year}::${p.tournament}::${p.captain}`;
-      const groupKey = getGroupKey(p, groupBy);
-      const isSelectedPoint = pointKey === selectedKey;
-      const isDimmedByPoint = selectedKey && !isSelectedPoint;
-      const isDimmedByGroup = selectedGroupKey && groupKey !== selectedGroupKey;
-      const isDimmed = isDimmedByPoint || isDimmedByGroup;
-      const r = 4 + Math.sqrt(p.games);
-      const fillColor = colorFor(p);
-      const jitter = jitterOf.get(p) || { dxPx: 0, dyPx: 0 };
-      const cx = xScale(p.avgDraftValue) + jitter.dxPx;
-      const cy = yScale(p.winRate) + jitter.dyPx;
-      return `<circle
+    const dots = sortedForPaint
+      .map((p) => {
+        const pointKey = `${p.year}::${p.tournament}::${p.captain}`;
+        const groupKey = getGroupKey(p, groupBy);
+        const isSelectedPoint = pointKey === selectedKey;
+        const isDimmedByPoint = selectedKey && !isSelectedPoint;
+        const isDimmedByGroup =
+          selectedGroupKey && groupKey !== selectedGroupKey;
+        const isDimmed = isDimmedByPoint || isDimmedByGroup;
+        const r = 4 + Math.sqrt(p.games);
+        const fillColor = colorFor(p);
+        const jitter = jitterOf.get(p) || { dxPx: 0, dyPx: 0 };
+        const cx = xScale(p.avgDraftValue) + jitter.dxPx;
+        const cy = yScale(p.winRate) + jitter.dyPx;
+        return `<circle
         class="scatter-point"
         data-captain="${escapeHtml(p.captain)}"
         data-key="${escapeHtml(pointKey)}"
         cx="${cx}" cy="${cy}" r="${isSelectedPoint ? r + 2 : r}"
         fill="${fillColor}" fill-opacity="${isDimmed ? 0.08 : 0.5}"
-        stroke="${isSelectedPoint ? 'var(--text)' : fillColor}"
+        stroke="${isSelectedPoint ? "var(--text)" : fillColor}"
         stroke-opacity="${isDimmed ? 0.15 : isSelectedPoint ? 1 : 0.75}"
         stroke-width="${isSelectedPoint ? 2.5 : 1.25}"
         style="cursor:pointer" />`;
-    }).join('');
+      })
+      .join("");
 
     const regression = computeRegressionLine(data);
-    const regressionLine = regression ? (() => {
-      const y1 = regression.slope * domain.xMin + regression.intercept;
-      const y2 = regression.slope * domain.xMax + regression.intercept;
-      return `<line x1="${xScale(domain.xMin)}" y1="${yScale(y1)}" x2="${xScale(domain.xMax)}" y2="${yScale(y2)}"
+    const regressionLine = regression
+      ? (() => {
+          const y1 = regression.slope * domain.xMin + regression.intercept;
+          const y2 = regression.slope * domain.xMax + regression.intercept;
+          return `<line x1="${xScale(domain.xMin)}" y1="${yScale(y1)}" x2="${xScale(domain.xMax)}" y2="${yScale(y2)}"
         stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3" clip-path="url(#draftScatterPlotClip)" />`;
-    })() : '';
+        })()
+      : "";
 
     container.innerHTML = `
       <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" class="draft-scatter-svg">
@@ -1674,40 +2150,45 @@ function renderDraftScatter(container, data) {
         <div class="draft-scatter-tooltip" hidden></div>
       `;
 
-      renderLegend();
-      wireInteractions();
-    }
+    renderLegend();
+    wireInteractions();
+  }
 
   function wireInteractions() {
-    const svg = container.querySelector('.draft-scatter-svg');
-    const overlay = container.querySelector('.scatter-zoom-overlay');
-    const dragRect = container.querySelector('.scatter-drag-rect');
-    const tooltip = container.querySelector('.draft-scatter-tooltip');
-    const resetBtn = container.querySelector('.scatter-reset-btn');
+    const svg = container.querySelector(".draft-scatter-svg");
+    const overlay = container.querySelector(".scatter-zoom-overlay");
+    const dragRect = container.querySelector(".scatter-drag-rect");
+    const tooltip = container.querySelector(".draft-scatter-tooltip");
+    const resetBtn = container.querySelector(".scatter-reset-btn");
 
-    container.querySelectorAll('.scatter-point').forEach((circle) => {
-      circle.addEventListener('pointerenter', () => {
+    container.querySelectorAll(".scatter-point").forEach((circle) => {
+      circle.addEventListener("pointerenter", () => {
         const key = circle.dataset.key;
-        const p = data.find((d) => `${d.year}::${d.tournament}::${d.captain}` === key);
+        const p = data.find(
+          (d) => `${d.year}::${d.tournament}::${d.captain}` === key,
+        );
         if (!p) return;
         tooltip.innerHTML = `<strong>${escapeHtml(p.captain)}</strong> <span style="color:var(--muted)">(${escapeHtml(p.tournament)} ${p.year})</span><br>
-          Draft value: ${p.avgDraftValue > 0 ? '+' : ''}${p.avgDraftValue} (${p.picksEvaluated} picks)<br>
+          Draft value: ${p.avgDraftValue > 0 ? "+" : ""}${p.avgDraftValue} (${p.picksEvaluated} picks)<br>
           Record: ${p.wins}W ${p.losses}L (${Math.round(p.winRate * 100)}%)`;
         tooltip.hidden = false;
         const rect = container.getBoundingClientRect();
         tooltip.style.left = `${e.clientX - rect.left + 12}px`;
         tooltip.style.top = `${e.clientY - rect.top + 12}px`;
       });
-      circle.addEventListener('pointermove', (e) => {
+      circle.addEventListener("pointermove", (e) => {
         const rect = container.getBoundingClientRect();
         tooltip.style.left = `${e.clientX - rect.left + 12}px`;
         tooltip.style.top = `${e.clientY - rect.top + 12}px`;
       });
-      circle.addEventListener('pointerleave', () => { tooltip.hidden = true; });
-      circle.addEventListener('click', (e) => {
+      circle.addEventListener("pointerleave", () => {
+        tooltip.hidden = true;
+      });
+      circle.addEventListener("click", (e) => {
         e.stopPropagation();
         selectedGroupKey = null; // point selection and group selection are mutually exclusive
-        selectedKey = selectedKey === circle.dataset.key ? null : circle.dataset.key;
+        selectedKey =
+          selectedKey === circle.dataset.key ? null : circle.dataset.key;
         render();
       });
     });
@@ -1727,41 +2208,54 @@ function renderDraftScatter(container, data) {
 
       return {
         x: (evt.clientX - rect.left - offsetX) / scale,
-        y: (evt.clientY - rect.top - offsetY) / scale
+        y: (evt.clientY - rect.top - offsetY) / scale,
       };
     };
 
-    overlay.addEventListener('pointerdown', (e) => {
+    overlay.addEventListener("pointerdown", (e) => {
       dragStart = svgPoint(e);
-      dragRect.style.display = 'block';
+      dragRect.style.display = "block";
     });
-    svg.addEventListener('pointermove', (e) => {
+    svg.addEventListener("pointermove", (e) => {
       if (!dragStart) return;
       const cur = svgPoint(e);
-      const x = Math.min(dragStart.x, cur.x), y = Math.min(dragStart.y, cur.y);
-      dragRect.setAttribute('x', x);
-      dragRect.setAttribute('y', y);
-      dragRect.setAttribute('width', Math.abs(cur.x - dragStart.x));
-      dragRect.setAttribute('height', Math.abs(cur.y - dragStart.y));
+      const x = Math.min(dragStart.x, cur.x),
+        y = Math.min(dragStart.y, cur.y);
+      dragRect.setAttribute("x", x);
+      dragRect.setAttribute("y", y);
+      dragRect.setAttribute("width", Math.abs(cur.x - dragStart.x));
+      dragRect.setAttribute("height", Math.abs(cur.y - dragStart.y));
     });
-    svg.addEventListener('pointerup', (e) => {
+    svg.addEventListener("pointerup", (e) => {
       if (!dragStart) return;
       const cur = svgPoint(e);
-      const x1 = Math.min(dragStart.x, cur.x), x2 = Math.max(dragStart.x, cur.x);
-      const y1 = Math.min(dragStart.y, cur.y), y2 = Math.max(dragStart.y, cur.y);
+      const x1 = Math.min(dragStart.x, cur.x),
+        x2 = Math.max(dragStart.x, cur.x);
+      const y1 = Math.min(dragStart.y, cur.y),
+        y2 = Math.max(dragStart.y, cur.y);
       dragStart = null;
-      dragRect.style.display = 'none';
+      dragRect.style.display = "none";
       if (x2 - x1 < 8 || y2 - y1 < 8) return;
 
-      const invX = (px) => domain.xMin + ((px - padL) / plotW) * (domain.xMax - domain.xMin);
-      const invY = (py) => domain.yMin + ((padT + plotH - py) / plotH) * (domain.yMax - domain.yMin);
-      const newXMin = invX(x1), newXMax = invX(x2);
-      const newYMin = invY(y2), newYMax = invY(y1);
-      domain = { xMin: newXMin, xMax: newXMax, yMin: Math.max(0, newYMin), yMax: Math.min(1, newYMax) };
+      const invX = (px) =>
+        domain.xMin + ((px - padL) / plotW) * (domain.xMax - domain.xMin);
+      const invY = (py) =>
+        domain.yMin +
+        ((padT + plotH - py) / plotH) * (domain.yMax - domain.yMin);
+      const newXMin = invX(x1),
+        newXMax = invX(x2);
+      const newYMin = invY(y2),
+        newYMax = invY(y1);
+      domain = {
+        xMin: newXMin,
+        xMax: newXMax,
+        yMin: Math.max(0, newYMin),
+        yMax: Math.min(1, newYMax),
+      };
       render();
     });
 
-    resetBtn.addEventListener('click', () => {
+    resetBtn.addEventListener("click", () => {
       domain = { ...fullDomain };
       selectedKey = null;
       selectedGroupKey = null;
@@ -1769,8 +2263,8 @@ function renderDraftScatter(container, data) {
     });
   }
 
-  groupBySelect.value = 'none';
-  groupBySelect.addEventListener('change', () => {
+  groupBySelect.value = "none";
+  groupBySelect.addEventListener("change", () => {
     groupBy = groupBySelect.value;
     selectedKey = null;
     selectedGroupKey = null;
@@ -1785,17 +2279,16 @@ function renderDraftScatter(container, data) {
 // value +11)". A positive value means they were rated better than where
 // they went (a steal); negative means they went earlier than their
 // entering rating justified (a reach).
-function formatDraftPick(pick, rankLabel = 'entering-rank') {
-  if (!pick) return '–';
-  const sign = pick.value > 0 ? '+' : '';
+function formatDraftPick(pick, rankLabel = "entering-rank") {
+  if (!pick) return "–";
+  const sign = pick.value > 0 ? "+" : "";
   const rank = pick.entryRank ?? pick.exitRank;
-  return `${escapeHtml(pick.displayName)} <span class="pick-value ${pick.value > 0 ? 'outcome-win' : pick.value < 0 ? 'outcome-loss' : ''}">${sign}${pick.value}</span><br>
+  return `${escapeHtml(pick.displayName)} <span class="pick-value ${pick.value > 0 ? "outcome-win" : pick.value < 0 ? "outcome-loss" : ""}">${sign}${pick.value}</span><br>
     <span class="pick-detail">pick #${pick.pickOrder} · ${rankLabel} #${rank}</span>`;
 }
 
-
-document.addEventListener('click', (e) => {
-  const link = e.target.closest('.captain-draft-link');
+document.addEventListener("click", (e) => {
+  const link = e.target.closest(".captain-draft-link");
   if (!link) return;
   e.preventDefault();
   openCaptainDraftHistory(link.dataset.captain);
@@ -1806,14 +2299,80 @@ initDraftScatterToggle();
 // ==================== Team Balance tab ====================
 
 const TEAM_BALANCE_COLUMNS = [
-  { key: 'year', label: 'Year', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'tournament', label: 'Tournament', sortable: true, hideable: true, filterable: true, type: 'string', filterType: 'checkbox' },
-  { key: 'captain', label: 'Captain', sortable: true, hideable: false, filterable: true, type: 'string', className: 'group-name' },
-  { key: 'avgEntryRating', label: 'Avg Entry TrueSkill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
-  { key: 'finalStage', label: 'Final Stage', sortable: true, hideable: true, filterable: true, type: 'string', filterType: 'checkbox' },
-  { key: 'wins', label: 'Wins', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'losses', label: 'Losses', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'winRate', label: 'Win Rate', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, percentage: true }
+  {
+    key: "year",
+    label: "Year",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "tournament",
+    label: "Tournament",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+    filterType: "checkbox",
+  },
+  {
+    key: "captain",
+    label: "Captain",
+    sortable: true,
+    hideable: false,
+    filterable: true,
+    type: "string",
+    className: "group-name",
+  },
+  {
+    key: "avgEntryRating",
+    label: "Avg Entry TrueSkill",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+    className: "adj-avg",
+  },
+  {
+    key: "finalStage",
+    label: "Final Stage",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+    filterType: "checkbox",
+  },
+  {
+    key: "wins",
+    label: "Wins",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "losses",
+    label: "Losses",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "winRate",
+    label: "Win Rate",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+    percentage: true,
+  },
 ];
 
 function renderTeamMatchList(row) {
@@ -1822,24 +2381,34 @@ function renderTeamMatchList(row) {
 
   const rosterHtml = roster.length
     ? `<ul class="roster-detail-list">${roster
-        .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating)}</span></li>`)
-        .join('')}</ul>`
-    : '<p>No roster on file.</p>';
+        .map(
+          (m) =>
+            `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating)}</span></li>`,
+        )
+        .join("")}</ul>`
+    : "<p>No roster on file.</p>";
 
   const matchesHtml = matches.length
     ? `<table class="profile-history-table">
         <thead><tr><th>Opponent</th><th>Result</th><th>Stage</th><th>Pred. Win %</th></tr></thead>
-        <tbody>${matches.map((m) => {
-          const outcomeClass = m.outcome === 'win' ? 'outcome-win' : m.outcome === 'loss' ? 'outcome-loss' : 'outcome-draw';
-          return `<tr>
+        <tbody>${matches
+          .map((m) => {
+            const outcomeClass =
+              m.outcome === "win"
+                ? "outcome-win"
+                : m.outcome === "loss"
+                  ? "outcome-loss"
+                  : "outcome-draw";
+            return `<tr>
             <td>${escapeHtml(m.opponentName)}</td>
             <td class="${outcomeClass}">${escapeHtml(m.outcome)}</td>
-            <td>${m.matchStage ? escapeHtml(m.matchStage) : '–'}</td>
+            <td>${m.matchStage ? escapeHtml(m.matchStage) : "–"}</td>
             <td>${Math.round((m.predictedWinProb ?? 0) * 100)}%</td>
           </tr>`;
-        }).join('')}</tbody>
+          })
+          .join("")}</tbody>
       </table>`
-    : '<p>No matches recorded.</p>';
+    : "<p>No matches recorded.</p>";
 
   return `
     <div class="roster-detail">
@@ -1853,16 +2422,15 @@ function renderTeamMatchList(row) {
 
 const teamBalanceTable = createTabTable({
   columns: TEAM_BALANCE_COLUMNS,
-  headerRowEl: document.getElementById('teamBalanceHeaderRow'),
-  bodyEl: document.getElementById('teamBalanceBody'),
-  columnsBtnEl: document.getElementById('teamBalanceColumnsBtn'),
-  columnsPanelEl: document.getElementById('teamBalanceColumnsPanel'),
-  ownerKey: 'teambalance',
-  defaultSortColumn: 'avgEntryRating',
-  emptyMessage: 'No team balance data available',
-  expandable: { getDetailHtml: renderTeamMatchList }
+  headerRowEl: document.getElementById("teamBalanceHeaderRow"),
+  bodyEl: document.getElementById("teamBalanceBody"),
+  columnsBtnEl: document.getElementById("teamBalanceColumnsBtn"),
+  columnsPanelEl: document.getElementById("teamBalanceColumnsPanel"),
+  ownerKey: "teambalance",
+  defaultSortColumn: "avgEntryRating",
+  emptyMessage: "No team balance data available",
+  expandable: { getDetailHtml: renderTeamMatchList },
 });
-
 
 // ==================== Shared fetch: both tabs come from one endpoint ====================
 
@@ -1871,64 +2439,116 @@ let latestDraftAnalysis = null; // cache so the modal can filter without refetch
 
 async function loadDraftAnalysis() {
   if (draftAnalysisLoaded) return;
-  const res = await fetch('/api/draft-analysis');
+  const res = await fetch("/api/draft-analysis");
   const data = await res.json();
   latestDraftAnalysis = data;
 
   const draftIQRows = data.captainDraftIQ.map((row) => ({
     ...row,
     captainDisplay: `<a href="#" class="captain-draft-link" data-captain="${escapeHtml(row.captain)}">${escapeHtml(row.captain)}</a>`,
-    bestPickLabel: formatDraftPick(row.bestPick, 'entering-rank'),
-    worstPickLabel: formatDraftPick(row.worstPick, 'entering-rank'),
-    bestPickLeavingLabel: formatDraftPick(row.bestPickLeaving, 'leaving-rank'),
-    worstPickLeavingLabel: formatDraftPick(row.worstPickLeaving, 'leaving-rank')
+    bestPickLabel: formatDraftPick(row.bestPick, "entering-rank"),
+    worstPickLabel: formatDraftPick(row.worstPick, "entering-rank"),
+    bestPickLeavingLabel: formatDraftPick(row.bestPickLeaving, "leaving-rank"),
+    worstPickLeavingLabel: formatDraftPick(
+      row.worstPickLeaving,
+      "leaving-rank",
+    ),
   }));
   draftIQTable.setData(draftIQRows);
   teamBalanceTable.setData(data.teamBalance);
   draftAnalysisLoaded = true;
-
 }
 
 // ==================== Draft Data tab ====================
 const DRAFT_DATA_COLUMNS = [
-  { key: 'Tournament', label: 'Tournament', sortable: true, hideable: true, filterable: true, type: 'string', filterType: 'checkbox' },
-  { key: 'Year', label: 'Year', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'Captain', label: 'Captain', sortable: true, hideable: true, filterable: true, type: 'string' },
-  { key: 'Player', label: 'Player', sortable: true, hideable: false, filterable: true, type: 'string', playerLink: true, className: 'group-name' },
-  { key: 'Pick Order', label: 'Pick Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'Rank', label: 'Rank', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 }
+  {
+    key: "Tournament",
+    label: "Tournament",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+    filterType: "checkbox",
+  },
+  {
+    key: "Year",
+    label: "Year",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "Captain",
+    label: "Captain",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+  },
+  {
+    key: "Player",
+    label: "Player",
+    sortable: true,
+    hideable: false,
+    filterable: true,
+    type: "string",
+    playerLink: true,
+    className: "group-name",
+  },
+  {
+    key: "Pick Order",
+    label: "Pick Order",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "Rank",
+    label: "Rank",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 1,
+  },
 ];
 
 const draftDataTable = createTabTable({
   columns: DRAFT_DATA_COLUMNS,
-  headerRowEl: document.getElementById('draftHeaderRow'),
-  bodyEl: document.getElementById('draftBody'),
-  columnsBtnEl: document.getElementById('draftColumnsBtn'),
-  columnsPanelEl: document.getElementById('draftColumnsPanel'),
-  ownerKey: 'draftdata',
-  defaultSortColumn: 'Year',
-  emptyMessage: 'No rows match the active filters'
+  headerRowEl: document.getElementById("draftHeaderRow"),
+  bodyEl: document.getElementById("draftBody"),
+  columnsBtnEl: document.getElementById("draftColumnsBtn"),
+  columnsPanelEl: document.getElementById("draftColumnsPanel"),
+  ownerKey: "draftdata",
+  defaultSortColumn: "Year",
+  emptyMessage: "No rows match the active filters",
 });
 
 let draftDataLoaded = false;
 
 async function loadDraftData() {
   if (draftDataLoaded) return;
-  const res = await fetch('/api/raw');
+  const res = await fetch("/api/raw");
   const data = await res.json();
   // Raw DB values arrive as strings (SQLite/CSV-sourced) -- coerceNumericColumns
   // is the same helper the old single Raw Data tab used, just called here
   // against this tab's own column list instead of a dynamically-discovered one.
-  coerceNumericColumns(DRAFT_DATA_COLUMNS.map((c) => c.key), data.rows);
+  coerceNumericColumns(
+    DRAFT_DATA_COLUMNS.map((c) => c.key),
+    data.rows,
+  );
   draftDataTable.setData(data.rows);
   draftDataLoaded = true;
 }
 
-
-document.getElementById('downloadDraftCsvBtn').addEventListener('click', () => {
-  const a = document.createElement('a');
-  a.href = '/api/raw.csv';
-  a.download = 'draft-data.csv';
+document.getElementById("downloadDraftCsvBtn").addEventListener("click", () => {
+  const a = document.createElement("a");
+  a.href = "/api/raw.csv";
+  a.download = "draft-data.csv";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1936,9 +2556,13 @@ document.getElementById('downloadDraftCsvBtn').addEventListener('click', () => {
 
 // ==================== Match Data tab ====================
 function renderMatchRosterDetail(row) {
-  const rosterList = (team) => (team?.roster || [])
-    .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue ? renderTrueSkillValue(m.conservativeRating, m.mu) : m.conservativeRating}</span></li>`)
-    .join('');
+  const rosterList = (team) =>
+    (team?.roster || [])
+      .map(
+        (m) =>
+          `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue ? renderTrueSkillValue(m.conservativeRating, m.mu) : m.conservativeRating}</span></li>`,
+      )
+      .join("");
   return `
     <div class="roster-detail">
       <div><strong>${escapeHtml(row._team1Roster?.name || row.team1)}</strong> - avg TrueSkill: ${renderTrueSkillValue(row._team1Roster?.avgConservativeRating, row._team1Roster?.avgMu)}
@@ -1949,43 +2573,106 @@ function renderMatchRosterDetail(row) {
 }
 
 const MATCH_DATA_COLUMNS = [
-  { key: 'year', label: 'Year', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'tournament', label: 'Tournament', sortable: true, hideable: true, filterable: true, type: 'string', filterType: 'checkbox' },
-  { key: 'team1', label: 'Team 1', sortable: true, hideable: true, filterable: true, type: 'string' },
-  { key: 'team2', label: 'Team 2', sortable: true, hideable: true, filterable: true, type: 'string' },
-  { key: 'result', label: 'Result', sortable: true, hideable: true, filterable: true, type: 'string' },
-  { key: 'match_order', label: 'Match Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'match_stage', label: 'Match Stage', sortable: true, hideable: true, filterable: true, type: 'string' },
-  { key: 'csv_row_index', label: 'CSV Row', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, defaultHidden: true }
+  {
+    key: "year",
+    label: "Year",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "tournament",
+    label: "Tournament",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+    filterType: "checkbox",
+  },
+  {
+    key: "team1",
+    label: "Team 1",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+  },
+  {
+    key: "team2",
+    label: "Team 2",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+  },
+  {
+    key: "result",
+    label: "Result",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+  },
+  {
+    key: "match_order",
+    label: "Match Order",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "match_stage",
+    label: "Match Stage",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+  },
+  {
+    key: "csv_row_index",
+    label: "CSV Row",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+    defaultHidden: true,
+  },
 ];
 
 const matchDataTable = createTabTable({
   columns: MATCH_DATA_COLUMNS,
-  headerRowEl: document.getElementById('matchHeaderRow'),
-  bodyEl: document.getElementById('matchBody'),
-  columnsBtnEl: document.getElementById('matchColumnsBtn'),
-  columnsPanelEl: document.getElementById('matchColumnsPanel'),
-  ownerKey: 'matchdata',
-  defaultSortColumn: 'year',
-  emptyMessage: 'No rows match the active filters',
-  expandable: { getDetailHtml: renderMatchRosterDetail }
+  headerRowEl: document.getElementById("matchHeaderRow"),
+  bodyEl: document.getElementById("matchBody"),
+  columnsBtnEl: document.getElementById("matchColumnsBtn"),
+  columnsPanelEl: document.getElementById("matchColumnsPanel"),
+  ownerKey: "matchdata",
+  defaultSortColumn: "year",
+  emptyMessage: "No rows match the active filters",
+  expandable: { getDetailHtml: renderMatchRosterDetail },
 });
 
 let matchDataLoaded = false;
 async function loadMatchData() {
   if (matchDataLoaded) return;
-  const res = await fetch('/api/raw-matches');
+  const res = await fetch("/api/raw-matches");
   const data = await res.json();
-  coerceNumericColumns(MATCH_DATA_COLUMNS.map((c) => c.key), data.rows);
+  coerceNumericColumns(
+    MATCH_DATA_COLUMNS.map((c) => c.key),
+    data.rows,
+  );
   matchDataTable.setData(data.rows);
   matchDataLoaded = true;
 }
 
-
-document.getElementById('downloadMatchCsvBtn').addEventListener('click', () => {
-  const a = document.createElement('a');
-  a.href = '/api/raw-matches.csv';
-  a.download = 'match-data.csv';
+document.getElementById("downloadMatchCsvBtn").addEventListener("click", () => {
+  const a = document.createElement("a");
+  a.href = "/api/raw-matches.csv";
+  a.download = "match-data.csv";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1993,41 +2680,41 @@ document.getElementById('downloadMatchCsvBtn').addEventListener('click', () => {
 
 // ==================== Tab Buttons ====================
 tabButtons.forEach((btn) => {
-  if (btn.dataset.tab === 'trueskill') {
-    btn.addEventListener('click', () => loadtrueskillData(false));
+  if (btn.dataset.tab === "trueskill") {
+    btn.addEventListener("click", () => loadtrueskillData(false));
   }
-  if (btn.dataset.tab === 'matchdata') {
-    btn.addEventListener('click', () => loadMatchData(false));
+  if (btn.dataset.tab === "matchdata") {
+    btn.addEventListener("click", () => loadMatchData(false));
   }
-  if (btn.dataset.tab === 'draftdata') {
-    btn.addEventListener('click', () => loadDraftData(false));
+  if (btn.dataset.tab === "draftdata") {
+    btn.addEventListener("click", () => loadDraftData(false));
   }
-  if (btn.dataset.tab === 'draftiq' || btn.dataset.tab === 'teambalance') {
-    btn.addEventListener('click', () => loadDraftAnalysis());
+  if (btn.dataset.tab === "draftiq" || btn.dataset.tab === "teambalance") {
+    btn.addEventListener("click", () => loadDraftAnalysis());
   }
-}
-);
+});
 
 // ==================== URL query param state ====================
 
 function readStateFromURL() {
   const params = new URLSearchParams(window.location.search);
 
-  const tab = params.get('tab') || 'trueskill';
+  const tab = params.get("tab") || "trueskill";
 
   setActiveTab(tab);
-  if (tab === 'draftdata') loadDraftData();
-  if (tab === 'matchdata') loadMatchData();
-  if (tab === 'draftiq' || tab === 'teambalance') loadDraftAnalysis();
+  if (tab === "draftdata") loadDraftData();
+  if (tab === "matchdata") loadMatchData();
+  if (tab === "draftiq" || tab === "teambalance") loadDraftAnalysis();
 }
 
 function writeStateToURL() {
   const params = new URLSearchParams();
-  const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab || 'trueskill';
-  params.set('tab', activeTab);
+  const activeTab =
+    document.querySelector(".tab-btn.active")?.dataset.tab || "trueskill";
+  params.set("tab", activeTab);
 
   const newUrl = `${window.location.pathname}?${params.toString()}`;
-  window.history.replaceState(null, '', newUrl);
+  window.history.replaceState(null, "", newUrl);
 }
 
 let fetchDebounceTimer = null;
@@ -2041,15 +2728,15 @@ function scheduleUrlUpdate() {
 // ==================== Init ====================
 
 async function loadMeta() {
-	  const res = await fetch('/api/meta');
-	  const meta = await res.json();
-	  groupColName = meta.groupCol;
-	}
+  const res = await fetch("/api/meta");
+  const meta = await res.json();
+  groupColName = meta.groupCol;
+}
 
 (async function init() {
   readStateFromURL();
   await loadMeta();
   await fetchStats(RANKINGS_RISK, RANKINGS_HALF_LIFE);
-  loadtrueskillData() 
+  loadtrueskillData();
   writeStateToURL();
 })();

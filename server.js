@@ -1,28 +1,31 @@
-const express = require('express');
-const path = require('path');
-const Database = require('better-sqlite3');
-const { loadIdentityMap, identityTablesExist } = require('./src/lib/player-identity');
-const { runFullSync } = require('./src/lib/riot-sync');
-const { startPeriodicSync } = require('./src/scripts/scheduler');
-const { computeTrueSkillFromMatches } = require('./src/lib/trueskill-matches');
+const express = require("express");
+const path = require("path");
+const Database = require("better-sqlite3");
+const {
+  loadIdentityMap,
+  identityTablesExist,
+} = require("./src/lib/player-identity");
+const { runFullSync } = require("./src/lib/riot-sync");
+const { startPeriodicSync } = require("./src/scripts/scheduler");
+const { computeTrueSkillFromMatches } = require("./src/lib/trueskill-matches");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ---- Config: point these at your real table/columns when ready ----
-const DB_PATH = path.join(__dirname, 'data', 'app.db');
-const TABLE = 'rows';
-const GROUP_COL = 'Player';
-const YEAR_COL = 'Year';
-const CAPTAIN_COL = 'Captain';
-const PICK_ORDER_COL = 'Pick Order';
-const RANK_COL = 'Rank';
-const SD_MODE = 'sample'; // 'sample' (n-1, matches R's sd()) or 'population' (n)
+const DB_PATH = path.join(__dirname, "data", "app.db");
+const TABLE = "rows";
+const GROUP_COL = "Player";
+const YEAR_COL = "Year";
+const CAPTAIN_COL = "Captain";
+const PICK_ORDER_COL = "Pick Order";
+const RANK_COL = "Rank";
+const SD_MODE = "sample"; // 'sample' (n-1, matches R's sd()) or 'population' (n)
 
 // better-sqlite3 is synchronous and file-backed — no connection pool needed
 // for a dataset this size. Opened once at startup and reused per request.
 const db = new Database(DB_PATH, { fileMustExist: true });
-db.pragma('journal_mode = WAL');
+db.pragma("journal_mode = WAL");
 
 // Double-quote identifiers so reserved-word / space-containing column
 // names (e.g. "Pick Order") don't break the SQL parser.
@@ -46,7 +49,7 @@ function getAllRows() {
             CAST(${q(PICK_ORDER_COL)} AS REAL) AS pickOrder,
             CAST(${q(RANK_COL)} AS REAL) AS rank
     FROM ${q(TABLE)}
-    WHERE ${q(GROUP_COL)} IS NOT NULL AND ${q(GROUP_COL)} != ''`
+    WHERE ${q(GROUP_COL)} IS NOT NULL AND ${q(GROUP_COL)} != ''`,
   );
   return stmt.all();
 }
@@ -70,7 +73,7 @@ function resolveIdentities(rows, identityMap) {
       identityKey: identity ? identity.identityKey : row.groupVal,
       displayName: identity ? identity.displayName : row.groupVal,
       profileUrl: identity ? identity.profileUrl : null,
-      identified: identity ? identity.resolved : false
+      identified: identity ? identity.resolved : false,
     };
   });
 }
@@ -93,14 +96,15 @@ function attachDerivedFields(rows) {
   const perGroup = {};
   for (const row of rows) {
     if (!Number.isFinite(row.year)) continue;
-    const groupKey = `${row.year}::${row.tournament || 'Summer'}`;
-    if (!perGroup[groupKey]) perGroup[groupKey] = { pickCount: 0, captains: new Set() };
+    const groupKey = `${row.year}::${row.tournament || "Summer"}`;
+    if (!perGroup[groupKey])
+      perGroup[groupKey] = { pickCount: 0, captains: new Set() };
     perGroup[groupKey].pickCount += 1;
     if (row.captain) perGroup[groupKey].captains.add(row.captain);
   }
 
   return rows.map((row) => {
-    const groupKey = `${row.year}::${row.tournament || 'Summer'}`;
+    const groupKey = `${row.year}::${row.tournament || "Summer"}`;
     const groupInfo = perGroup[groupKey];
     let pickRound = null;
     let pickPercentile = null;
@@ -140,7 +144,7 @@ function weightedAvg(entries, getVal) {
 function computeGroupStats(rows, riskAversion, halfLifeYears) {
   const maxYear = rows.reduce(
     (m, r) => (Number.isFinite(r.year) && r.year > m ? r.year : m),
-    -Infinity
+    -Infinity,
   );
 
   const groups = {};
@@ -163,64 +167,69 @@ function computeGroupStats(rows, riskAversion, halfLifeYears) {
         displayName: row.displayName,
         profileUrl: row.profileUrl,
         identified: row.identified,
-        identityKey: key
+        identityKey: key,
       };
     }
     groups[key].entries.push({
       value: row.value, // may be null — filtered out below where relevant
       weight,
       pickPercentile: row.pickPercentile,
-      rankPercentile: row.rankPercentile
+      rankPercentile: row.rankPercentile,
     });
   }
 
-  const result = Object.values(groups).map(({ entries, displayName, profileUrl, identified, identityKey }) => {
-    const n = entries.length;
-    const valueEntries = entries.filter((e) => Number.isFinite(e.value));
+  const result = Object.values(groups).map(
+    ({ entries, displayName, profileUrl, identified, identityKey }) => {
+      const n = entries.length;
+      const valueEntries = entries.filter((e) => Number.isFinite(e.value));
 
-    let mean = null;
-    let sd = null;
-    let adjAvg = null;
+      let mean = null;
+      let sd = null;
+      let adjAvg = null;
 
-    if (valueEntries.length > 0) {
-      const sumW = valueEntries.reduce((a, e) => a + e.weight, 0);
-      const sumWSq = valueEntries.reduce((a, e) => a + e.weight ** 2, 0);
-      const weightedMean = valueEntries.reduce((a, e) => a + e.weight * e.value, 0) / sumW;
+      if (valueEntries.length > 0) {
+        const sumW = valueEntries.reduce((a, e) => a + e.weight, 0);
+        const sumWSq = valueEntries.reduce((a, e) => a + e.weight ** 2, 0);
+        const weightedMean =
+          valueEntries.reduce((a, e) => a + e.weight * e.value, 0) / sumW;
 
-      const weightedSqDiffSum = valueEntries.reduce(
-        (a, e) => a + e.weight * (e.value - weightedMean) ** 2,
-        0
-      );
+        const weightedSqDiffSum = valueEntries.reduce(
+          (a, e) => a + e.weight * (e.value - weightedMean) ** 2,
+          0,
+        );
 
-      if (SD_MODE === 'sample') {
-        // Reliability-weights unbiased variance; reduces to the normal
-        // (n-1) sample variance when all weights are equal.
-        const effDenom = sumW - sumWSq / sumW;
-        sd = effDenom > 0 ? Math.sqrt(weightedSqDiffSum / effDenom) : 0;
-      } else {
-        sd = Math.sqrt(weightedSqDiffSum / sumW);
+        if (SD_MODE === "sample") {
+          // Reliability-weights unbiased variance; reduces to the normal
+          // (n-1) sample variance when all weights are equal.
+          const effDenom = sumW - sumWSq / sumW;
+          sd = effDenom > 0 ? Math.sqrt(weightedSqDiffSum / effDenom) : 0;
+        } else {
+          sd = Math.sqrt(weightedSqDiffSum / sumW);
+        }
+
+        mean = weightedMean;
+        adjAvg = weightedMean - riskAversion * sd;
       }
 
-      mean = weightedMean;
-      adjAvg = weightedMean - riskAversion * sd;
-    }
+      const avgPickPercentile = weightedAvg(entries, (e) => e.pickPercentile);
+      const avgRankPercentile = weightedAvg(entries, (e) => e.rankPercentile);
 
-    const avgPickPercentile = weightedAvg(entries, (e) => e.pickPercentile);
-    const avgRankPercentile = weightedAvg(entries, (e) => e.rankPercentile);
-
-    return {
-      group: displayName,
-      identityKey,
-      profileUrl,
-      identified,
-      n,
-      mean: mean === null ? null : round2(mean),
-      sd: sd === null ? null : round2(sd),
-      adjAvg: adjAvg === null ? null : round2(adjAvg),
-      avgPickPercentile: avgPickPercentile === null ? null : round2(avgPickPercentile),
-      avgRankPercentile: avgRankPercentile === null ? null : round2(avgRankPercentile)
-    };
-  });
+      return {
+        group: displayName,
+        identityKey,
+        profileUrl,
+        identified,
+        n,
+        mean: mean === null ? null : round2(mean),
+        sd: sd === null ? null : round2(sd),
+        adjAvg: adjAvg === null ? null : round2(adjAvg),
+        avgPickPercentile:
+          avgPickPercentile === null ? null : round2(avgPickPercentile),
+        avgRankPercentile:
+          avgRankPercentile === null ? null : round2(avgRankPercentile),
+      };
+    },
+  );
 
   // nulls (players with no Pick-Value-bearing season yet) sort to the end
   result.sort((a, b) => {
@@ -235,7 +244,7 @@ function round2(x) {
   return Math.round(x * 100) / 100;
 }
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json());
 
 // Shared by /api/stats, /api/roi, /api/tiers — resolves identity for the
@@ -247,14 +256,16 @@ function getFilteredIdentifiedRows() {
   return resolveIdentities(rows, identityMap);
 }
 
-app.get('/api/stats', (req, res) => {
+app.get("/api/stats", (req, res) => {
   const riskAversion = parseFloat(req.query.risk);
   const halfLifeYears = parseFloat(req.query.halfLife);
   if (Number.isNaN(riskAversion)) {
-    return res.status(400).json({ error: 'risk query param must be a number' });
+    return res.status(400).json({ error: "risk query param must be a number" });
   }
   if (Number.isNaN(halfLifeYears) || halfLifeYears < 0) {
-    return res.status(400).json({ error: 'halfLife query param must be a non-negative number' });
+    return res
+      .status(400)
+      .json({ error: "halfLife query param must be a non-negative number" });
   }
 
   const withIdentity = getFilteredIdentifiedRows();
@@ -263,54 +274,83 @@ app.get('/api/stats', (req, res) => {
   res.json({ riskAversion, halfLifeYears, stats });
 });
 
-
 // TrueSkill: rates players as a sequence of team games, one per year,
 function getMatches() {
-  return db.prepare(
-    'SELECT year, tournament, team1, team2, result, csv_row_index AS rowIndex, match_order AS matchOrder, match_stage AS matchStage FROM matches'
-  ).all();
+  return db
+    .prepare(
+      "SELECT year, tournament, team1, team2, result, csv_row_index AS rowIndex, match_order AS matchOrder, match_stage AS matchStage FROM matches",
+    )
+    .all();
 }
 
+const { computeFunFacts } = require("./src/lib/trueskill-funfacts");
 
-
-const { computeFunFacts } = require('./src/lib/trueskill-funfacts');
-
-app.get('/api/trueskill', (req, res) => {
+app.get("/api/trueskill", (req, res) => {
   const identityMap = loadIdentityMap(db);
   const allRows = resolveIdentities(getAllRows(), identityMap);
   const matches = getMatches();
   const opts = {};
-  for (const key of ['mu', 'sigma', 'beta', 'tau', 'drawProbability', 'conservativeK']) {
+  for (const key of [
+    "mu",
+    "sigma",
+    "beta",
+    "tau",
+    "drawProbability",
+    "conservativeK",
+  ]) {
     if (req.query[key] !== undefined) {
       const val = parseFloat(req.query[key]);
-      if (Number.isNaN(val)) return res.status(400).json({ error: `${key} query param must be a number` });
+      if (Number.isNaN(val))
+        return res
+          .status(400)
+          .json({ error: `${key} query param must be a number` });
       opts[key] = val;
     }
   }
-  const result = computeTrueSkillFromMatches(matches, allRows, identityMap, opts);
+  const result = computeTrueSkillFromMatches(
+    matches,
+    allRows,
+    identityMap,
+    opts,
+  );
   result.funFacts = computeFunFacts(result);
   res.json(result);
 });
 
 // Comparing TrueSkill against draft data
-const { computeDraftIQ, computeTeamBalance } = require('./src/lib/draft-analysis');
+const {
+  computeDraftIQ,
+  computeTeamBalance,
+} = require("./src/lib/draft-analysis");
 
-app.get('/api/draft-analysis', (req, res) => {
+app.get("/api/draft-analysis", (req, res) => {
   const identityMap = loadIdentityMap(db);
   const allRows = resolveIdentities(getAllRows(), identityMap);
   const matches = getMatches();
 
-  const trueskillResult = computeTrueSkillFromMatches(matches, allRows, identityMap, {});
+  const trueskillResult = computeTrueSkillFromMatches(
+    matches,
+    allRows,
+    identityMap,
+    {},
+  );
   const { mu, sigma, conservativeK } = trueskillResult.params;
-  const defaultConservativeRating = Math.round((mu - conservativeK * sigma) * 1000) / 1000;
+  const defaultConservativeRating =
+    Math.round((mu - conservativeK * sigma) * 1000) / 1000;
 
   const { picks, captainDraftIQ } = computeDraftIQ(
     allRows,
     trueskillResult.tournamentEntryRatings,
     trueskillResult.tournamentExitRatings, // NEW
-    defaultConservativeRating
+    defaultConservativeRating,
   );
-  const teamBalance = computeTeamBalance(allRows, trueskillResult.tournamentEntryRatings, trueskillResult.games, identityMap, defaultConservativeRating);
+  const teamBalance = computeTeamBalance(
+    allRows,
+    trueskillResult.tournamentEntryRatings,
+    trueskillResult.games,
+    identityMap,
+    defaultConservativeRating,
+  );
 
   // Attach each team-instance's own games directly, so the client can
   // show a match list per row without needing a second endpoint or
@@ -322,18 +362,29 @@ app.get('/api/draft-analysis', (req, res) => {
   const teamBalanceWithGames = teamBalance.map((team) => {
     const captainKey = resolve(team.captain);
     const teamGames = trueskillResult.games
-      .filter((g) => g.year === team.year && g.tournament === team.tournament &&
-        (g.team1.key === captainKey || g.team2.key === captainKey))
+      .filter(
+        (g) =>
+          g.year === team.year &&
+          g.tournament === team.tournament &&
+          (g.team1.key === captainKey || g.team2.key === captainKey),
+      )
       .map((g) => {
         const isTeam1 = g.team1.key === captainKey;
         const own = isTeam1 ? g.team1 : g.team2;
         const opp = isTeam1 ? g.team2 : g.team1;
-        const outcome = g.winner === 'draw' ? 'draw' : ((g.winner === 'team1') === isTeam1 ? 'win' : 'loss');
+        const outcome =
+          g.winner === "draw"
+            ? "draw"
+            : (g.winner === "team1") === isTeam1
+              ? "win"
+              : "loss";
         return {
           opponentName: opp.name,
           outcome,
           matchStage: g.matchStage,
-          predictedWinProb: isTeam1 ? g.predictedWinProbTeam1 : Math.round((1 - g.predictedWinProbTeam1) * 1000) / 1000
+          predictedWinProb: isTeam1
+            ? g.predictedWinProbTeam1
+            : Math.round((1 - g.predictedWinProbTeam1) * 1000) / 1000,
         };
       });
     return { ...team, matches: teamGames };
@@ -342,7 +393,7 @@ app.get('/api/draft-analysis', (req, res) => {
   res.json({ captainDraftIQ, picks, teamBalance: teamBalanceWithGames });
 });
 
-app.get('/api/player/:key', (req, res) => {
+app.get("/api/player/:key", (req, res) => {
   const identityMap = loadIdentityMap(db);
   const allRows = resolveIdentities(getAllRows(), identityMap);
   const matches = getMatches();
@@ -350,28 +401,32 @@ app.get('/api/player/:key', (req, res) => {
 
   const key = decodeURIComponent(req.params.key);
   const player = result.players.find((p) => p.identityKey === key);
-  if (!player) return res.status(404).json({ error: 'Player not found' });
+  if (!player) return res.status(404).json({ error: "Player not found" });
 
   res.json(player);
 });
 
-app.get('/api/meta', (req, res) => {
+app.get("/api/meta", (req, res) => {
   const { n } = db.prepare(`SELECT COUNT(*) AS n FROM ${q(TABLE)}`).get();
   const { maxYear } = db
-    .prepare(`SELECT MAX(CAST(${q(YEAR_COL)} AS INTEGER)) AS maxYear FROM ${q(TABLE)}`)
+    .prepare(
+      `SELECT MAX(CAST(${q(YEAR_COL)} AS INTEGER)) AS maxYear FROM ${q(TABLE)}`,
+    )
     .get();
   const years = db
-    .prepare(`SELECT DISTINCT CAST(${q(YEAR_COL)} AS INTEGER) AS y FROM ${q(TABLE)} ORDER BY y`)
+    .prepare(
+      `SELECT DISTINCT CAST(${q(YEAR_COL)} AS INTEGER) AS y FROM ${q(TABLE)} ORDER BY y`,
+    )
     .all()
     .map((r) => r.y);
   res.json({
     rowCount: n,
     groupCol: GROUP_COL,
-    valueCol: 'Pick Value (computed)',
+    valueCol: "Pick Value (computed)",
     yearCol: YEAR_COL,
     mostRecentYear: maxYear,
     years,
-    sdMode: SD_MODE
+    sdMode: SD_MODE,
   });
 });
 
@@ -384,17 +439,17 @@ function getRawColumns() {
     .prepare(`PRAGMA table_info(${q(TABLE)})`)
     .all()
     .map((c) => c.name)
-    .filter((name) => name !== 'id');
+    .filter((name) => name !== "id");
 }
 
 function getRawRows() {
   const columns = getRawColumns();
-  const selectCols = columns.map(q).join(', ');
+  const selectCols = columns.map(q).join(", ");
   const rows = db.prepare(`SELECT ${selectCols} FROM ${q(TABLE)}`).all();
   return { columns, rows };
 }
 
-app.get('/api/raw', (req, res) => {
+app.get("/api/raw", (req, res) => {
   const { columns, rows } = getRawRows();
   // Enriches each row with a profile URL for its Player value, same
   // identity resolution the Rankings tab uses — so raw data gets the
@@ -407,7 +462,7 @@ app.get('/api/raw', (req, res) => {
     return {
       ...row,
       _playerProfileUrl: identity ? identity.profileUrl : null,
-      _playerIdentityKey: identity ? identity.identityKey : null
+      _playerIdentityKey: identity ? identity.identityKey : null,
     };
   });
   res.json({ columns, rows: enriched });
@@ -416,69 +471,76 @@ app.get('/api/raw', (req, res) => {
 // Match data endpoint
 function getRawMatchColumns() {
   return db
-    .prepare('PRAGMA table_info(matches)')
+    .prepare("PRAGMA table_info(matches)")
     .all()
     .map((c) => c.name)
-    .filter((name) => name !== 'id'); // only the autoincrement key excluded; csv_row_index stays
+    .filter((name) => name !== "id"); // only the autoincrement key excluded; csv_row_index stays
 }
 
 function getRawMatchRows() {
   const columns = getRawMatchColumns();
-  const selectCols = columns.map(q).join(', ');
+  const selectCols = columns.map(q).join(", ");
   const rows = db.prepare(`SELECT ${selectCols} FROM matches`).all();
   return { columns, rows };
 }
 
 const MATCH_COLUMN_DISPLAY_NAMES = {
-  year: 'Year',
-  tournament: 'Tournament',
-  team1: 'Team 1',
-  team2: 'Team 2',
-  result: 'Result',
-  match_order: 'Match Order',
-  match_stage: 'Match Stage',
-  csv_row_index: 'CSV Row Index' // internal-ish, but included for completeness if ever un-hidden
+  year: "Year",
+  tournament: "Tournament",
+  team1: "Team 1",
+  team2: "Team 2",
+  result: "Result",
+  match_order: "Match Order",
+  match_stage: "Match Stage",
+  csv_row_index: "CSV Row Index", // internal-ish, but included for completeness if ever un-hidden
 };
 
-app.get('/api/raw-matches', (req, res) => {
+app.get("/api/raw-matches", (req, res) => {
   const { columns, rows } = getRawMatchRows();
 
   const identityMap = loadIdentityMap(db);
   const allRows = resolveIdentities(getAllRows(), identityMap);
   const matches = getMatches();
-  const trueskillResult = computeTrueSkillFromMatches(matches, allRows, identityMap, {});
-  const gameByRowIndex = new Map(trueskillResult.games.map((g) => [g.csvRowIndex, g]));
+  const trueskillResult = computeTrueSkillFromMatches(
+    matches,
+    allRows,
+    identityMap,
+    {},
+  );
+  const gameByRowIndex = new Map(
+    trueskillResult.games.map((g) => [g.csvRowIndex, g]),
+  );
 
   const enriched = rows.map((row) => {
     const game = gameByRowIndex.get(row.csv_row_index);
     return {
       ...row,
       _team1Roster: game?.team1 ?? null,
-      _team2Roster: game?.team2 ?? null
+      _team2Roster: game?.team2 ?? null,
     };
   });
 
   res.json({ columns, rows: enriched });
 });
 
-app.get('/api/raw-matches.csv', (req, res) => {
+app.get("/api/raw-matches.csv", (req, res) => {
   const { columns, rows } = getRawMatchRows();
   const headerLabels = columns.map((c) => MATCH_COLUMN_DISPLAY_NAMES[c] || c);
-  const lines = [headerLabels.map(csvEscape).join(',')];
+  const lines = [headerLabels.map(csvEscape).join(",")];
   for (const row of rows) {
-    lines.push(columns.map((c) => csvEscape(row[c])).join(','));
+    lines.push(columns.map((c) => csvEscape(row[c])).join(","));
   }
-  const csv = lines.join('\n');
+  const csv = lines.join("\n");
 
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename="match-data.csv"');
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", 'attachment; filename="match-data.csv"');
   res.send(csv);
 });
 
 // CSV-escapes a single field: wraps in quotes if it contains a comma,
 // quote, or newline, doubling any internal quotes.
 function csvEscape(value) {
-  if (value === null || value === undefined) return '';
+  if (value === null || value === undefined) return "";
   const str = String(value);
   if (/[",\n]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
@@ -486,16 +548,16 @@ function csvEscape(value) {
   return str;
 }
 
-app.get('/api/raw.csv', (req, res) => {
+app.get("/api/raw.csv", (req, res) => {
   const { columns, rows } = getRawRows();
-  const lines = [columns.map(csvEscape).join(',')];
+  const lines = [columns.map(csvEscape).join(",")];
   for (const row of rows) {
-    lines.push(columns.map((c) => csvEscape(row[c])).join(','));
+    lines.push(columns.map((c) => csvEscape(row[c])).join(","));
   }
-  const csv = lines.join('\n');
+  const csv = lines.join("\n");
 
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename="draft-data.csv"');
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", 'attachment; filename="draft-data.csv"');
   res.send(csv);
 });
 
@@ -507,23 +569,28 @@ app.get('/api/raw.csv', (req, res) => {
 function checkAdminAuth(req, res) {
   const configured = process.env.ADMIN_TOKEN;
   if (!configured) return true; // no token configured — open, personal-tool default
-  if (req.get('X-Admin-Token') === configured) return true;
-  res.status(401).json({ error: 'Missing or incorrect X-Admin-Token header' });
+  if (req.get("X-Admin-Token") === configured) return true;
+  res.status(401).json({ error: "Missing or incorrect X-Admin-Token header" });
   return false;
 }
 
-app.get('/api/identity/status', (req, res) => {
+app.get("/api/identity/status", (req, res) => {
   if (!identityTablesExist(db)) {
     return res.json({
       bootstrapped: false,
-      message: 'Identity tables not created yet — run node src/scripts/bootstrap-player-identities.js'
+      message:
+        "Identity tables not created yet — run node src/scripts/bootstrap-player-identities.js",
     });
   }
-  const totalPlayers = db.prepare('SELECT COUNT(*) c FROM players').get().c;
-  const resolved = db.prepare('SELECT COUNT(*) c FROM players WHERE puuid IS NOT NULL').get().c;
-  const pending = db.prepare('SELECT COUNT(*) c FROM pending_lookups').get().c;
+  const totalPlayers = db.prepare("SELECT COUNT(*) c FROM players").get().c;
+  const resolved = db
+    .prepare("SELECT COUNT(*) c FROM players WHERE puuid IS NOT NULL")
+    .get().c;
+  const pending = db.prepare("SELECT COUNT(*) c FROM pending_lookups").get().c;
   const pendingReady = db
-    .prepare("SELECT COUNT(*) c FROM pending_lookups WHERE game_name IS NOT NULL AND game_name != ''")
+    .prepare(
+      "SELECT COUNT(*) c FROM pending_lookups WHERE game_name IS NOT NULL AND game_name != ''",
+    )
     .get().c;
   res.json({
     bootstrapped: true,
@@ -532,14 +599,16 @@ app.get('/api/identity/status', (req, res) => {
     unresolved: totalPlayers - resolved,
     pendingLookups: pending,
     pendingReadyToResolve: pendingReady,
-    pendingMissingTag: pending - pendingReady
+    pendingMissingTag: pending - pendingReady,
   });
 });
 
-app.post('/api/identity/sync', async (req, res) => {
+app.post("/api/identity/sync", async (req, res) => {
   if (!checkAdminAuth(req, res)) return;
   if (!process.env.RIOT_API_KEY) {
-    return res.status(400).json({ error: 'RIOT_API_KEY is not set on the server' });
+    return res
+      .status(400)
+      .json({ error: "RIOT_API_KEY is not set on the server" });
   }
   try {
     const result = await runFullSync(db);

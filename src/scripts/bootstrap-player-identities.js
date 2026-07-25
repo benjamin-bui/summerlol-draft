@@ -17,16 +17,16 @@
  *   node data/bootstrap-player-identities.js
  */
 
-const path = require('path');
-const Database = require('better-sqlite3');
-const fs = require('fs');
+const path = require("path");
+const Database = require("better-sqlite3");
+const fs = require("fs");
 
-const DB_PATH = path.join(__dirname, '..', '..', 'data', 'app.db');
-const SCHEMA_PATH = path.join(__dirname, '..', 'db', 'identity-schema.sql');
-const TABLE = 'rows';
-const GROUP_COL = 'Player';
-const CAPTAIN_COL = 'Captain'
-const DEFAULT_REGION = process.env.RIOT_REGION || 'americas';
+const DB_PATH = path.join(__dirname, "..", "..", "data", "app.db");
+const SCHEMA_PATH = path.join(__dirname, "..", "db", "identity-schema.sql");
+const TABLE = "rows";
+const GROUP_COL = "Player";
+const CAPTAIN_COL = "Captain";
+const DEFAULT_REGION = process.env.RIOT_REGION || "americas";
 
 // Matches "Name#Tag" at the start of the string, tag is alphanumeric only
 // (Riot tag lines are 2-5 alphanumeric chars) — anything after the tag
@@ -40,16 +40,18 @@ function parseRiotId(rawName) {
 }
 
 function bootstrap(db) {
-  db.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+  db.exec(fs.readFileSync(SCHEMA_PATH, "utf-8"));
 
   const distinctPlayers = db
-    .prepare(`
+    .prepare(
+      `
       SELECT DISTINCT name FROM (
         SELECT "${GROUP_COL}" AS name FROM "${TABLE}" WHERE "${GROUP_COL}" IS NOT NULL AND "${GROUP_COL}" != ''
         UNION
         SELECT "${CAPTAIN_COL}" AS name FROM "${TABLE}" WHERE "${CAPTAIN_COL}" IS NOT NULL AND "${CAPTAIN_COL}" != ''
       )
-    `)
+    `,
+    )
     .all()
     .map((r) => r.name);
 
@@ -58,13 +60,17 @@ function bootstrap(db) {
   let queuedWithTag = 0;
   let queuedWithoutTag = 0;
 
-  const insertPlayer = db.prepare('INSERT INTO players DEFAULT VALUES');
-  const insertAlias = db.prepare('INSERT INTO player_aliases (alias, player_id) VALUES (?, ?)');
+  const insertPlayer = db.prepare("INSERT INTO players DEFAULT VALUES");
+  const insertAlias = db.prepare(
+    "INSERT INTO player_aliases (alias, player_id) VALUES (?, ?)",
+  );
   const insertPending = db.prepare(
     `INSERT INTO pending_lookups (raw_name, game_name, tag_line, region) VALUES (?, ?, ?, ?)
-     ON CONFLICT(raw_name) DO NOTHING`
+     ON CONFLICT(raw_name) DO NOTHING`,
   );
-  const aliasExists = db.prepare('SELECT 1 FROM player_aliases WHERE alias = ?');
+  const aliasExists = db.prepare(
+    "SELECT 1 FROM player_aliases WHERE alias = ?",
+  );
 
   const seedAll = db.transaction((names) => {
     for (const rawName of names) {
@@ -79,7 +85,12 @@ function bootstrap(db) {
 
       const parsed = parseRiotId(rawName);
       if (parsed) {
-        insertPending.run(rawName, parsed.gameName, parsed.tagLine, DEFAULT_REGION);
+        insertPending.run(
+          rawName,
+          parsed.gameName,
+          parsed.tagLine,
+          DEFAULT_REGION,
+        );
         queuedWithTag += 1;
       } else {
         insertPending.run(rawName, null, null, DEFAULT_REGION);
@@ -90,7 +101,13 @@ function bootstrap(db) {
 
   seedAll(distinctPlayers);
 
-  return { totalPlayerNames: distinctPlayers.length, created, skipped, queuedWithTag, queuedWithoutTag };
+  return {
+    totalPlayerNames: distinctPlayers.length,
+    created,
+    skipped,
+    queuedWithTag,
+    queuedWithoutTag,
+  };
 }
 
 if (require.main === module) {
@@ -99,8 +116,12 @@ if (require.main === module) {
   console.log(`Distinct Player names in dataset: ${result.totalPlayerNames}`);
   console.log(`New identity rows created: ${result.created}`);
   console.log(`Already had an alias (skipped): ${result.skipped}`);
-  console.log(`Queued for Riot lookup (tag parsed from name): ${result.queuedWithTag}`);
-  console.log(`Queued but missing a tag (needs manual entry): ${result.queuedWithoutTag}`);
+  console.log(
+    `Queued for Riot lookup (tag parsed from name): ${result.queuedWithTag}`,
+  );
+  console.log(
+    `Queued but missing a tag (needs manual entry): ${result.queuedWithoutTag}`,
+  );
   db.close();
 }
 
