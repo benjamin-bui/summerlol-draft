@@ -541,18 +541,11 @@ function wireFilterPopover(th, col, popover, filterState, onChange, closeAllPopo
     const isHidden = popover.classList.contains('hidden');
     closeAllPopovers();
     if (isHidden) {
-      // Positioned fixed and appended to document.body (see buildHeaderCell)
-      // rather than left inside the <th> — a table container with
-      // overflow-x:auto has its overflow-y forced to 'auto' too (that's
-      // just how the two properties interact per the CSS spec), which
-      // clips anything extending past the table's own box. That's most
-      // noticeable exactly when a filter has narrowed the table down to
-      // just a few rows, shrinking the table's height below the
-      // popover's. Fixed positioning + a body-level parent escapes that
-      // clipping entirely, regardless of how tall the table currently is.
       const rect = th.getBoundingClientRect();
+      const popoverWidth = 240; // matches .filter-popover's min-width
+      const clampedLeft = Math.min(rect.left, window.innerWidth - popoverWidth - 12);
       popover.style.top = `${rect.bottom + 4}px`;
-      popover.style.left = `${rect.left}px`;
+      popover.style.left = `${Math.max(8, clampedLeft)}px`;
       popover.classList.remove('hidden');
     }
   });
@@ -1207,13 +1200,17 @@ const DRAFT_IQ_COLUMNS = [
   { key: 'avgDraftValue', label: 'Draft IQ (avg value)', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg', sticky: true },
   { key: 'picksEvaluated', label: 'Picks Evaluated', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'bestPickLabel', label: 'Best Pick', sortable: true, hideable: true, filterable: false, type: 'string',
-    sortValue: (row) => row.bestPick?.value ?? -Infinity },
+    sortValue: (row) => row.bestPick?.value ?? -Infinity,
+    render: (val) => val },
   { key: 'worstPickLabel', label: 'Worst Pick', sortable: true, hideable: true, filterable: false, type: 'string',
-    sortValue: (row) => row.worstPick?.value ?? -Infinity },
+    sortValue: (row) => row.worstPick?.value ?? -Infinity,
+    render: (val) => val },
   { key: 'bestPickLeavingLabel', label: 'Best Pick (Leaving)', sortable: true, hideable: true, filterable: false, type: 'string',
-    sortValue: (row) => row.bestPickLeaving?.value ?? -Infinity },
+    sortValue: (row) => row.bestPickLeaving?.value ?? -Infinity,
+    render: (val) => val },
   { key: 'worstPickLeavingLabel', label: 'Worst Pick (Leaving)', sortable: true, hideable: true, filterable: false, type: 'string',
-    sortValue: (row) => row.worstPickLeaving?.value ?? -Infinity }
+    sortValue: (row) => row.worstPickLeaving?.value ?? -Infinity,
+    render: (val) => val }
 ];
 
 const draftIQTable = createTabTable({
@@ -1603,7 +1600,7 @@ function renderDraftScatter(container, data) {
     const resetBtn = container.querySelector('.scatter-reset-btn');
 
     container.querySelectorAll('.scatter-point').forEach((circle) => {
-      circle.addEventListener('mouseenter', () => {
+      circle.addEventListener('pointerenter', () => {
         const key = circle.dataset.key;
         const p = data.find((d) => `${d.year}::${d.tournament}::${d.captain}` === key);
         if (!p) return;
@@ -1615,12 +1612,12 @@ function renderDraftScatter(container, data) {
         tooltip.style.left = `${e.clientX - rect.left + 12}px`;
         tooltip.style.top = `${e.clientY - rect.top + 12}px`;
       });
-      circle.addEventListener('mousemove', (e) => {
+      circle.addEventListener('pointermove', (e) => {
         const rect = container.getBoundingClientRect();
         tooltip.style.left = `${e.clientX - rect.left + 12}px`;
         tooltip.style.top = `${e.clientY - rect.top + 12}px`;
       });
-      circle.addEventListener('mouseleave', () => { tooltip.hidden = true; });
+      circle.addEventListener('pointerleave', () => { tooltip.hidden = true; });
       circle.addEventListener('click', (e) => {
         e.stopPropagation();
         selectedGroupKey = null; // point selection and group selection are mutually exclusive
@@ -1648,11 +1645,11 @@ function renderDraftScatter(container, data) {
       };
     };
 
-    overlay.addEventListener('mousedown', (e) => {
+    overlay.addEventListener('pointerdown', (e) => {
       dragStart = svgPoint(e);
       dragRect.style.display = 'block';
     });
-    svg.addEventListener('mousemove', (e) => {
+    svg.addEventListener('pointermove', (e) => {
       if (!dragStart) return;
       const cur = svgPoint(e);
       const x = Math.min(dragStart.x, cur.x), y = Math.min(dragStart.y, cur.y);
@@ -1661,7 +1658,7 @@ function renderDraftScatter(container, data) {
       dragRect.setAttribute('width', Math.abs(cur.x - dragStart.x));
       dragRect.setAttribute('height', Math.abs(cur.y - dragStart.y));
     });
-    svg.addEventListener('mouseup', (e) => {
+    svg.addEventListener('pointerup', (e) => {
       if (!dragStart) return;
       const cur = svgPoint(e);
       const x1 = Math.min(dragStart.x, cur.x), x2 = Math.max(dragStart.x, cur.x);
@@ -1706,7 +1703,8 @@ function formatDraftPick(pick, rankLabel = 'entering-rank') {
   if (!pick) return '–';
   const sign = pick.value > 0 ? '+' : '';
   const rank = pick.entryRank ?? pick.exitRank;
-  return `${pick.displayName} (pick #${pick.pickOrder}, ${rankLabel} #${rank}, value ${sign}${pick.value})`;
+  return `${escapeHtml(pick.displayName)} <span class="pick-value ${pick.value > 0 ? 'outcome-win' : pick.value < 0 ? 'outcome-loss' : ''}">${sign}${pick.value}</span><br>
+    <span class="pick-detail">pick #${pick.pickOrder} · ${rankLabel} #${rank}</span>`;
 }
 
 
