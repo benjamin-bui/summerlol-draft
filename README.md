@@ -302,12 +302,3 @@ supplied to the container as a Docker secret / environment variable at
 deploy time**, not read from a checked-in `.env` file in production —
 `.env`/`.env.example` remain the right approach for local development
 only.
-
-The `--user "$(id -u):$(id -g)"` vs. root+chown tradeoff, the
-one-time `chown` migration step, and the network-filesystem `chown`
-caveat described in the original Docker section are all still accurate
-and unchanged — see below for the full commands.
-
-[... existing Docker command reference, sample-data note, spreadsheet
-formula-bug note, and full identity-tracking setup/testing details
-continue unchanged from the previous version of this README ...]
