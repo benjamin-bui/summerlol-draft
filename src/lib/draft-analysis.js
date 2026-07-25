@@ -86,6 +86,7 @@ function computeDraftIQ(
       rankedByExit.map((p, i) => [p.identityKey, i + 1]),
     );
 
+
     for (const pick of group) {
       const entryRank = entryRankByKey.get(pick.identityKey);
       const exitRank = exitRankByKey.get(pick.identityKey) ?? null;
@@ -94,9 +95,9 @@ function computeDraftIQ(
         year: parseInt(year, 10),
         tournament,
         entryRank,
-        value: entryRank - pick.pickOrder, // existing: forward-looking (pre-tournament) value
+        value: pick.pickOrder - entryRank,
         exitRank,
-        leavingValue: exitRank !== null ? exitRank - pick.pickOrder : null, // NEW: backward-looking (hindsight) value
+        leavingValue: pick.pickOrder - exitRank
       });
     }
   }

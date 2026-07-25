@@ -339,6 +339,7 @@ function buildChartHtml(history) {
   `,
     )
     .join("");
+
   const ticks = 4;
   const gridlines = Array.from({ length: ticks + 1 }, (_, i) => {
     const val = yMin - yPad + (yMax + yPad - (yMin - yPad)) * (i / ticks);
@@ -1305,7 +1306,7 @@ function renderRankBadge(input) {
   } else if (typeof input === "number" && !Number.isNaN(input)) {
     // Passed a numeric rating (e.g. 1050)
     const tier = getRankTier(input);
-    tierName = tier?.name ? tier.name.toLowerCase() : "unranked";
+    tierName = tier.name.toLowerCase();
     displayName = tier?.name || "Unranked";
   }
 
@@ -1933,6 +1934,51 @@ function initDraftScatterToggle() {
     }
   });
 }
+// Calculates two-tailed p-value from a t-statistic and degrees of freedom
+function studentTPValue(t, df) {
+  if (isNaN(t) || df <= 0) return 1;
+  const absT = Math.abs(t);
+  
+  // Normal approximation for large sample sizes (df > 300)
+  if (df > 300) {
+    const z = absT;
+    const b1 = 0.319381530, b2 = -0.356563782, b3 = 1.781477937, b4 = -1.821255978, b5 = 1.330274429;
+    const k = 1 / (1 + 0.2316419 * z);
+    const poly = k * (b1 + k * (b2 + k * (b3 + k * (b4 + k * b5))));
+    const phi = (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * z * z);
+    return Math.min(1, Math.max(0, 2 * phi * poly));
+  }
+
+  // Exact trigonometric series for integer degrees of freedom
+  const theta = Math.atan(absT / Math.sqrt(df));
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+
+  if (df % 2 === 1) { // Odd df
+    let term = sin * cos;
+    let sum = term;
+    for (let i = 3; i < df; i += 2) {
+      term *= ((i - 1) / i) * cos * cos;
+      sum += term;
+    }
+    const cdf = (2 / Math.PI) * (theta + (df === 1 ? 0 : sum));
+    return Math.max(0, 1 - cdf);
+  } else { // Even df
+    let term = sin;
+    let sum = term;
+    for (let i = 2; i < df; i += 2) {
+      term *= ((i - 1) / i) * cos * cos;
+      sum += term;
+    }
+    return Math.max(0, 1 - sum);
+  }
+}
+
+// Utility to format p-values nicely
+function formatPValue(p) {
+  if (p < 0.001) return "p < 0.001";
+  return `p = ${p.toFixed(3)}`;
+}
 
 function renderDraftScatter(container, data) {
   const width = 700,
@@ -1944,20 +1990,84 @@ function renderDraftScatter(container, data) {
   const plotW = width - padL - padR,
     plotH = height - padT - padB;
 
+  function studentTPValue(t, df) {
+    if (isNaN(t) || df <= 0) return 1;
+    const absT = Math.abs(t);
+    if (df > 300) {
+      const z = absT;
+      const b1 = 0.319381530, b2 = -0.356563782, b3 = 1.781477937, b4 = -1.821255978, b5 = 1.330274429;
+      const k = 1 / (1 + 0.2316419 * z);
+      const poly = k * (b1 + k * (b2 + k * (b3 + k * (b4 + k * b5))));
+      const phi = (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * z * z);
+      return Math.min(1, Math.max(0, 2 * phi * poly));
+    }
+    const theta = Math.atan(absT / Math.sqrt(df));
+    const cos = Math.cos(theta);
+    const sin = Math.sin(theta);
+    if (df % 2 === 1) {
+      let term = sin * cos;
+      let sum = term;
+      for (let i = 3; i < df; i += 2) {
+        term *= ((i - 1) / i) * cos * cos;
+        sum += term;
+      }
+      const cdf = (2 / Math.PI) * (theta + (df === 1 ? 0 : sum));
+      return Math.max(0, 1 - cdf);
+    } else {
+      let term = sin;
+      let sum = term;
+      for (let i = 2; i < df; i += 2) {
+        term *= ((i - 1) / i) * cos * cos;
+        sum += term;
+      }
+      return Math.max(0, 1 - sum);
+    }
+  }
+
+  function formatPValue(p) {
+    if (p < 0.001) return "p < 0.001";
+    return `p = ${p.toFixed(3)}`;
+  }
+
   function computeRegressionLine(pts) {
     const n = pts.length;
-    if (n < 2) return null;
+    if (n < 3) return null;
+
     const meanX = pts.reduce((s, p) => s + p.avgDraftValue, 0) / n;
     const meanY = pts.reduce((s, p) => s + p.winRate, 0) / n;
-    const num = pts.reduce(
-      (s, p) => s + (p.avgDraftValue - meanX) * (p.winRate - meanY),
-      0,
-    );
-    const den = pts.reduce((s, p) => s + (p.avgDraftValue - meanX) ** 2, 0);
-    if (den === 0) return null;
-    const slope = num / den;
+
+    let ssXX = 0, ssYY = 0, ssXY = 0;
+    for (const p of pts) {
+      const dx = p.avgDraftValue - meanX;
+      const dy = p.winRate - meanY;
+      ssXX += dx * dx;
+      ssYY += dy * dy;
+      ssXY += dx * dy;
+    }
+
+    if (ssXX === 0) return null;
+
+    const slope = ssXY / ssXX;
     const intercept = meanY - slope * meanX;
-    return { slope, intercept };
+
+    // Calculate R-squared
+    const rSquared = ssYY === 0 ? 0 : Math.min(1, Math.max(0, (ssXY * ssXY) / (ssXX * ssYY)));
+
+    // Calculate p-value (t-test on slope)
+    const df = n - 2;
+    const ssRes = Math.max(0, ssYY - (ssXY * ssXY) / ssXX);
+    const mse = ssRes / df;
+    const seSlope = Math.sqrt(mse / ssXX);
+
+    let pValue = 1;
+    if (seSlope === 0) {
+      pValue = slope === 0 ? 1 : 0;
+    } else {
+      const tStat = slope / seSlope;
+      pValue = studentTPValue(tStat, df);
+    }
+
+    return { slope, intercept, rSquared, pValue, n };
   }
 
   const fullDomain = computeDomain(data);
@@ -1976,8 +2086,8 @@ function renderDraftScatter(container, data) {
     };
   }
 
-  let selectedKey = null; // isolates a single point (year::tournament::captain)
-  let selectedGroupKey = null; // isolates a whole group -- mutually exclusive with selectedKey
+  let selectedKey = null;
+  let selectedGroupKey = null;
   let groupBy = "none";
 
   const groupBySelect = document.getElementById("draftScatterGroupBySelect");
@@ -1990,6 +2100,7 @@ function renderDraftScatter(container, data) {
     const idx = order.indexOf(key);
     return colorForIndex(idx, order.length);
   }
+
   function computeJitteredPositions(points) {
     const groups = new Map();
     for (const p of points) {
@@ -2001,7 +2112,7 @@ function renderDraftScatter(container, data) {
     const jitterOf = new Map();
     for (const group of groups.values()) {
       if (group.length === 1) {
-        jitterOf.set(group[0], { dxPx: 0, dyPx: 0 }); // fixed: was {dx, dy}
+        jitterOf.set(group[0], { dxPx: 0, dyPx: 0 });
         continue;
       }
       const jitterRadiusPx = 7;
@@ -2015,6 +2126,7 @@ function renderDraftScatter(container, data) {
     }
     return jitterOf;
   }
+
   function renderLegend() {
     if (groupBy === "none") {
       legendEl.innerHTML = "";
@@ -2034,7 +2146,7 @@ function renderDraftScatter(container, data) {
 
     legendEl.querySelectorAll(".legend-item").forEach((btn) => {
       btn.addEventListener("click", () => {
-        selectedKey = null; // legend selection and point selection are mutually exclusive
+        selectedKey = null;
         selectedGroupKey =
           selectedGroupKey === btn.dataset.groupKey
             ? null
@@ -2050,8 +2162,7 @@ function renderDraftScatter(container, data) {
     const yScale = (y) =>
       padT + plotH - ((y - domain.yMin) / (domain.yMax - domain.yMin)) * plotH;
 
-    const xTicks = 5,
-      yTicks = 5;
+    const xTicks = 5, yTicks = 5;
     const gridlines = [
       ...Array.from({ length: xTicks + 1 }, (_, i) => {
         const val = domain.xMin + (domain.xMax - domain.xMin) * (i / xTicks);
@@ -2126,6 +2237,13 @@ function renderDraftScatter(container, data) {
         })()
       : "";
 
+    // Label on the top-right corner of plot
+    const statsLabel = regression
+      ? `<text x="${padL + plotW - 6}" y="${padT + 14}" text-anchor="end" font-size="11" font-weight="600" fill="var(--muted)">
+          R² = ${regression.rSquared.toFixed(3)} (${formatPValue(regression.pValue)})
+         </text>`
+      : "";
+
     container.innerHTML = `
       <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" class="draft-scatter-svg">
           <defs>
@@ -2139,6 +2257,7 @@ function renderDraftScatter(container, data) {
           <text x="${padL + plotW / 2}" y="${height - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">Draft IQ (avg pick value)</text>
           <text x="14" y="${padT + plotH / 2}" text-anchor="middle" font-size="11" fill="var(--muted)" transform="rotate(-90 14 ${padT + plotH / 2})">Win Rate</text>
           ${regressionLine}
+          ${statsLabel}
           <rect class="scatter-zoom-overlay" x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" style="cursor:crosshair" />
           ${dots}
           <rect class="scatter-drag-rect" x="0" y="0" width="0" height="0" fill="var(--accent)" fill-opacity="0.15" stroke="var(--accent)" stroke-width="1" style="display:none;pointer-events:none" />
@@ -2162,7 +2281,7 @@ function renderDraftScatter(container, data) {
     const resetBtn = container.querySelector(".scatter-reset-btn");
 
     container.querySelectorAll(".scatter-point").forEach((circle) => {
-      circle.addEventListener("pointerenter", () => {
+      circle.addEventListener("pointerenter", (e) => {
         const key = circle.dataset.key;
         const p = data.find(
           (d) => `${d.year}::${d.tournament}::${d.captain}` === key,
@@ -2186,7 +2305,7 @@ function renderDraftScatter(container, data) {
       });
       circle.addEventListener("click", (e) => {
         e.stopPropagation();
-        selectedGroupKey = null; // point selection and group selection are mutually exclusive
+        selectedGroupKey = null;
         selectedKey =
           selectedKey === circle.dataset.key ? null : circle.dataset.key;
         render();
@@ -2196,10 +2315,6 @@ function renderDraftScatter(container, data) {
     let dragStart = null;
     const svgPoint = (evt) => {
       const rect = svg.getBoundingClientRect();
-      // xMidYMid meet scales uniformly by whichever axis is more constrained,
-      // then centers the content on the other axis -- this replicates that
-      // math in reverse so mouse coordinates map back to viewBox coordinates
-      // correctly, without needing preserveAspectRatio="none"
       const scale = Math.min(rect.width / width, rect.height / height);
       const renderedWidth = width * scale;
       const renderedHeight = height * scale;
@@ -2390,7 +2505,7 @@ function renderTeamMatchList(row) {
 
   const matchesHtml = matches.length
     ? `<table class="profile-history-table">
-        <thead><tr><th>Opponent</th><th>Result</th><th>Stage</th><th>Pred. Win %</th></tr></thead>
+        <thead><tr><th>Opponent(s)</th><th>Result</th><th>Stage</th><th>Pred. Win %</th></tr></thead>
         <tbody>${matches
           .map((m) => {
             const outcomeClass =
