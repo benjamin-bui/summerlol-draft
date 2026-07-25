@@ -889,7 +889,8 @@ function createTabTable({
     sortColumn: defaultSortColumn,
     sortDirection: defaultSortDirection,
     hiddenColumns: new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key)),
-    filters: {}
+    filters: {},
+    externalFilter: null
   };
 
   columns.filter((c) => c.hideable).forEach((col) => {
@@ -963,7 +964,8 @@ function createTabTable({
   function renderBody() {
     const cols = visibleColumns();
     const colspan = cols.length + (expandable ? 1 : 0);
-    const filtered = applyColumnFilters(state.data, columns, state.filters);
+    let filtered = applyColumnFilters(state.data, columns, state.filters);
+    if (state.externalFilter) filtered = filtered.filter(state.externalFilter);
     const sorted = sortRows(filtered, columns, state.sortColumn, state.sortDirection);
 
     if (sorted.length === 0) {
@@ -1012,10 +1014,93 @@ function createTabTable({
       state.data = newData;
       rebuildHeader();
       renderBody();
+    },
+    setExternalFilter(predicateFn) {
+      state.externalFilter = predicateFn; // pass null to clear
+      renderBody();
+    }
+  };
+}
+// Splits pasted/uploaded text into individual name strings -- accepts
+// newline-separated (a column pasted straight from Excel/Sheets) or
+// comma-separated (a single CSV row/column), trims blank entries either
+// way.
+function parseNameList(text) {
+  return text
+    .split(/[\r\n,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Matches loosely against BOTH the resolved display name and the raw
+// identityKey -- a pasted roster might use the exact in-game name
+// (which could still be an unresolved identityKey if that player was
+// never matched to a Riot account) or the resolved display name. Case
+// and surrounding whitespace are ignored; this is intentionally an
+// EXACT match otherwise (no partial/fuzzy matching), since a substring
+// match risks silently pulling in the wrong player on a short name.
+function buildNameMatcher(names) {
+  const normalized = new Set(names.map((n) => n.trim().toLowerCase()));
+  return {
+    matches(player) {
+      const candidates = [player.group, player.identityKey].filter(Boolean).map((s) => s.trim().toLowerCase());
+      return candidates.some((c) => normalized.has(c));
+    },
+    checkCoverage(players) {
+      const matchedNames = new Set();
+      players.forEach((p) => {
+        [p.group, p.identityKey].filter(Boolean).forEach((s) => {
+          const norm = s.trim().toLowerCase();
+          if (normalized.has(norm)) matchedNames.add(norm);
+        });
+      });
+      const unmatched = [...normalized].filter((n) => !matchedNames.has(n));
+      return { matchedCount: matchedNames.size, totalCount: normalized.size, unmatched };
     }
   };
 }
 
+function applyNameFilter(rawText) {
+  const names = parseNameList(rawText);
+  const summaryEl = document.getElementById('nameFilterSummary');
+
+  if (names.length === 0) {
+    trueskillTable.setExternalFilter(null);
+    summaryEl.textContent = '';
+    return;
+  }
+
+  const matcher = buildNameMatcher(names);
+  const playersForCoverageCheck = latestTrueskillPlayers || [];
+  const { matchedCount, totalCount, unmatched } = matcher.checkCoverage(playersForCoverageCheck);
+
+  trueskillTable.setExternalFilter((row) => matcher.matches(row));
+
+  summaryEl.textContent = unmatched.length
+    ? `Matched ${matchedCount}/${totalCount}. Not found: ${unmatched.join(', ')}`
+    : `Matched all ${matchedCount} names.`;
+  summaryEl.className = unmatched.length ? 'name-filter-summary has-misses' : 'name-filter-summary';
+}
+
+document.getElementById('nameFilterApplyBtn').addEventListener('click', () => {
+  const text = document.getElementById('nameFilterInput').value;
+  applyNameFilter(text);
+});
+
+document.getElementById('nameFilterClearBtn').addEventListener('click', () => {
+  document.getElementById('nameFilterInput').value = '';
+  document.getElementById('nameFilterFile').value = '';
+  trueskillTable.setExternalFilter(null);
+  document.getElementById('nameFilterSummary').textContent = '';
+});
+
+document.getElementById('nameFilterFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  document.getElementById('nameFilterInput').value = text; // mirror into the textarea so it's visible/editable
+  applyNameFilter(text);
+});
 
 // ====================Rank Tier====================
 // Determines categorical rank from numeric TrueSKill and displays corresponding icon
@@ -1112,13 +1197,14 @@ const trueskillTable = createTabTable({
 });
 
 let trueskillLoaded = false;
+let latestTrueskillPlayers = [];
 
 async function loadtrueskillData(forceRefresh) {
   if (trueskillLoaded && !forceRefresh) return;
   const res = await fetch(`/api/trueskill`);
   const data = await res.json();
+  latestTrueskillPlayers = data.players;
   globalRankTiers = data.funFacts.staticCutoffs;
-
   document.getElementById('trueskill-fun-facts').innerHTML = renderFunFactsHtml(data.funFacts);
   trueskillTable.setData(data.players);
   trueskillLoaded = true;

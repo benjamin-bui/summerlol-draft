@@ -9,7 +9,7 @@
  * it did before this feature existed.
  */
 
-const OPGG_REGION = process.env.OPGG_REGION || 'na';
+const OPGG_REGION = process.env.OPGG_REGION || "na";
 
 function opggLink(gameName, tagLine, region = OPGG_REGION) {
   if (!gameName || !tagLine) return null;
@@ -18,7 +18,9 @@ function opggLink(gameName, tagLine, region = OPGG_REGION) {
 
 function identityTablesExist(db) {
   const row = db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='player_aliases'")
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='player_aliases'",
+    )
     .get();
   return !!row;
 }
@@ -39,18 +41,21 @@ function loadIdentityMap(db) {
       `SELECT pa.alias, p.id AS player_id, p.riot_game_name, p.riot_tag_line,
               p.riot_region, p.display_name_override
        FROM player_aliases pa
-       JOIN players p ON p.id = pa.player_id`
+       JOIN players p ON p.id = pa.player_id`,
     )
     .all();
 
   for (const row of rows) {
     const resolved = !!row.riot_game_name;
-    const displayName = row.display_name_override || row.riot_game_name || row.alias;
+    const displayName =
+      row.display_name_override || row.riot_game_name || row.alias;
     map.set(row.alias, {
       identityKey: `p${row.player_id}`,
       displayName,
-      profileUrl: resolved ? opggLink(row.riot_game_name, row.riot_tag_line, OPGG_REGION) : null,
-      resolved
+      profileUrl: resolved
+        ? opggLink(row.riot_game_name, row.riot_tag_line, OPGG_REGION)
+        : null,
+      resolved,
     });
   }
 
@@ -70,11 +75,16 @@ function buildReverseIdentityLookup(identityMap) {
       byKey.set(identity.identityKey, {
         displayName: identity.displayName,
         profileUrl: identity.profileUrl || null,
-        identified: !!identity.resolved
+        identified: !!identity.resolved,
       });
     }
   }
   return byKey;
 }
 
-module.exports = { loadIdentityMap, buildReverseIdentityLookup, opggLink, identityTablesExist };
+module.exports = {
+  loadIdentityMap,
+  buildReverseIdentityLookup,
+  opggLink,
+  identityTablesExist,
+};

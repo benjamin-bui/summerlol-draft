@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Williams College Player Rankings</title>
 <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/png" href="/icons/favicon.png">
 </head>
 <body>
   <div class="wrap">
@@ -75,7 +76,18 @@
       </section>
 
       <div id="trueskill-fun-facts"></div>
-
+      <div class="name-filter-box">
+        <label for="nameFilterInput">Filter by list (paste names, one per line or comma-separated, or upload a CSV/text file):</label>
+        <textarea id="nameFilterInput" rows="3" placeholder="Voidliss
+Xemacs
+..."></textarea>
+        <div class="name-filter-controls">
+          <input type="file" id="nameFilterFile" accept=".csv,.txt" />
+          <button id="nameFilterApplyBtn" type="button">Apply Filter</button>
+          <button id="nameFilterClearBtn" type="button">Clear</button>
+          <span id="nameFilterSummary" class="name-filter-summary"></span>
+        </div>
+      </div>
       <section class="table-controls">
         <button id="trueskillColumnsBtn" class="columns-btn">Columns &#9662;</button>
         <div id="trueskillColumnsPanel" class="columns-panel hidden"></div>

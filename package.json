@@ -18,5 +18,8 @@
     "chokidar": "^3.6.0",
     "csv-parse": "^5.5.6",
     "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "prettier": "3.9.6"
   }
 }

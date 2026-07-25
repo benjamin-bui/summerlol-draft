@@ -253,6 +253,22 @@ input[type="range"]::-moz-range-thumb {
   color: var(--muted);
 }
 
+/* ---- Name Filtering ---- */
+.name-filter-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 16px; }
+.name-filter-box label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 8px; }
+.name-filter-box textarea {
+  width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--sans); font-size: 0.85rem; padding: 8px 10px; border-radius: 6px; resize: vertical;
+}
+.name-filter-controls { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.name-filter-controls button {
+  background: var(--panel); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--sans); font-size: 0.85rem; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+}
+.name-filter-controls button:hover { border-color: var(--accent-dim); }
+.name-filter-summary { font-size: 0.8rem; color: var(--muted); }
+.name-filter-summary.has-misses { color: var(--danger); }
+
 /* ---- Year checkboxes ---- */
 
 .year-checkboxes {
