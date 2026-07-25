@@ -620,6 +620,17 @@ header {
   object-fit: contain;
 }
 
+/* ---- Tables ---- */
+.sticky-col {
+  position: sticky;
+  z-index: 5;
+  background: var(--panel); /* covers scrolled-under content; matches table background */
+}
+thead .sticky-col { z-index: 6; } /* header stays above sticky body cells when both are visible at once */
+.sticky-col-last {
+  box-shadow: 2px 0 4px -2px var(--shadow); /* visual seam so the frozen edge doesn't blend into scrolled content */
+}
+/* ---- Drop down box ---- */
 .fun-facts-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 20px; }
 .fun-facts-toggle { width: 100%; text-align: left; background: none; border: none; color: var(--text); font-family: var(--sans); font-size: 0.9rem; font-weight: 500; padding: 14px 18px; cursor: pointer; }
 .fun-facts-body { padding: 0 18px 16px; }

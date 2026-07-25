@@ -46,6 +46,14 @@ themeToggleBtn.addEventListener('click', () => {
 
 function round3(x) { return Math.round(x * 1000) / 1000; }
 
+function escapeHtml(str) {
+	  return String(str)
+	    .replace(/&/g, '&amp;')
+	    .replace(/</g, '&lt;')
+	    .replace(/>/g, '&gt;')
+	    .replace(/"/g, '&quot;');
+	}
+
 // TrueSkill Fun Facts
 function renderFunFactsHtml(ff) {
   if (!ff) return '';
@@ -152,42 +160,48 @@ function renderPlayerProfileContent(player) {
   const history = player?.history || [];
   const conservativeK = player?.conservativeK ?? 3;
 
-const historyRows = history.map((entry, idx) => {
-  const outcomeClass = entry.outcome === 'win' ? 'outcome-win' : entry.outcome === 'loss' ? 'outcome-loss' : 'outcome-draw';
-  const rosterId = `roster-detail-${idx}`;
+  const historyRows = history.map((entry, idx) => {
+    const outcomeClass = entry.outcome === 'win' ? 'outcome-win' : entry.outcome === 'loss' ? 'outcome-loss' : 'outcome-draw';
+    const rosterId = `roster-detail-${idx}`;
 
-  const rosterList = (team) => (team?.roster || [])
-    .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating, m.mu)}</span></li>`)
-    .join('');
+    const rosterList = (team) => (team?.roster || [])
+      .map((m) => `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating)}</span></li>`)
+      .join('');
 
-  return `<tr>
-    <td><button class="roster-toggle" data-target="${rosterId}" aria-expanded="false">▶</button></td>
-    <td>${escapeHtml(entry.year ?? '–')}</td>
-    <td>${escapeHtml(entry.tournament || '–')}${entry.matchStage ? ` <span class="match-stage">(${escapeHtml(entry.matchStage)})</span>` : ''}</td>
-    <td>${escapeHtml(entry.ownTeam?.name || '–')}</td>
-    <td>${escapeHtml(entry.opponent || '–')}</td>
-    <td class="${outcomeClass}">${escapeHtml(entry.outcome || '–')}</td>
-    <td>${Math.round((entry.predictedWinProb ?? 0) * 100)}%</td>
-    <td>${entry.ownTeam?.avgConservativeRating ?? '–'}</td>
-    <td>${entry.opponentTeam?.avgConservativeRating ?? '–'}</td>
-    <td>${renderTrueSkillValue(entry.conservativeRating, entry.mu)}</td>
-    <td>${entry.sigma ?? '–'}</td>
-  </tr>
-  <tr id="${rosterId}" class="roster-detail-row" hidden>
-    <td colspan="12">
-      <div class="roster-detail">
-        <div>
-          <strong>${escapeHtml(entry.ownTeam?.name || 'Your team')} - </strong> avg TrueSkill: ${entry.ownTeam?.avgConservativeRating ?? '–'} (${entry.ownTeam?.avgMu ?? '-'})
-          <ul>${rosterList(entry.ownTeam)}</ul>
-        </div>
-        <div>
-          <strong>${escapeHtml(entry.opponentTeam?.name || 'Opponent')} - </strong> avg TrueSkill: ${entry.opponentTeam?.avgConservativeRating ?? '–'} (${entry.opponentTeam?.avgMu ?? '-'})
-          <ul>${rosterList(entry.opponentTeam)}</ul>
-        </div>
-      </div>
-    </td>
-  </tr>`;
-}).join('');
+    const changeClass = entry.ratingChange > 0 ? 'outcome-win' : entry.ratingChange < 0 ? 'outcome-loss' : '';
+    const changeLabel = entry.ratingChange > 0 ? `+${entry.ratingChange}` : `${entry.ratingChange}`;
+
+    return `<tr>
+      <td><button class="roster-toggle" data-target="${rosterId}" aria-expanded="false">▶</button></td>
+      <td>${escapeHtml(entry.year ?? '–')}</td>
+      <td>${escapeHtml(entry.tournament || '–')}${entry.matchStage ? ` <span class="match-stage">(${escapeHtml(entry.matchStage)})</span>` : ''}</td>
+      <td>${escapeHtml(entry.ownTeam?.name || '–')}</td>
+      <td>${escapeHtml(entry.opponent || '–')}</td>
+      <td class="${outcomeClass}">${escapeHtml(entry.outcome || '–')}</td>
+      <td>${Math.round((entry.predictedWinProb ?? 0) * 100)}%</td>
+      <td>${entry.ownTeam?.avgConservativeRating ?? '–'}</td>
+      <td>${entry.opponentTeam?.avgConservativeRating ?? '–'}</td>
+      <td>${renderTrueSkillValue(entry.conservativeRating)}</td>
+      <td class="${changeClass}">${changeLabel}</td>
+      <td>${entry.mu ?? '–'}</td>
+      <td>${entry.sigma ?? '–'}</td>
+    </tr>
+    <tr id="${rosterId}" class="roster-detail-row" hidden>
+	    <td colspan="12">
+	      <div class="roster-detail">
+	        <div>
+	          <strong>${escapeHtml(entry.ownTeam?.name || 'Your team')} - </strong> avg TrueSkill: ${entry.ownTeam?.avgConservativeRating ?? '–'} (${entry.ownTeam?.avgMu ?? '-'})
+	          <ul>${rosterList(entry.ownTeam)}</ul>
+	        </div>
+	        <div>
+	          <strong>${escapeHtml(entry.opponentTeam?.name || 'Opponent')} - </strong> avg TrueSkill: ${entry.opponentTeam?.avgConservativeRating ?? '–'} (${entry.opponentTeam?.avgMu ?? '-'})
+	          <ul>${rosterList(entry.opponentTeam)}</ul>
+	        </div>
+	      </div>
+	    </td>
+	  </tr>`;
+	}).join('');
+
 
   playerProfileTitle.textContent = title;
   return [
@@ -196,7 +210,7 @@ const historyRows = history.map((entry, idx) => {
     ratingRows,
     buildChartHtml(history),
     historyRows
-      ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Captain</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill (μ)</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
+      ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Captain</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill</th><th>Change</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
       : '<p>No match history available.</p>'
   ].join('');
 }
@@ -354,18 +368,6 @@ document.addEventListener('keydown', (event) => {
 
 // ==================== Column configuration ====================
 
-const RANKINGS_COLUMNS = [
-  { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
-  { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, className: 'group-name', type: 'string' },
-  { key: 'adjAvg', label: 'Adjusted Pick Value', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
-  { key: 'n', label: 'n', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
-  { key: 'mean', label: 'Unadjusted Pick Value', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, defaultHidden: true },
-  { key: 'sd', label: 'Std. Dev.', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, defaultHidden: true },
-  { key: 'avgPickPercentile', label: 'Avg. Pick %', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, percentage: true },
-  { key: 'estPickOrder', label: 'Est. Pick Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 },
-  { key: 'avgRankPercentile', label: 'Avg. Rank %', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, percentage: true },
-  { key: 'estRankOrder', label: 'Est. Rank Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 }
-];
 
 function formatCell(value, col) {
   if (value === null || value === undefined) return '–';
@@ -753,181 +755,62 @@ function buildHeaderCell(col, sortColumn, sortDirection, filterState, onFilterCh
   return th;
 }
 
-// ==================== Rankings tab state ====================
+// Freezes contiguous run of columns flagged `sticky: true`
+function applyStickyColumns(headerRowEl, bodyEl, visibleColumns, hasToggleCol = false) {
+  const runStart = visibleColumns.findIndex((c) => c.sticky);
+  if (runStart === -1) return;
 
-const statsHeaderRow = document.getElementById('statsHeaderRow');
-const statsBody = document.getElementById('statsBody');
-const columnsBtn = document.getElementById('columnsBtn');
-const columnsPanel = document.getElementById('columnsPanel');
-const totalNInput = document.getElementById('totalN');
+  let runEnd = runStart;
+  while (runEnd + 1 < visibleColumns.length && visibleColumns[runEnd + 1].sticky) {
+    runEnd++;
+  }
 
-let fetchDebounceTimer = null;
-let urlDebounceTimer = null;
-let latestStats = [];
-let sortColumn = 'adjAvg';
-let sortDirection = 'desc';
-let hiddenColumns = new Set(RANKINGS_COLUMNS.filter((c) => c.defaultHidden).map((c) => c.key));
-let rankingsFilters = {};
-let totalN = 40;
+  const headerCells = [...headerRowEl.children];
+  const domOffset = hasToggleCol ? 1 : 0;
+  // Toggle column is only pinned when the sticky run itself starts at
+  // column 0 -- otherwise it's just another leading non-sticky column
+  // that scrolls away normally, same as any other.
+  const toggleIsSticky = hasToggleCol && runStart === 0;
 
-// Columns visibility panel
-RANKINGS_COLUMNS.filter((c) => c.hideable).forEach((col) => {
-  const label = document.createElement('label');
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = !hiddenColumns.has(col.key);
-  checkbox.dataset.col = col.key;
-  checkbox.addEventListener('change', () => {
-    if (checkbox.checked) hiddenColumns.delete(col.key);
-    else hiddenColumns.add(col.key);
-    rebuildRankingsHeader();
-    renderRankingsBody();
-    scheduleUrlUpdate();
-  });
-  label.appendChild(checkbox);
-  label.appendChild(document.createTextNode(col.label));
-  columnsPanel.appendChild(label);
-});
+  // The sticky run ALWAYS docks flush at the container's true left edge
+  // (left: 0px for the first column in the run) -- non-sticky leading
+  // columns scroll fully away and get clipped by overflow-x, they never
+  // contribute any offset to where the run pins.
+  let cumulativeLeft = 0;
+  if (toggleIsSticky && headerCells[0]) {
+    headerCells[0].classList.add('sticky-col');
+    headerCells[0].style.left = '0px';
+    cumulativeLeft = headerCells[0].getBoundingClientRect().width;
+  }
 
-columnsBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  const isHidden = columnsPanel.classList.contains('hidden');
-  closeAllPopovers();
-  columnsPanel.classList.toggle('hidden');
-  if (isHidden) columnsPanel.classList.remove('hidden');
-});
-columnsPanel.addEventListener('click', (e) => e.stopPropagation());
-document.addEventListener('click', () => columnsPanel.classList.add('hidden'));
+  for (let i = runStart; i <= runEnd; i++) {
+    const th = headerCells[i + domOffset];
+    if (!th) continue;
+    th.classList.add('sticky-col');
+    if (i === runEnd) th.classList.add('sticky-col-last');
+    th.style.left = `${cumulativeLeft}px`;
+    cumulativeLeft += th.getBoundingClientRect().width;
+  }
 
-function visibleRankingsColumns() {
-  return RANKINGS_COLUMNS.filter((c) => !hiddenColumns.has(c.key));
-}
-
-function rebuildRankingsHeader() {
-  removePopoversOwnedBy('rankings');
-  statsHeaderRow.innerHTML = '';
-  visibleRankingsColumns().forEach((col) => {
-    const th = buildHeaderCell(col, sortColumn, sortDirection, rankingsFilters, () => {
-      renderRankingsBody();
-      scheduleUrlUpdate();
-    }, 'rankings', latestStats);
-    th.addEventListener('click', () => {
-      if (!col.sortable) return;
-      if (sortColumn === col.key) {
-        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-      } else {
-        sortColumn = col.key;
-        sortDirection = col.key === 'group' ? 'asc' : 'desc';
-      }
-      updateSortIndicators();
-      renderRankingsBody();
-      writeStateToURL();
-    });
-    statsHeaderRow.appendChild(th);
-  });
-}
-
-function updateSortIndicators() {
-  [...statsHeaderRow.children].forEach((th) => {
-    th.classList.remove('sorted-asc', 'sorted-desc');
-    if (th.dataset.sort === sortColumn) {
-      th.classList.add(sortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
+  [...bodyEl.children].forEach((tr) => {
+    if (tr.classList.contains('roster-detail-row')) return;
+    const cells = [...tr.children];
+    let left = 0;
+    if (toggleIsSticky && cells[0]) {
+      cells[0].classList.add('sticky-col');
+      cells[0].style.left = '0px';
+      left = cells[0].getBoundingClientRect().width;
+    }
+    for (let i = runStart; i <= runEnd; i++) {
+      const td = cells[i + domOffset];
+      if (!td) continue;
+      td.classList.add('sticky-col');
+      if (i === runEnd) td.classList.add('sticky-col-last');
+      td.style.left = `${left}px`;
+      left += td.getBoundingClientRect().width;
     }
   });
 }
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function renderPlayerCell(row) {
-  const name = escapeHtml(row.group || row.displayName || '');
-  const identityKey = row.identityKey || row._playerIdentityKey || null;
-  if (identityKey) {
-    return `<a href="#" class="player-link" data-player-key="${escapeHtml(identityKey)}" title="View profile">${name}</a>`;
-  }
-  if (row.profileUrl) {
-    return `<a href="${escapeHtml(row.profileUrl)}" target="_blank" rel="noopener noreferrer" class="player-link" title="View on op.gg">${name}</a>`;
-  }
-  return name;
-}
-
-function renderRankingsBody() {
-  const cols = visibleRankingsColumns();
-  const filtered = applyColumnFilters(latestStats, RANKINGS_COLUMNS, rankingsFilters);
-  const sorted = sortRows(filtered, RANKINGS_COLUMNS, sortColumn, sortDirection);
-
-  if (sorted.length === 0) {
-    statsBody.innerHTML = `<tr><td colspan="${cols.length}" class="empty">No players match the active filters</td></tr>`;
-    return;
-  }
-
-  statsBody.innerHTML = sorted
-    .map((row, i) => {
-      const cells = cols
-        .map((col) => {
-          const cls = col.className ? ` class="${col.className}"` : col.key === 'rank' ? ' class="rank"' : '';
-          if (col.key === 'group') {
-            return `<td${cls}>${renderPlayerCell(row)}</td>`;
-          }
-          const val = col.key === 'rank' ? i + 1 : row[col.key];
-          return `<td${cls}>${escapeHtml(formatCell(val, col))}</td>`;
-        })
-        .join('');
-      return `<tr>${cells}</tr>`;
-    })
-    .join('');
-}
-
-let groupColName = 'Player'; // updated from /api/meta once loaded
-
-async function loadMeta() {
-  const res = await fetch('/api/meta');
-  const meta = await res.json();
-  groupColName = meta.groupCol;
-}
-
-// Translates each row's percentile columns into an estimated ordinal
-// position on a scale of `totalN` — e.g. "if this were a league of N
-// picks/captains, what pick/rank number does this percentile correspond
-// to". Purely a client-side transform of already-fetched percentiles, so
-// changing N just re-renders, no server round-trip needed.
-function applyTotalN() {
-  // Est. Pick Order scales against N (total picks). Est. Rank Order
-  // scales against N/4 instead — N/4 is the actual number of teams,
-  // since each team gets 4 picks in this draft format, and Rank
-  // Percentile was always normalized against the team count, not the
-  // pick count (see server.js's per-year normalization).
-  const numTeams = totalN / 4;
-  latestStats.forEach((row) => {
-    row.estPickOrder = row.avgPickPercentile === null ? null : row.avgPickPercentile * (totalN - 1) + 1;
-    row.estRankOrder = row.avgRankPercentile === null ? null : row.avgRankPercentile * (numTeams - 1) + 1;
-  });
-}
-
-async function fetchStats(risk, halfLife) {
-  const res = await fetch(`/api/stats?risk=${risk}&halfLife=${halfLife}`);
-  if (!res.ok) {
-    statsBody.innerHTML = `<tr><td colspan="8">Error loading stats</td></tr>`;
-    return;
-  }
-  const data = await res.json();
-  latestStats = data.stats;
-  applyTotalN();
-  renderRankingsBody();
-}
-
-function currentSliderValues() {
-  return {
-    risk: 0.25,
-    halfLife: 2
-  };
-}
-
 
 // ==================== Tabs ====================
 
@@ -974,17 +857,6 @@ function coerceNumericColumns(columns, rows) {
       });
     }
   });
-}
-
-// Whole-number columns (Pick Order, Year, id...) shouldn't display
-// trailing ".00"; columns with genuine fractional values (Rank can be
-// "3.5" from a tie) need at least 1 decimal place shown.
-function inferDecimals(rows, colName) {
-  for (const row of rows) {
-    const v = row[colName];
-    if (typeof v === 'number' && !Number.isInteger(v)) return 1;
-  }
-  return 0;
 }
 
 // ==================== Reusable sortable/filterable/column-toggleable table ====================
@@ -1092,6 +964,7 @@ function createTabTable({
       });
       headerRowEl.appendChild(th);
     });
+    refreshStickyColumns();
   }
 
   function renderBody() {
@@ -1134,8 +1007,11 @@ function createTabTable({
         </tr>`;
       })
       .join('');
+    refreshStickyColumns();
   }
-
+  function refreshStickyColumns() {
+    applyStickyColumns(headerRowEl, bodyEl, visibleColumns(), !!expandable);
+  }
   rebuildHeader(); // header only depends on columns/hidden-state, safe to build immediately
 
   return {
@@ -1200,8 +1076,8 @@ function renderTrueSkillValue(rating, mu) {
 // ==================== trueskill tab ====================
 
 const TRUESKILL_COLUMNS= [
-  { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
-  { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, className: 'group-name', type: 'string' },
+  { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false},
+  { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, className: 'group-name', type: 'string', sticky: true  },
   { key: 'latestGameTournament', label: 'Latest Tournament', sortable: true, hideable: true, filterable: true, type: 'string', sortValue: (row) => {
     const raw = String(row.latestGameTournament || '').trim();
     const match = raw.match(/^(winter|summer)\s*(\d{4})?$/i);
@@ -1255,13 +1131,80 @@ async function loadtrueskillData(forceRefresh) {
   trueskillLoaded = true;
 }
 
+// ==================== Naive Pick Order vs Results ====================
+
+let totalN = 40;
+const totalNInput = document.getElementById('totalN');
+
+totalNInput.addEventListener('input', () => {
+  const val = parseInt(totalNInput.value, 10);
+  if (!Number.isFinite(val) || val < 2) return;
+  totalN = val;
+  applyTotalN();
+  rankingsTable.setData(latestStats);
+});
+const RANKINGS_COLUMNS = [
+  { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
+  { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, className: 'group-name', type: 'string', sticky: 'true' },
+  { key: 'adjAvg', label: 'Adjusted Pick Value', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg', sticky: 'true' },
+  { key: 'n', label: 'n', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
+  { key: 'mean', label: 'Unadjusted Pick Value', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, defaultHidden: true },
+  { key: 'sd', label: 'Std. Dev.', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, defaultHidden: true },
+  { key: 'avgPickPercentile', label: 'Avg. Pick %', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, percentage: true },
+  { key: 'estPickOrder', label: 'Est. Pick Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 },
+  { key: 'avgRankPercentile', label: 'Avg. Rank %', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0, percentage: true },
+  { key: 'estRankOrder', label: 'Est. Rank Order', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 1 }
+];
+
+const rankingsTable = createTabTable({
+  columns: RANKINGS_COLUMNS,
+  headerRowEl: statsHeaderRow,
+  bodyEl: statsBody,
+  columnsBtnEl: columnsBtn,
+  columnsPanelEl: columnsPanel,
+  ownerKey: 'rankings',
+  defaultSortColumn: 'adjAvg',
+  emptyMessage: 'No players match the active filters'
+});
+
+const RANKINGS_RISK = 0.25;
+const RANKINGS_HALF_LIFE = 2;
+async function fetchStats(risk, halfLife) {
+  const res = await fetch(`/api/stats?risk=${risk}&halfLife=${halfLife}`);
+  if (!res.ok) {
+    statsBody.innerHTML = `<tr><td colspan="8">Error loading stats</td></tr>`;
+    return;
+  }
+  const data = await res.json();
+  latestStats = data.stats;
+  applyTotalN();
+  rankingsTable.setData(latestStats);
+}
+
+// Translates each row's percentile columns into an estimated ordinal
+// position on a scale of `totalN` — e.g. "if this were a league of N
+// picks/captains, what pick/rank number does this percentile correspond
+// to". Purely a client-side transform of already-fetched percentiles, so
+// changing N just re-renders, no server round-trip needed.
+function applyTotalN() {
+  // Est. Pick Order scales against N (total picks). Est. Rank Order
+  // scales against N/4 instead — N/4 is the actual number of teams,
+  // since each team gets 4 picks in this draft format, and Rank
+  // Percentile was always normalized against the team count, not the
+  // pick count (see server.js's per-year normalization).
+  const numTeams = totalN / 4;
+  latestStats.forEach((row) => {
+    row.estPickOrder = row.avgPickPercentile === null ? null : row.avgPickPercentile * (totalN - 1) + 1;
+    row.estRankOrder = row.avgRankPercentile === null ? null : row.avgRankPercentile * (numTeams - 1) + 1;
+  });
+}
 // ==================== Draft IQ tab ====================
 
 const DRAFT_IQ_COLUMNS = [
   { key: 'rank', label: '#', sortable: false, hideable: false, filterable: false },
-  { key: 'captain', label: 'Captain', sortable: true, hideable: false, filterable: true, type: 'string', className: 'group-name',
+  { key: 'captain', label: 'Captain', sortable: true, hideable: false, filterable: true, type: 'string', className: 'group-name', sticky: true,
     render: (val, row) => row.captainDisplay },
-  { key: 'avgDraftValue', label: 'Draft IQ (avg value)', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg' },
+  { key: 'avgDraftValue', label: 'Draft IQ (avg value)', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg', sticky: true },
   { key: 'picksEvaluated', label: 'Picks Evaluated', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 0 },
   { key: 'bestPickLabel', label: 'Best Pick', sortable: true, hideable: true, filterable: false, type: 'string',
     sortValue: (row) => row.bestPick?.value ?? -Infinity },
@@ -2003,22 +1946,26 @@ function writeStateToURL() {
   window.history.replaceState(null, '', newUrl);
 }
 
+let fetchDebounceTimer = null;
+let urlDebounceTimer = null;
+
 function scheduleUrlUpdate() {
   clearTimeout(urlDebounceTimer);
   urlDebounceTimer = setTimeout(writeStateToURL, 150);
 }
+
 // ==================== Init ====================
+
+async function loadMeta() {
+	  const res = await fetch('/api/meta');
+	  const meta = await res.json();
+	  groupColName = meta.groupCol;
+	}
 
 (async function init() {
   readStateFromURL();
   await loadMeta();
-
-  rebuildRankingsHeader();
-
-  const { risk, halfLife } = currentSliderValues();
-  await fetchStats(risk, halfLife);
-  
+  await fetchStats(RANKINGS_RISK, RANKINGS_HALF_LIFE);
   loadtrueskillData() 
-
   writeStateToURL();
 })();

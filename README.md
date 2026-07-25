@@ -12,7 +12,7 @@ captain at drafting, and does a stacked roster actually win), plus raw
 
 Two source CSVs, two SQLite tables:
 
-- **`rows`** (from `lol-draft-long.csv`) — one row per drafted pick:
+- **`rows`** (from `draft-data.csv`) — one row per drafted pick:
   `Tournament`, `Year`, `Captain`, `Player`, `Pick Order`, `Rank`. `Rank`
   is the *whole team's* final placement that tournament (every pick on a
   team shares the same value), used for both classic Pick Value and Draft
@@ -32,7 +32,7 @@ team plays.
 
 ## CSV column requirements
 
-**`lol-draft-long.csv`**: `Tournament, Year, Captain, Player, Pick Order,
+**`draft-data.csv`**: `Tournament, Year, Captain, Player, Pick Order,
 Rank` — exact header names, case-sensitive. `Pick Value`/percentile
 columns are derived by the app, never read from the CSV even if present.
 
@@ -56,7 +56,7 @@ with no renaming needed.
 
 ```bash
 npm install
-node src/scripts/csv-to-sqlite.js data/lol-draft-long.csv --fresh
+node src/scripts/csv-to-sqlite.js data/draft-data.csv --fresh
 node src/scripts/ingest-matches.js data/lol-draft-match.csv
 npm start
 ```
@@ -68,7 +68,7 @@ but no longer present in the CSV gets deleted. (This used to be
 upsert-only/append-only, which meant a corrected row would silently
 leave the old, wrong row behind forever — fixed.) `--fresh` instead
 drops and recreates the table entirely; only needed if the CSV's column
-list itself changed. Re-run this any time `lol-draft-long.csv` changes.
+list itself changed. Re-run this any time `draft-data.csv` changes.
 
 **`ingest-matches.js` always does a full drop+recreate** on every run
 (there's no natural unique key to upsert match rows against) — re-run it
@@ -253,7 +253,7 @@ correctly, not the identity layer.
 ```
 data/                      # pure state -- nothing executable
   app.db
-  lol-draft-long.csv
+  draft-data.csv
   lol-draft-match.csv
   pending-player-tags.csv
   identity-schema.sql

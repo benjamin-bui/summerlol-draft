@@ -5,7 +5,7 @@
 //   node data/watch-csv.js <path-to-csv>
 //
 // Example:
-//   node data/watch-csv.js data/lol-draft-long.csv
+//   node data/watch-csv.js data/draft-data.csv
 //
 // Runs an initial ingest immediately, then watches for further edits.
 // Uses upsert (not --fresh) on every change, so it won't wipe rows you

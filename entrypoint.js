@@ -17,7 +17,7 @@ const path = require('path');
 const { ingestCsv, DB_PATH } = require('./src/scripts/csv-to-sqlite');
 const { bootstrap } = require('./src/scripts/bootstrap-player-identities');
 
-const CSV_PATH = process.env.CSV_PATH || path.join(__dirname, 'data', 'lol-draft-long.csv');
+const CSV_PATH = process.env.CSV_PATH || path.join(__dirname, 'data', 'draft-data.csv');
 
 function getMtimeMs(filePath) {
   try {

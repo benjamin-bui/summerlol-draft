@@ -5,7 +5,7 @@
  *   3. Run the Riot sync (resolves newly-queued names, refreshes known ones)
  *
  * Equivalent to running, in order:
- *   node data/csv-to-sqlite.js data/lol-draft-long.csv
+ *   node data/csv-to-sqlite.js data/draft-data.csv
  *   node data/bootstrap-player-identities.js
  *   node data/run-riot-sync.js
  *
@@ -19,7 +19,7 @@ const { ingestCsv, DB_PATH } = require('./csv-to-sqlite');
 const { bootstrap } = require('./bootstrap-player-identities');
 const { runFullSync } = require('../lib/riot-sync');
 
-const csvPath = process.argv[2] || path.join(__dirname, '..', '..', 'data', 'lol-draft-long.csv');
+const csvPath = process.argv[2] || path.join(__dirname, '..', '..', 'data', 'draft-data.csv');
 
 (async () => {
   console.log(`Step 1/3: ingesting ${csvPath}...`);

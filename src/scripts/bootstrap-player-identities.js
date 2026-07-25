@@ -25,6 +25,7 @@ const DB_PATH = path.join(__dirname, '..', '..', 'data', 'app.db');
 const SCHEMA_PATH = path.join(__dirname, '..', 'db', 'identity-schema.sql');
 const TABLE = 'rows';
 const GROUP_COL = 'Player';
+const CAPTAIN_COL = 'Captain'
 const DEFAULT_REGION = process.env.RIOT_REGION || 'americas';
 
 // Matches "Name#Tag" at the start of the string, tag is alphanumeric only
@@ -42,7 +43,13 @@ function bootstrap(db) {
   db.exec(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
 
   const distinctPlayers = db
-    .prepare(`SELECT DISTINCT "${GROUP_COL}" AS name FROM "${TABLE}" WHERE "${GROUP_COL}" IS NOT NULL AND "${GROUP_COL}" != ''`)
+    .prepare(`
+      SELECT DISTINCT name FROM (
+        SELECT "${GROUP_COL}" AS name FROM "${TABLE}" WHERE "${GROUP_COL}" IS NOT NULL AND "${GROUP_COL}" != ''
+        UNION
+        SELECT "${CAPTAIN_COL}" AS name FROM "${TABLE}" WHERE "${CAPTAIN_COL}" IS NOT NULL AND "${CAPTAIN_COL}" != ''
+      )
+    `)
     .all()
     .map((r) => r.name);
 
