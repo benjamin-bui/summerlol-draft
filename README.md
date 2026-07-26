@@ -8,6 +8,8 @@ player profiles, **Draft IQ** and **Team Balance** (how good is each
 captain at drafting, and does a stacked roster actually win), plus raw
 **Draft Data** / **Matchup Data** table views.
 
+**Note:** This repository is a read-only mirror of my self-hosted Forgejo instance.
+> Please submit all issues and pull requests at [https://forgejo.benbooee.com/benbooee/summerlol-draft](https://forgejo.benbooee.com/benbooee/summerlol-draft).
 ## Data model
 
 Two source CSVs, two SQLite tables:
