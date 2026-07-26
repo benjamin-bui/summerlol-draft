@@ -65,6 +65,7 @@ function computeFunFacts(result, { rankCutoffs = LOL_RANK_CUTOFFS } = {}) {
   // one entry instead of two.
   const rivalries = new Map(); // sortedKey -> { teamAName, teamBName, teamAKey, teamBKey, wins: {[key]: n}, draws: n }
   for (const g of games) {
+    if (!g.team1?.key || !g.team2?.key) continue;
     const [first, second] = [g.team1, g.team2].sort((a, b) =>
       a.key.localeCompare(b.key),
     );

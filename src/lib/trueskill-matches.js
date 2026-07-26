@@ -136,7 +136,6 @@ function computeTrueSkillFromMatches(
   for (const m of ordered) {
     const team1Key = resolve(m.team1);
     const team2Key = resolve(m.team2);
-
     const getRoster = (rawName, key) => {
       const found = roster.get(m.year, m.tournament, key);
       const members = found ? [...found] : [];

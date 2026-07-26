@@ -80,6 +80,10 @@ code {
   font-size: 0.85em;
 }
 
+/* ---- Player Names ---- */
+.player-name { display: block; font-weight: 500; }
+.player-tag { display: block; font-size: 0.78rem; color: var(--muted); }
+
 /* ---- Notes (plain static content, edit index.html directly) ---- */
 
 .notes-section {

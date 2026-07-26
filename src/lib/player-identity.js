@@ -35,7 +35,6 @@ function identityTablesExist(db) {
 function loadIdentityMap(db) {
   const map = new Map();
   if (!identityTablesExist(db)) return map;
-
   const rows = db
     .prepare(
       `SELECT pa.alias, p.id AS player_id, p.riot_game_name, p.riot_tag_line,
@@ -44,11 +43,12 @@ function loadIdentityMap(db) {
        JOIN players p ON p.id = pa.player_id`,
     )
     .all();
-
   for (const row of rows) {
     const resolved = !!row.riot_game_name;
     const displayName =
-      row.display_name_override || row.riot_game_name || row.alias;
+      row.display_name_override ||
+      (row.riot_game_name && row.riot_tag_line ? `${row.riot_game_name}#${row.riot_tag_line}` : row.riot_game_name) ||
+      row.alias;
     map.set(row.alias, {
       identityKey: `p${row.player_id}`,
       displayName,
@@ -58,7 +58,6 @@ function loadIdentityMap(db) {
       resolved,
     });
   }
-
   return map;
 }
 

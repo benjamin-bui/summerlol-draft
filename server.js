@@ -317,6 +317,34 @@ app.get("/api/trueskill", (req, res) => {
   res.json(result);
 });
 
+// Read in filter preset
+const fs = require('fs'); // add if not already imported
+
+const PRESETS_DIR = path.join(__dirname, 'data', 'presets');
+
+function getAvailablePresets() {
+  if (!fs.existsSync(PRESETS_DIR)) return [];
+  return fs.readdirSync(PRESETS_DIR)
+    .filter((f) => f.toLowerCase().endsWith('.csv'))
+    .map((filename) => ({
+      id: filename,
+      label: filename.replace(/\.csv$/i, '').replace(/[-_]+/g, ' ')
+    }));
+}
+
+app.get('/api/presets', (req, res) => {
+  res.json({ presets: getAvailablePresets() });
+});
+
+app.get('/api/presets/:id', (req, res) => {
+  const match = getAvailablePresets().find((p) => p.id === req.params.id);
+  if (!match) return res.status(404).json({ error: 'Preset not found' });
+  const text = fs.readFileSync(path.join(PRESETS_DIR, match.id), 'utf-8');
+  const names = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    .filter((l) => l.toLowerCase() !== 'name'); // tolerate an optional header row
+  res.json({ id: match.id, label: match.label, names });
+});
+
 // Comparing TrueSkill against draft data
 const {
   computeDraftIQ,

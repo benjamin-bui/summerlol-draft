@@ -59,6 +59,28 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
+// Splits a "Name#Tag" style string into a bold name + muted tag
+// subtitle. Falls back to showing the whole string as the name with no
+// subtitle if there's no '#' to split on (unidentified/tagless names).
+function renderNameWithTag(fullName) {
+  const idx = fullName.lastIndexOf('#');
+  if (idx === -1) return `<span class="player-name">${escapeHtml(fullName)}</span>`;
+  const name = fullName.slice(0, idx);
+  const tag = fullName.slice(idx);
+  return `<span class="player-name">${escapeHtml(name)}</span><span class="player-tag">${escapeHtml(tag)}</span>`;
+}
+function renderPlayerCell(row) {
+  const fullName = row.group || row.displayName || '';
+  const identityKey = row.identityKey || row._playerIdentityKey || null;
+  const nameHtml = renderNameWithTag(fullName);
+  if (identityKey) {
+    return `<a href="#" class="player-link" data-player-key="${escapeHtml(identityKey)}" title="View profile">${nameHtml}</a>`;
+  }
+  if (row.profileUrl) {
+    return `<a href="${escapeHtml(row.profileUrl)}" target="_blank" rel="noopener noreferrer" class="player-link" title="View on op.gg">${nameHtml}</a>`;
+  }
+  return nameHtml;
+}
 // TrueSkill Fun Facts
 function renderFunFactsHtml(ff) {
   if (!ff) return "";
@@ -152,10 +174,15 @@ function closePlayerProfile() {
 }
 
 function renderPlayerProfileContent(player) {
-  const title = escapeHtml(player?.group || player?.identityKey || "Player");
+  const title = player?.group || player?.identityKey || 'Player';
+  const titleIdx = title.lastIndexOf('#');
+  const titleHtml = titleIdx === -1
+    ? escapeHtml(title)
+    : `${escapeHtml(title.slice(0, titleIdx))}<br><span class="stat-formula">${escapeHtml(title.slice(titleIdx))}</span>`;
+
   const summaryRows = [
     `<div class="profile-summary">`,
-    `<span><strong>${title}</strong></span>`,
+    `<span><strong>${titleHtml}</strong></span>`,
     `<span>${player?.identified ? "Identified" : "Unidentified"}</span>`,
     player?.profileUrl
       ? `<a href="${escapeHtml(player.profileUrl)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>`
@@ -1195,6 +1222,48 @@ function parseNameList(text) {
     .filter(Boolean);
 }
 
+// Identifies player list for each tournament
+function seasonRankLocal(tournament) {
+  const t = String(tournament || '').trim().toLowerCase();
+  if (t === 'winter') return 0;
+  if (t === 'summer') return 1;
+  return 2;
+}
+
+function buildPastDraftOptions() {
+  const optgroup = document.getElementById('pastDraftsOptgroup');
+  optgroup.innerHTML = '';
+  if (!latestTrueskillPlayers) return;
+
+  const combos = new Set();
+  latestTrueskillPlayers.forEach((p) => {
+    (p.history || []).forEach((h) => combos.add(`${h.year}::${h.tournament}`));
+  });
+
+  [...combos].sort((a, b) => {
+    const [ay, at] = a.split('::'), [by, bt] = b.split('::');
+    if (ay !== by) return by - ay;
+    return seasonRankLocal(at) - seasonRankLocal(bt);
+  }).forEach((combo) => {
+    const [year, tournament] = combo.split('::');
+    const opt = document.createElement('option');
+    opt.value = `past::${combo}`;
+    opt.textContent = `${tournament} ${year}`;
+    optgroup.appendChild(opt);
+  });
+}
+
+// Everyone (captains + players) with at least one recorded game that
+// year+tournament -- since captains are always force-included on their
+// own roster and always play, this naturally covers both.
+function namesForPastDraft(year, tournament) {
+  const names = new Set();
+  (latestTrueskillPlayers || []).forEach((p) => {
+    const played = (p.history || []).some((h) => String(h.year) === String(year) && h.tournament === tournament);
+    if (played) names.add(p.group);
+  });
+  return [...names];
+}
 // Matches loosely against BOTH the resolved display name and the raw
 // identityKey -- a pasted roster might use the exact in-game name
 // (which could still be an unresolved identityKey if that player was
@@ -1204,12 +1273,14 @@ function parseNameList(text) {
 // match risks silently pulling in the wrong player on a short name.
 function buildNameMatcher(names) {
   const normalized = new Set(names.map((n) => n.trim().toLowerCase()));
+  const bareNameOf = (s) => {
+    const idx = s.lastIndexOf('#');
+    return (idx === -1 ? s : s.slice(0, idx)).trim().toLowerCase();
+  };
   return {
     matches(player) {
-      const candidates = [player.group, player.identityKey]
-        .filter(Boolean)
-        .map((s) => s.trim().toLowerCase());
-      return candidates.some((c) => normalized.has(c));
+      const candidates = [player.group, player.identityKey].filter(Boolean);
+      return candidates.some((c) => normalized.has(c.trim().toLowerCase()) || normalized.has(bareNameOf(c)));
     },
     checkCoverage(players) {
       const matchedNames = new Set();
@@ -1468,6 +1539,7 @@ async function loadtrueskillData(forceRefresh) {
   const res = await fetch(`/api/trueskill`);
   const data = await res.json();
   latestTrueskillPlayers = data.players;
+  buildPastDraftOptions();
   globalRankTiers = data.funFacts.staticCutoffs;
   document.getElementById("trueskill-fun-facts").innerHTML = renderFunFactsHtml(
     data.funFacts,
@@ -1476,6 +1548,40 @@ async function loadtrueskillData(forceRefresh) {
   trueskillLoaded = true;
 }
 
+async function buildAdminPresetOptions() {
+  const optgroup = document.getElementById('adminPresetsOptgroup');
+  optgroup.innerHTML = '';
+  try {
+    const res = await fetch('/api/presets');
+    const data = await res.json();
+    data.presets.forEach((preset) => {
+      const opt = document.createElement('option');
+      opt.value = `admin::${preset.id}`;
+      opt.textContent = preset.label;
+      optgroup.appendChild(opt);
+    });
+  } catch (err) { /* no presets dir yet -- fine, leave empty */ }
+}
+
+document.getElementById('nameFilterPresetSelect').addEventListener('change', async (e) => {
+  const val = e.target.value;
+  if (!val) return;
+  const textarea = document.getElementById('nameFilterInput');
+
+  if (val.startsWith('past::')) {
+    const [, year, tournament] = val.split('::');
+    textarea.value = namesForPastDraft(year, tournament).join('\n');
+  } else if (val.startsWith('admin::')) {
+    const id = val.slice('admin::'.length);
+    const res = await fetch(`/api/presets/${encodeURIComponent(id)}`);
+    const data = await res.json();
+    textarea.value = data.names.join('\n');
+  }
+  applyNameFilter(textarea.value);
+  e.target.value = '';
+});
+
+buildAdminPresetOptions(); // once at load -- doesn't depend on TrueSkill data being fetched yet
 // ==================== Naive Pick Order vs Results ====================
 
 let totalN = 40;
@@ -2560,7 +2666,7 @@ async function loadDraftAnalysis() {
 
   const draftIQRows = data.captainDraftIQ.map((row) => ({
     ...row,
-    captainDisplay: `<a href="#" class="captain-draft-link" data-captain="${escapeHtml(row.captain)}">${escapeHtml(row.captain)}</a>`,
+    captainDisplay: `<a href="#" class="captain-draft-link" data-captain="${escapeHtml(row.captain)}">${renderNameWithTag(row.captain)}</a>`,
     bestPickLabel: formatDraftPick(row.bestPick, "entering-rank"),
     worstPickLabel: formatDraftPick(row.worstPick, "entering-rank"),
     bestPickLeavingLabel: formatDraftPick(row.bestPickLeaving, "leaving-rank"),

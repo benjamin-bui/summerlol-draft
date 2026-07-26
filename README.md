@@ -10,11 +10,12 @@ captain at drafting, and does a stacked roster actually win), plus raw
 
 **Note:** This repository is a read-only mirror of my self-hosted Forgejo instance.
 > Please submit all issues and pull requests at [https://forgejo.benbooee.com/benbooee/summerlol-draft](https://forgejo.benbooee.com/benbooee/summerlol-draft).
+
 ## Data model
 
 Two source CSVs, two SQLite tables:
 
-- **`rows`** (from `draft-data.csv`) — one row per drafted pick:
+- **`rows`** (from `lol-draft-long.csv`) — one row per drafted pick:
   `Tournament`, `Year`, `Captain`, `Player`, `Pick Order`, `Rank`. `Rank`
   is the *whole team's* final placement that tournament (every pick on a
   team shares the same value), used for both classic Pick Value and Draft
@@ -34,7 +35,7 @@ team plays.
 
 ## CSV column requirements
 
-**`draft-data.csv`**: `Tournament, Year, Captain, Player, Pick Order,
+**`lol-draft-long.csv`**: `Tournament, Year, Captain, Player, Pick Order,
 Rank` — exact header names, case-sensitive. `Pick Value`/percentile
 columns are derived by the app, never read from the CSV even if present.
 
@@ -58,7 +59,7 @@ with no renaming needed.
 
 ```bash
 npm install
-node src/scripts/csv-to-sqlite.js data/draft-data.csv --fresh
+node src/scripts/csv-to-sqlite.js data/lol-draft-long.csv --fresh
 node src/scripts/ingest-matches.js data/lol-draft-match.csv
 npm start
 ```
@@ -70,7 +71,7 @@ but no longer present in the CSV gets deleted. (This used to be
 upsert-only/append-only, which meant a corrected row would silently
 leave the old, wrong row behind forever — fixed.) `--fresh` instead
 drops and recreates the table entirely; only needed if the CSV's column
-list itself changed. Re-run this any time `draft-data.csv` changes.
+list itself changed. Re-run this any time `lol-draft-long.csv` changes.
 
 **`ingest-matches.js` always does a full drop+recreate** on every run
 (there's no natural unique key to upsert match rows against) — re-run it
@@ -114,6 +115,31 @@ directly from μ/σ, independent of the conservative TrueSkill number —
 worth knowing, since a player with few games can show a lower TrueSkill
 than their μ and predicted win chances alone would suggest; this
 divergence narrows as more games are recorded, it isn't a bug.
+
+**Filter by list**: above the TrueSkill table, paste or upload a list of
+names (one per line, comma-separated, or a pasted Excel column) to
+narrow the table down to just those people — useful for checking a
+specific tournament's pool or a shortlist rather than browsing the full
+roster. Matching is exact (case/whitespace-insensitive, tolerant of a
+name with or without its `#Tag`) against either the resolved display
+name or the raw identity key, never fuzzy/partial — a summary line
+reports how many names matched and lists any that didn't, so a typo or
+resolution gap is obvious rather than silently dropped. The same
+dropdown also offers two shortcuts to fill that list automatically:
+
+- **Past Drafts** — every year+tournament combination that's actually
+  been played, derived from already-loaded TrueSkill data (no extra
+  request). Selecting one fills the list with everyone — captains and
+  players both — who has a recorded game that tournament.
+- **Upcoming Tournaments** — admin-provided presets. Drop a CSV (one
+  name per line, optional header row) into `data/presets/`, and it
+  appears in this dropdown automatically as soon as the server picks it
+  up — no code change or redeploy needed per tournament, just the file
+  landing on the bind-mounted volume. The preset's label is the
+  filename with the extension stripped and underscores/hyphens turned
+  into spaces (e.g. `2026-summer-draft-pool.csv` → "2026 summer draft
+  pool"). Served via `GET /api/presets` (list) and `GET
+  /api/presets/:id` (contents).
 
 **Rank badges**: every displayed TrueSkill/conservativeRating value (in
 the TrueSkill table, and next to individual players in match history
@@ -255,10 +281,14 @@ correctly, not the identity layer.
 ```
 data/                      # pure state -- nothing executable
   app.db
-  draft-data.csv
+  lol-draft-long.csv
   lol-draft-match.csv
   pending-player-tags.csv
   identity-schema.sql
+  presets/                  # optional: drop a CSV here to add a name-list
+                             # filter preset (e.g. an upcoming tournament's
+                             # draft pool) -- picked up automatically, no
+                             # code change needed
 
 src/
   lib/                      # required by server.js at runtime
@@ -304,3 +334,12 @@ supplied to the container as a Docker secret / environment variable at
 deploy time**, not read from a checked-in `.env` file in production —
 `.env`/`.env.example` remain the right approach for local development
 only.
+
+The `--user "$(id -u):$(id -g)"` vs. root+chown tradeoff, the
+one-time `chown` migration step, and the network-filesystem `chown`
+caveat described in the original Docker section are all still accurate
+and unchanged — see below for the full commands.
+
+[... existing Docker command reference, sample-data note, spreadsheet
+formula-bug note, and full identity-tracking setup/testing details
+continue unchanged from the previous version of this README ...]
