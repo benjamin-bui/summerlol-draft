@@ -1621,7 +1621,6 @@ const RANKINGS_COLUMNS = [
     type: "number",
     decimals: 2,
     className: "adj-avg",
-    sticky: "true",
   },
   {
     key: "n",
@@ -1770,7 +1769,6 @@ const DRAFT_IQ_COLUMNS = [
     type: "number",
     decimals: 2,
     className: "adj-avg",
-    sticky: true,
   },
   {
     key: "picksEvaluated",

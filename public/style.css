@@ -46,6 +46,15 @@ body {
   min-height: 100vh;
 }
 
+footer a {
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--muted);
+}
+footer a:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
 /* Fluid width: uses available page width on wide screens (so columns
    aren't cut off/hidden unnecessarily) but caps out so lines don't run
    edge-to-edge on very wide monitors. Narrow screens fall back to the

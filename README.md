@@ -11,6 +11,8 @@ captain at drafting, and does a stacked roster actually win), plus raw
 **Note:** This repository is a read-only mirror of my self-hosted Forgejo instance.
 > Please submit all issues and pull requests at [https://forgejo.benbooee.com/benbooee/summerlol-draft](https://forgejo.benbooee.com/benbooee/summerlol-draft).
 
+**Note 2:** This repo is filled with vibe-coding, so best of luck navigating.
+
 ## Data model
 
 Two source CSVs, two SQLite tables:
@@ -322,24 +324,3 @@ The `lib` vs `scripts` split is: does `server.js` `require()` it and run
 it per-request (lib), or is it something you invoke by hand or via
 `docker-entrypoint.sh`/cron (scripts). `data/` holds only state — safe
 to bind-mount, safe to back up independently of the code.
-
-## Deployment
-
-Runs in Docker. In the actual deployed environment: **the data volume
-is a real host file path mounted into the container** (a bind mount,
-not a named/managed Docker volume) — `data/app.db` and both CSVs live
-directly on the host and are edited/inspected there directly, same as
-described in the local Docker instructions below. **`RIOT_API_KEY` is
-supplied to the container as a Docker secret / environment variable at
-deploy time**, not read from a checked-in `.env` file in production —
-`.env`/`.env.example` remain the right approach for local development
-only.
-
-The `--user "$(id -u):$(id -g)"` vs. root+chown tradeoff, the
-one-time `chown` migration step, and the network-filesystem `chown`
-caveat described in the original Docker section are all still accurate
-and unchanged — see below for the full commands.
-
-[... existing Docker command reference, sample-data note, spreadsheet
-formula-bug note, and full identity-tracking setup/testing details
-continue unchanged from the previous version of this README ...]
