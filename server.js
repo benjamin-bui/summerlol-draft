@@ -458,6 +458,37 @@ app.get("/api/meta", (req, res) => {
   });
 });
 
+// Mock Draft
+app.get('/api/presets/:id', (req, res) => {
+  const match = getAvailablePresets().find((p) => p.id === req.params.id);
+  if (!match) return res.status(404).json({ error: 'Preset not found' });
+  const text = fs.readFileSync(path.join(PRESETS_DIR, match.id), 'utf-8');
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  // Two supported formats:
+  //  - one name per line (existing behavior)
+  //  - "name,captainFlag" per line, where captainFlag is 1/0 (or blank = 0)
+  // Detected per-line by whether a comma is present at all -- a mixed
+  // file (some lines with a flag, some without) is treated leniently:
+  // any line without a comma is just a non-captain name.
+  const hasAnyCommaFormat = lines.some((l) => l.includes(','));
+
+  if (!hasAnyCommaFormat) {
+    const names = lines.filter((l) => l.toLowerCase() !== 'name');
+    return res.json({ id: match.id, label: match.label, names, captains: [] });
+  }
+
+  const names = [];
+  const captains = [];
+  for (const line of lines) {
+    if (/^name\s*,\s*captain/i.test(line)) continue; // tolerate a header row
+    const [namePart, flagPart] = line.split(',').map((s) => s.trim());
+    if (!namePart) continue;
+    names.push(namePart);
+    if (flagPart === '1') captains.push(namePart);
+  }
+  res.json({ id: match.id, label: match.label, names, captains });
+});
 // Column list is read from the actual table schema (not hardcoded) so
 // this works regardless of what columns your CSV happens to have — the
 // only column deliberately excluded is "id", since it's an internal key

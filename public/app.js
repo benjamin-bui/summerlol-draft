@@ -1275,6 +1275,17 @@ function namesForPastDraft(year, tournament) {
   });
   return [...names];
 }
+function namesForPastDraftCaptains(year, tournament) {
+  const captainNames = new Set();
+  (latestTrueskillPlayers || []).forEach((p) => {
+    (p.history || []).forEach((h) => {
+      if (String(h.year) === String(year) && h.tournament === tournament && h.ownTeam?.name) {
+        captainNames.add(h.ownTeam.name);
+      }
+    });
+  });
+  return [...captainNames];
+}
 // Matches loosely against BOTH the resolved display name and the raw
 // identityKey -- a pasted roster might use the exact in-game name
 // (which could still be an unresolved identityKey if that player was
@@ -2729,14 +2740,44 @@ document.getElementById('mockDraftPresetSelect').addEventListener('change', asyn
   const val = e.target.value;
   if (!val) return;
   const textarea = document.getElementById('mockDraftFilterInput');
+  let names = [], captains = [];
+
   if (val.startsWith('past::')) {
     const [, year, tournament] = val.split('::');
-    textarea.value = namesForPastDraft(year, tournament).join('\n');
+    names = namesForPastDraft(year, tournament);
+    // Past drafts already know who captained -- reuse that instead of
+    // guessing, same idea as the CSV captain-flag feature below.
+    captains = namesForPastDraftCaptains(year, tournament);
   } else if (val.startsWith('admin::')) {
     const res = await fetch(`/api/presets/${encodeURIComponent(val.slice(7))}`);
-    textarea.value = (await res.json()).names.join('\n');
+    const data = await res.json();
+    names = data.names;
+    captains = data.captains || [];
   }
+
+  textarea.value = names.join('\n');
   applyMockDraftPoolFilter(textarea.value);
+
+  if (captains.length > 0) {
+    document.getElementById('mockNumCaptains').value = captains.length;
+    // Picks per captain: infer from pool size / captain count, rounded
+    // down -- a reasonable default the user can still override by hand
+    // before generating the board.
+    const nonCaptainCount = names.length - captains.length;
+    const inferredPicks = Math.max(1, Math.floor(nonCaptainCount / captains.length));
+    document.getElementById('mockPicksPerCaptain').value = inferredPicks;
+
+    numCaptains = captains.length;
+    picksPerCaptain = inferredPicks;
+    renderCaptainInputs(numCaptains);
+    captains.forEach((name, i) => {
+      mockCaptains[i] = resolvePoolPlayerByName(name, mockDraftPool);
+      document.querySelectorAll('.mock-captain-input')[i].value = mockCaptains[i].group;
+    });
+    renderDraftBoard();
+    renderAvailableSelectedTables();
+  }
+
   e.target.value = '';
 });
 
@@ -2766,6 +2807,7 @@ function resolvePoolPlayerByName(text, pool) {
     : { identityKey: null, group: text.trim(), conservativeRating: null, mu: null, sigma: null, manual: true };
 }
 
+// Draft board
 let draftPicks = new Map(); // `${round}::${captainIndex}` -> resolved player or null
 let numCaptains = 8, picksPerCaptain = 4;
 
@@ -2783,6 +2825,32 @@ function generateSnakeSlots(nCaptains, nPicks) {
   return slots;
 }
 
+// Captains
+let mockCaptains = [];
+
+function renderCaptainInputs(n) {
+  const container = document.getElementById('mockCaptainInputs');
+  container.innerHTML = '';
+  mockCaptains = mockCaptains.slice(0, n);
+  for (let i = 0; i < n; i++) {
+    const wrap = document.createElement('div');
+    wrap.className = 'mock-captain-input-wrap';
+    wrap.innerHTML = `<label>Captain ${i + 1}</label>`;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('list', 'mockDraftPlayerDatalist');
+    input.className = 'mock-captain-input';
+    input.placeholder = 'Type or pick a name…';
+    input.value = mockCaptains[i]?.group || '';
+    input.addEventListener('change', () => {
+      mockCaptains[i] = resolvePoolPlayerByName(input.value, mockDraftPool);
+      renderDraftBoard();
+      renderAvailableSelectedTables();
+    });
+    wrap.appendChild(input);
+    container.appendChild(wrap);
+  }
+}
 document.getElementById('mockGenerateBoardBtn').addEventListener('click', () => {
   numCaptains = Math.max(2, parseInt(document.getElementById('mockNumCaptains').value, 10) || 2);
   picksPerCaptain = Math.max(1, parseInt(document.getElementById('mockPicksPerCaptain').value, 10) || 1);
@@ -2798,6 +2866,11 @@ function getAvailablePlayers() {
     if (!pick) return;
     if (pick.identityKey) draftedKeys.add(pick.identityKey);
     else draftedNames.add(pick.group.toLowerCase());
+  });
+  mockCaptains.forEach((captain) => {
+    if (!captain) return;
+    if (captain.identityKey) draftedKeys.add(captain.identityKey);
+    else draftedNames.add(captain.group.toLowerCase());
   });
   return mockDraftPool.filter((p) => !draftedKeys.has(p.identityKey) && !draftedNames.has(p.group.toLowerCase()));
 }

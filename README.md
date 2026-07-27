@@ -9,6 +9,7 @@ captain at drafting, and does a stacked roster actually win), plus raw
 **Draft Data** / **Matchup Data** table views.
 
 **Note:** This repository is a read-only mirror of my self-hosted Forgejo instance.
+
 > Please submit all issues and pull requests at [https://forgejo.benbooee.com/benbooee/summerlol-draft](https://forgejo.benbooee.com/benbooee/summerlol-draft).
 
 **Note 2:** This repo is filled with vibe-coding, so best of luck navigating.
@@ -19,7 +20,7 @@ Two source CSVs, two SQLite tables:
 
 - **`rows`** (from `lol-draft-long.csv`) — one row per drafted pick:
   `Tournament`, `Year`, `Captain`, `Player`, `Pick Order`, `Rank`. `Rank`
-  is the *whole team's* final placement that tournament (every pick on a
+  is the _whole team's_ final placement that tournament (every pick on a
   team shares the same value), used for both classic Pick Value and Draft
   IQ/Team Balance's placement column.
 - **`matches`** (from `lol-draft-match.csv`) — one row per individual
@@ -29,7 +30,7 @@ Two source CSVs, two SQLite tables:
 
 Each year now has two tournaments/splits, **Winter** and **Summer**
 (Winter drafts came later — a team's roster falls back to whichever
-draft *does* exist for that year+captain if a tournament-specific one
+draft _does_ exist for that year+captain if a tournament-specific one
 isn't on file yet). A captain's roster for a given tournament is: their
 4 drafted picks, plus the captain themselves, force-included even if
 they never appear as a `Player` row — they still play every game their
@@ -86,6 +87,7 @@ just pointed at the fixed sync behavior above.
 ## Tabs
 
 ### Rankings
+
 Classic Pick Value methodology (Pick Percentile − Rank Percentile,
 recency-weighted). The risk-aversion and half-life sliders have been
 removed from the UI — `risk`/`halfLife` are now fixed at `0.25`/`2`
@@ -94,6 +96,7 @@ show/hide, per-column filtering, and the **Total N** → Est. Pick/Rank
 Order translation are unchanged from before.
 
 ### TrueSkill
+
 Rates every player using [`ts-trueskill`](https://github.com/scttcper/ts-trueskill),
 treating **each individual match** (not each tournament) as one game:
 each side is a captain's full roster, ranked by that match's actual
@@ -141,7 +144,7 @@ dropdown also offers two shortcuts to fill that list automatically:
   filename with the extension stripped and underscores/hyphens turned
   into spaces (e.g. `2026-summer-draft-pool.csv` → "2026 summer draft
   pool"). Served via `GET /api/presets` (list) and `GET
-  /api/presets/:id` (contents).
+/api/presets/:id` (contents).
 
 **Rank badges**: every displayed TrueSkill/conservativeRating value (in
 the TrueSkill table, and next to individual players in match history
@@ -169,6 +172,7 @@ roster and the opponent's roster (with each player's rating at the time)
 via the reusable `expandable` detail-row feature (see below).
 
 ### Draft IQ
+
 Answers "does this captain draft the highest-value available player."
 For every draft pick ever made, all players in that same year+tournament
 draft class are ranked by their TrueSkill **entering that tournament**
@@ -185,11 +189,11 @@ history exists to rank anyone by) are excluded entirely from this
 calculation — there's no real skill signal to rank against yet.
 
 **Known limitation, stated explicitly in the tab's own explainer note**:
-this compares against a *fixed, final* skill ranking of the whole draft
+this compares against a _fixed, final_ skill ranking of the whole draft
 class, not a live best-remaining-player board — it doesn't credit a
 captain for "the best option was already gone by the time it was their
 turn." **Empirically, in this league's actual data, Draft IQ correlates
-moderately *negatively* with win rate** — read as evidence that drafting
+moderately _negatively_ with win rate** — read as evidence that drafting
 for role/team fit matters more here than drafting for raw best-available
 skill, not as a flaw in the metric.
 
@@ -203,6 +207,7 @@ dropdown (Ungrouped / Captain / Year / Year:Tournament) with an
 auto-generated legend, and a dashed least-squares trend line.
 
 ### Team Balance
+
 For every drafted team (one row per year+tournament+captain), shows
 average entering TrueSkill across the full 5-person roster (4 picks +
 captain, force-included and deduplicated the same way TrueSkill's own
@@ -214,7 +219,67 @@ so it works regardless of what stage names a given tournament uses.
 Each row expands to show the full roster and that team's complete match
 list (opponent, result, stage, predicted win %) for that tournament.
 
+### Mock Draft
+
+Practice tool for planning an upcoming draft — snake order only for now.
+
+**Build a player pool** the same way as TrueSkill's filter-by-list
+(paste/upload names, or load a preset) — this tab has its own copy of
+that control, targeting the mock draft board instead of the TrueSkill
+table. **Past Drafts** presets also carry over who actually captained
+that tournament (pulled from each player's own match history), and
+**Upcoming Tournaments** presets support an optional second CSV column
+marking captains directly:
+
+```
+name,captain
+Voidliss#NA1,1
+Xemacs#LOR,0
+SomeNewPlayer#123,
+```
+
+A `1` in the second column marks that row as a captain; blank/`0`/no
+second column at all means a regular player. The older one-name-per-line
+format still works unchanged for presets where captain designation
+doesn't matter.
+
+**Set up captains and pick count**, then **Generate Board** to lay out
+the snake order — left to right, then reversing on the next round,
+alternating for as many rounds as picks-per-captain. Selecting a preset
+that carries captain info auto-fills captain count, picks-per-captain
+(inferred from pool size ÷ captain count), and the captain name fields
+themselves — this **overwrites** any captains already typed in manually,
+by design, since re-loading a preset is meant to reset to that preset's
+actual structure rather than merge with whatever was there before.
+
+Each captain gets a name field (type freely, or pick from the pool via
+autocomplete); each board cell is the same — type a name or pick from
+whoever's still available. A name typed in that doesn't match anyone in
+the pool is still accepted (useful for penciling in a player who wasn't
+in your pasted list) — they just won't carry any TrueSkill data. Both
+captains and already-picked players are removed from the **Available
+Players** table and from every cell's autocomplete suggestions as soon
+as they're placed anywhere on the board (a captain slot or a pick slot).
+
+Below the board, two tables (same sortable/filterable/column-toggle
+infrastructure as everywhere else): **Available Players** (everyone in
+the pool not yet captaining or picked) and **Selected Players**
+(everyone drafted so far, labeled with their pick number and which
+captain took them).
+
+Raw, per-row views of the `rows`/`matches` tables respectively —
+sortable, column show/hide, downloadable as CSV
+(`/api/raw.csv`/`/api/raw-matches.csv`, both `id`-free; Matchup Data's
+export uses the canonical header names described above). Per-column
+filters are either a checkbox multi-select (for small enumerable sets —
+`Tournament`, and any similarly bounded column) or free-text regex (for
+open-ended columns like `Player`/`Captain`/`Team 1`/`Team 2`/`Result`) —
+set per-column via `filterType: 'checkbox'` in the column definition;
+regex is the default. Matchup Data's rows also expand to show both
+teams' full rosters for that match.
+
 ### Draft Data / Matchup Data
+
 Raw, per-row views of the `rows`/`matches` tables respectively —
 sortable, column show/hide, downloadable as CSV
 (`/api/raw.csv`/`/api/raw-matches.csv`, both `id`-free; Matchup Data's
