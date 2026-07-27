@@ -773,6 +773,7 @@ thead .sticky-col { z-index: 6; } /* header stays above sticky body cells when b
 .legend-item i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 
 
+
 /* ---- Draft IQ Dropdown ---- */
 .pick-value { font-weight: 600; margin-left: 4px; }
 .pick-detail { font-size: 0.78rem; color: var(--muted); }
@@ -805,6 +806,21 @@ td:has(.pick-detail) {
 .roster-detail-row .team-matches-section {
   margin-top: 18px;
 }
+
+/* ---- Mock Draft ---- */
+.mock-draft-setup { display: flex; gap: 24px; align-items: flex-end; flex-wrap: wrap; }
+.mock-captain-inputs { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.mock-captain-input-wrap { display: flex; flex-direction: column; gap: 4px; }
+.mock-captain-input-wrap label { font-size: 0.78rem; color: var(--muted); }
+.mock-captain-input, .mock-pick-input {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--sans); font-size: 0.85rem; padding: 6px 8px; border-radius: 6px;
+}
+.mock-pick-cell { display: flex; flex-direction: column; gap: 2px; }
+.mock-pick-number { font-size: 0.7rem; color: var(--muted); }
+#mockDraftBoardTable td, #mockDraftBoardTable th { padding: 8px 10px; border: 1px solid var(--border); }
+#mockDraftBoardTable .round-label { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+.mock-section-heading { margin: 24px 0 10px; font-size: 1rem; }
 
 /* The inner match/roster table was inheriting row-border styling from
    .roster-detail-row's own tint, which is why every cell inside it also

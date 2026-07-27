@@ -27,6 +27,7 @@
       <button class="tab-btn" data-tab="rankings">Comparing Pick Order and Results</button>
       <button class="tab-btn" data-tab="draftiq">Draft vs. TrueSkill</button>
       <button class="tab-btn" data-tab="teambalance">Team Balance</button>
+    <button class="tab-btn" data-tab="mockdraft">Mock Draft</button>
       <button class="tab-btn" data-tab="draftdata">Draft Data</button>
       <button class="tab-btn" data-tab="matchdata">Matchup Data</button>
     </nav>
@@ -152,6 +153,68 @@ Xemacs
       </div>
       <div class="table-section">
         <table><thead><tr id="teamBalanceHeaderRow"></tr></thead><tbody id="teamBalanceBody"></tbody></table>
+      </div>
+    </section>
+
+    <!-- ================= Mock Draft TAB ================= -->
+    <section class="tab-panel" id="tab-mockdraft">
+      <section class="control-panel">
+        <h3>Mock Draft</h3>
+        <p>Build a player pool below, set captains and picks per captain, then fill the snake-order board by typing a name or picking from the dropdown. Snake draft only for now — auction-style and live synced drafting aren't built yet.</p>
+      </section>
+
+      <div class="name-filter-box">
+        <label for="mockDraftFilterInput">Player pool (paste names, one per line or comma-separated, or upload a file):</label>
+        <textarea id="mockDraftFilterInput" rows="3" placeholder="Voidliss#NA1
+    Xemacs#LOR
+    ..."></textarea>
+        <div class="name-filter-controls">
+          <input type="file" id="mockDraftFilterFile" accept=".csv,.txt" />
+          <button id="mockDraftFilterApplyBtn" type="button">Apply Pool</button>
+          <button id="mockDraftFilterClearBtn" type="button">Clear</button>
+          <select id="mockDraftPresetSelect">
+            <option value="">Load a preset…</option>
+            <optgroup label="Past Drafts" id="mockPastDraftsOptgroup"></optgroup>
+            <optgroup label="Upcoming Tournaments" id="mockAdminPresetsOptgroup"></optgroup>
+          </select>
+          <span id="mockDraftFilterSummary" class="name-filter-summary"></span>
+        </div>
+      </div>
+
+      <div class="control-panel mock-draft-setup">
+        <label>Number of captains
+          <input type="number" id="mockNumCaptains" min="2" value="8" class="total-n-input" />
+        </label>
+        <label class="second-control">Picks per captain
+          <input type="number" id="mockPicksPerCaptain" min="1" value="4" class="total-n-input" />
+        </label>
+        <button id="mockGenerateBoardBtn" type="button" class="download-btn" style="margin-top:14px;">Generate Board</button>
+      </div>
+
+      <div id="mockCaptainInputs" class="mock-captain-inputs"></div>
+      <datalist id="mockDraftPlayerDatalist"></datalist>
+      <datalist id="mockDraftAvailableDatalist"></datalist>
+
+      <div class="table-section" id="mockDraftBoardWrap" style="overflow-x:auto;">
+        <table id="mockDraftBoardTable"></table>
+      </div>
+
+      <h3 class="mock-section-heading">Available Players</h3>
+      <div class="table-controls">
+        <button id="mockAvailableColumnsBtn" class="columns-btn">Columns ▾</button>
+        <div id="mockAvailableColumnsPanel" class="columns-panel hidden"></div>
+      </div>
+      <div class="table-section">
+        <table><thead><tr id="mockAvailableHeaderRow"></tr></thead><tbody id="mockAvailableBody"></tbody></table>
+      </div>
+
+      <h3 class="mock-section-heading">Selected Players</h3>
+      <div class="table-controls">
+        <button id="mockSelectedColumnsBtn" class="columns-btn">Columns ▾</button>
+        <div id="mockSelectedColumnsPanel" class="columns-panel hidden"></div>
+      </div>
+      <div class="table-section">
+        <table><thead><tr id="mockSelectedHeaderRow"></tr></thead><tbody id="mockSelectedBody"></tbody></table>
       </div>
     </section>
 
