@@ -1,22 +1,21 @@
-# .forgejo/workflows/beta.yml
 name: Build beta image
 on:
   push:
     branches: [beta]
-
 jobs:
   build:
     runs-on: docker
     steps:
       - uses: actions/checkout@v4
       - name: Log in to registry
-        run: echo "${{ secrets.FORGEJO_TOKEN }}" | docker login forgejo.benboee.com -u "${{ secrets.REGISTRY_USER }}" --password-stdin
+        run: echo "${{ secrets.PACKAGE_TOKEN }}" | docker login forgejo:3000 -u "${{ secrets.REGISTRY_USER }}" --password-stdin
       - name: Build and tag
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
-          docker build -t forgejo.benbooee.com/summerlol-draft:beta \
-                       -t forgejo.benbooee.com/summerlol-draft:beta-$SHORT_SHA .
+          IMAGE=forgejo:3000/${{ github.repository_owner }}/summerlol-draft
+          docker build -t $IMAGE:beta -t $IMAGE:beta-$SHORT_SHA .
       - name: Push
         run: |
-          docker push forgejo.benbooee.com/summerlol-draft:beta
-          docker push forgejo.benbooee.com/summerlol-draft:beta-$(git rev-parse --short HEAD)
+          IMAGE=forgejo:3000/${{ github.repository_owner }}/summerlol-draft
+          docker push $IMAGE:beta
+          docker push $IMAGE:beta-$(git rev-parse --short HEAD)

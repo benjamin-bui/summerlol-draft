@@ -1230,16 +1230,13 @@ function seasonRankLocal(tournament) {
   return 2;
 }
 
-function buildPastDraftOptions() {
-  const optgroup = document.getElementById('pastDraftsOptgroup');
-  optgroup.innerHTML = '';
+function buildPastDraftOptions(optgroupEl) {
+  optgroupEl.innerHTML = '';
   if (!latestTrueskillPlayers) return;
-
   const combos = new Set();
   latestTrueskillPlayers.forEach((p) => {
     (p.history || []).forEach((h) => combos.add(`${h.year}::${h.tournament}`));
   });
-
   [...combos].sort((a, b) => {
     const [ay, at] = a.split('::'), [by, bt] = b.split('::');
     if (ay !== by) return by - ay;
@@ -1249,8 +1246,22 @@ function buildPastDraftOptions() {
     const opt = document.createElement('option');
     opt.value = `past::${combo}`;
     opt.textContent = `${tournament} ${year}`;
-    optgroup.appendChild(opt);
+    optgroupEl.appendChild(opt);
   });
+}
+
+async function buildAdminPresetOptions(optgroupEl) {
+  optgroupEl.innerHTML = '';
+  try {
+    const res = await fetch('/api/presets');
+    const data = await res.json();
+    data.presets.forEach((preset) => {
+      const opt = document.createElement('option');
+      opt.value = `admin::${preset.id}`;
+      opt.textContent = preset.label;
+      optgroupEl.appendChild(opt);
+    });
+  } catch (err) { /* no presets dir yet */ }
 }
 
 // Everyone (captains + players) with at least one recorded game that
@@ -1263,6 +1274,17 @@ function namesForPastDraft(year, tournament) {
     if (played) names.add(p.group);
   });
   return [...names];
+}
+function namesForPastDraftCaptains(year, tournament) {
+  const captainNames = new Set();
+  (latestTrueskillPlayers || []).forEach((p) => {
+    (p.history || []).forEach((h) => {
+      if (String(h.year) === String(year) && h.tournament === tournament && h.ownTeam?.name) {
+        captainNames.add(h.ownTeam.name);
+      }
+    });
+  });
+  return [...captainNames];
 }
 // Matches loosely against BOTH the resolved display name and the raw
 // identityKey -- a pasted roster might use the exact in-game name
@@ -1319,7 +1341,7 @@ function applyNameFilter(rawText) {
   trueskillTable.setExternalFilter((row) => matcher.matches(row));
 
   summaryEl.textContent = unmatched.length
-    ? `Matched ${matchedCount}/${totalCount}. Not found: ${unmatched.join(", ")}`
+    ? `Matched ${matchedCount}/${totalCount}. Unmatched: ${unmatched.join(", ")}`
     : `Matched all ${matchedCount} names.`;
   summaryEl.className = unmatched.length
     ? "name-filter-summary has-misses"
@@ -1539,7 +1561,7 @@ async function loadtrueskillData(forceRefresh) {
   const res = await fetch(`/api/trueskill`);
   const data = await res.json();
   latestTrueskillPlayers = data.players;
-  buildPastDraftOptions();
+  buildPastDraftOptions(document.getElementById('pastDraftsOptgroup'));
   globalRankTiers = data.funFacts.staticCutoffs;
   document.getElementById("trueskill-fun-facts").innerHTML = renderFunFactsHtml(
     data.funFacts,
@@ -1548,20 +1570,7 @@ async function loadtrueskillData(forceRefresh) {
   trueskillLoaded = true;
 }
 
-async function buildAdminPresetOptions() {
-  const optgroup = document.getElementById('adminPresetsOptgroup');
-  optgroup.innerHTML = '';
-  try {
-    const res = await fetch('/api/presets');
-    const data = await res.json();
-    data.presets.forEach((preset) => {
-      const opt = document.createElement('option');
-      opt.value = `admin::${preset.id}`;
-      opt.textContent = preset.label;
-      optgroup.appendChild(opt);
-    });
-  } catch (err) { /* no presets dir yet -- fine, leave empty */ }
-}
+
 
 document.getElementById('nameFilterPresetSelect').addEventListener('change', async (e) => {
   const val = e.target.value;
@@ -1581,7 +1590,8 @@ document.getElementById('nameFilterPresetSelect').addEventListener('change', asy
   e.target.value = '';
 });
 
-buildAdminPresetOptions(); // once at load -- doesn't depend on TrueSkill data being fetched yet
+buildAdminPresetOptions(document.getElementById('adminPresetsOptgroup'));
+
 // ==================== Naive Pick Order vs Results ====================
 
 let totalN = 40;
@@ -2678,6 +2688,285 @@ async function loadDraftAnalysis() {
   draftAnalysisLoaded = true;
 }
 
+// ==================== Mock Draft Data tab ====================
+let mockDraftPool = [];
+
+function applyMockDraftPoolFilter(rawText) {
+  const names = parseNameList(rawText);
+  const summaryEl = document.getElementById('mockDraftFilterSummary');
+  if (names.length === 0) {
+    mockDraftPool = [];
+    summaryEl.textContent = '';
+    renderMockDraftPlayerDatalist();
+    renderAvailableSelectedTables();
+    return;
+  }
+
+  const matcher = buildNameMatcher(names);
+  const playersForCheck = latestTrueskillPlayers || [];
+  const { unmatched } = matcher.checkCoverage(playersForCheck);
+
+  // Every pasted/uploaded name becomes a pool entry -- matched names get
+  // their real TrueSkill data, names with no match at all (genuinely new
+  // people, not in the system yet) become a manual stub with null
+  // ratings instead of being silently dropped. This is the same shape
+  // resolvePoolPlayerByName already produces for a name typed directly
+  // into a board cell, so both paths behave consistently.
+  mockDraftPool = names.map((rawName) => resolvePoolPlayerByName(rawName, playersForCheck));
+
+  summaryEl.textContent = unmatched.length
+    ? `Matched ${names.length - unmatched.length}/${names.length}. New/unrecognized (added with no TrueSkill data): ${unmatched.join(', ')}`
+    : `Matched all ${names.length} names.`;
+  summaryEl.className = unmatched.length ? 'name-filter-summary has-misses' : 'name-filter-summary';
+
+  renderMockDraftPlayerDatalist();
+  draftPicks = new Map();
+  renderDraftBoard();
+  renderAvailableSelectedTables();
+}
+
+document.getElementById('mockDraftFilterApplyBtn').addEventListener('click', () =>
+  applyMockDraftPoolFilter(document.getElementById('mockDraftFilterInput').value));
+document.getElementById('mockDraftFilterClearBtn').addEventListener('click', () => {
+  document.getElementById('mockDraftFilterInput').value = '';
+  document.getElementById('mockDraftFilterFile').value = '';
+  applyMockDraftPoolFilter('');
+});
+document.getElementById('mockDraftFilterFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  document.getElementById('mockDraftFilterInput').value = text;
+  applyMockDraftPoolFilter(text);
+});
+document.getElementById('mockDraftPresetSelect').addEventListener('change', async (e) => {
+  const val = e.target.value;
+  if (!val) return;
+  const textarea = document.getElementById('mockDraftFilterInput');
+  let names = [], captains = [];
+
+  if (val.startsWith('past::')) {
+    const [, year, tournament] = val.split('::');
+    names = namesForPastDraft(year, tournament);
+    // Past drafts already know who captained -- reuse that instead of
+    // guessing, same idea as the CSV captain-flag feature below.
+    captains = namesForPastDraftCaptains(year, tournament);
+  } else if (val.startsWith('admin::')) {
+    const res = await fetch(`/api/presets/${encodeURIComponent(val.slice(7))}`);
+    const data = await res.json();
+    names = data.names;
+    captains = data.captains || [];
+  }
+
+  textarea.value = names.join('\n');
+  applyMockDraftPoolFilter(textarea.value);
+
+  if (captains.length > 0) {
+    document.getElementById('mockNumCaptains').value = captains.length;
+    // Picks per captain: infer from pool size / captain count, rounded
+    // down -- a reasonable default the user can still override by hand
+    // before generating the board.
+    const nonCaptainCount = names.length - captains.length;
+    const inferredPicks = Math.max(1, Math.floor(nonCaptainCount / captains.length));
+    document.getElementById('mockPicksPerCaptain').value = inferredPicks;
+
+    numCaptains = captains.length;
+    picksPerCaptain = inferredPicks;
+    renderCaptainInputs(numCaptains);
+    captains.forEach((name, i) => {
+      mockCaptains[i] = resolvePoolPlayerByName(name, mockDraftPool);
+      document.querySelectorAll('.mock-captain-input')[i].value = mockCaptains[i].group;
+    });
+    renderDraftBoard();
+    renderAvailableSelectedTables();
+  }
+
+  e.target.value = '';
+});
+
+function renderMockDraftPlayerDatalist() {
+  document.getElementById('mockDraftPlayerDatalist').innerHTML =
+    mockDraftPool.map((p) => `<option value="${escapeHtml(p.group)}"></option>`).join('');
+}
+
+// Matches typed text against a given pool (case/tag-tolerant, same
+// convention as the TrueSkill filter's matcher); falls back to a
+// "manual" stub if nothing in the pool matches, so someone not in your
+// filtered list can still be typed in directly -- they just won't carry
+// any TrueSkill data.
+function resolvePoolPlayerByName(text, pool) {
+  const norm = text.trim().toLowerCase();
+  if (!norm) return null;
+  const bareOf = (s) => {
+    const idx = s.lastIndexOf('#');
+    return (idx === -1 ? s : s.slice(0, idx)).trim().toLowerCase();
+  };
+  const found = pool.find((p) => {
+    const g = p.group.trim().toLowerCase();
+    return g === norm || bareOf(g) === norm || bareOf(g) === bareOf(norm);
+  });
+  return found
+    ? { ...found, manual: false }
+    : { identityKey: null, group: text.trim(), conservativeRating: null, mu: null, sigma: null, manual: true };
+}
+
+// Draft board
+let draftPicks = new Map(); // `${round}::${captainIndex}` -> resolved player or null
+let numCaptains = 8, picksPerCaptain = 4;
+
+// Standard snake: round 0 goes captain 0..N-1, round 1 reverses N-1..0,
+// alternating -- "left to right, then sweep back" exactly as described.
+function generateSnakeSlots(nCaptains, nPicks) {
+  const slots = [];
+  let overall = 1;
+  for (let round = 0; round < nPicks; round++) {
+    const order = round % 2 === 0
+      ? [...Array(nCaptains).keys()]
+      : [...Array(nCaptains).keys()].reverse();
+    for (const captainIndex of order) slots.push({ round, captainIndex, overall: overall++ });
+  }
+  return slots;
+}
+
+// Captains
+let mockCaptains = [];
+
+function renderCaptainInputs(n) {
+  const container = document.getElementById('mockCaptainInputs');
+  container.innerHTML = '';
+  mockCaptains = mockCaptains.slice(0, n);
+  for (let i = 0; i < n; i++) {
+    const wrap = document.createElement('div');
+    wrap.className = 'mock-captain-input-wrap';
+    wrap.innerHTML = `<label>Captain ${i + 1}</label>`;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.setAttribute('list', 'mockDraftPlayerDatalist');
+    input.className = 'mock-captain-input';
+    input.placeholder = 'Type or pick a name…';
+    input.value = mockCaptains[i]?.group || '';
+    input.addEventListener('change', () => {
+      mockCaptains[i] = resolvePoolPlayerByName(input.value, mockDraftPool);
+      renderDraftBoard();
+      renderAvailableSelectedTables();
+    });
+    wrap.appendChild(input);
+    container.appendChild(wrap);
+  }
+}
+document.getElementById('mockGenerateBoardBtn').addEventListener('click', () => {
+  numCaptains = Math.max(2, parseInt(document.getElementById('mockNumCaptains').value, 10) || 2);
+  picksPerCaptain = Math.max(1, parseInt(document.getElementById('mockPicksPerCaptain').value, 10) || 1);
+  draftPicks = new Map();
+  renderCaptainInputs(numCaptains);
+  renderDraftBoard();
+  renderAvailableSelectedTables();
+});
+
+function getAvailablePlayers() {
+  const draftedKeys = new Set(), draftedNames = new Set();
+  draftPicks.forEach((pick) => {
+    if (!pick) return;
+    if (pick.identityKey) draftedKeys.add(pick.identityKey);
+    else draftedNames.add(pick.group.toLowerCase());
+  });
+  mockCaptains.forEach((captain) => {
+    if (!captain) return;
+    if (captain.identityKey) draftedKeys.add(captain.identityKey);
+    else draftedNames.add(captain.group.toLowerCase());
+  });
+  return mockDraftPool.filter((p) => !draftedKeys.has(p.identityKey) && !draftedNames.has(p.group.toLowerCase()));
+}
+
+function renderMockDraftAvailableDatalist() {
+  document.getElementById('mockDraftAvailableDatalist').innerHTML =
+    getAvailablePlayers().map((p) => `<option value="${escapeHtml(p.group)}"></option>`).join('');
+}
+
+function renderDraftBoard() {
+  const slots = generateSnakeSlots(numCaptains, picksPerCaptain);
+  const table = document.getElementById('mockDraftBoardTable');
+  const headerCells = Array.from({ length: numCaptains }, (_, i) =>
+    `<th>${escapeHtml(mockCaptains[i]?.group || `Captain ${i + 1}`)}</th>`).join('');
+
+  const rows = [];
+  for (let round = 0; round < picksPerCaptain; round++) {
+    const cells = [];
+    for (let c = 0; c < numCaptains; c++) {
+      const slot = slots.find((s) => s.round === round && s.captainIndex === c);
+      const pick = draftPicks.get(`${round}::${c}`);
+      cells.push(`<td><div class="mock-pick-cell">
+        <span class="mock-pick-number">#${slot.overall}</span>
+        <input type="text" list="mockDraftAvailableDatalist" class="mock-pick-input"
+          data-round="${round}" data-captain="${c}"
+          value="${pick ? escapeHtml(pick.group) : ''}" placeholder="Type or pick…" />
+      </div></td>`);
+    }
+    rows.push(`<tr><td class="round-label">Round ${round + 1}</td>${cells.join('')}</tr>`);
+  }
+
+  table.innerHTML = `<thead><tr><th></th>${headerCells}</tr></thead><tbody>${rows.join('')}</tbody>`;
+  renderMockDraftAvailableDatalist();
+
+  table.querySelectorAll('.mock-pick-input').forEach((input) => {
+    input.addEventListener('change', () => {
+      const key = `${input.dataset.round}::${input.dataset.captain}`;
+      const text = input.value.trim();
+      if (!text) draftPicks.delete(key);
+      else draftPicks.set(key, resolvePoolPlayerByName(text, getAvailablePlayers()));
+      renderMockDraftAvailableDatalist();
+      renderAvailableSelectedTables();
+    });
+  });
+}
+
+const MOCK_PLAYER_COLUMNS = [
+  { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, type: 'string', className: 'group-name' },
+  { key: 'conservativeRating', label: 'TrueSkill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg', render: (val) => renderTrueSkillValue(val) },
+  { key: 'mu', label: 'μ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 },
+  { key: 'sigma', label: 'σ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 }
+];
+const MOCK_SELECTED_COLUMNS = [
+  ...MOCK_PLAYER_COLUMNS,
+  { key: 'pickLabel', label: 'Pick', sortable: true, hideable: true, filterable: true, type: 'string', sortValue: (row) => row.overall }
+];
+
+const mockAvailableTable = createTabTable({
+  columns: MOCK_PLAYER_COLUMNS, headerRowEl: document.getElementById('mockAvailableHeaderRow'),
+  bodyEl: document.getElementById('mockAvailableBody'), columnsBtnEl: document.getElementById('mockAvailableColumnsBtn'),
+  columnsPanelEl: document.getElementById('mockAvailableColumnsPanel'), ownerKey: 'mockavailable',
+  defaultSortColumn: 'conservativeRating', emptyMessage: 'No players remaining -- add a pool above'
+});
+const mockSelectedTable = createTabTable({
+  columns: MOCK_SELECTED_COLUMNS, headerRowEl: document.getElementById('mockSelectedHeaderRow'),
+  bodyEl: document.getElementById('mockSelectedBody'), columnsBtnEl: document.getElementById('mockSelectedColumnsBtn'),
+  columnsPanelEl: document.getElementById('mockSelectedColumnsPanel'), ownerKey: 'mockselected',
+  defaultSortColumn: 'pickLabel', defaultSortDirection: 'asc', emptyMessage: 'No picks made yet'
+});
+
+function renderAvailableSelectedTables() {
+  mockAvailableTable.setData(getAvailablePlayers());
+  const slots = generateSnakeSlots(numCaptains, picksPerCaptain);
+  const selected = [];
+  draftPicks.forEach((pick, key) => {
+    if (!pick) return;
+    const [round, captainIndex] = key.split('::').map(Number);
+    const slot = slots.find((s) => s.round === round && s.captainIndex === captainIndex);
+    selected.push({ ...pick, overall: slot?.overall ?? 0,
+      pickLabel: `#${slot?.overall ?? '?'} (${mockCaptains[captainIndex]?.group || `Captain ${captainIndex + 1}`})` });
+  });
+  mockSelectedTable.setData(selected);
+}
+
+tabButtons.forEach((btn) => {
+  if (btn.dataset.tab === 'mockdraft') {
+    btn.addEventListener('click', async () => {
+      await loadtrueskillData(false);
+      buildPastDraftOptions(document.getElementById('mockPastDraftsOptgroup'));
+      buildAdminPresetOptions(document.getElementById('mockAdminPresetsOptgroup'));
+    });
+  }
+});
 // ==================== Draft Data tab ====================
 const DRAFT_DATA_COLUMNS = [
   {
