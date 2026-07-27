@@ -123,3 +123,5 @@ function main() {
 }
 
 main();
+
+module.exports = { parseCsv };
