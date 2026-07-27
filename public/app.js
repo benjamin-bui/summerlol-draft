@@ -1341,7 +1341,7 @@ function applyNameFilter(rawText) {
   trueskillTable.setExternalFilter((row) => matcher.matches(row));
 
   summaryEl.textContent = unmatched.length
-    ? `Matched ${matchedCount}/${totalCount}. Not found: ${unmatched.join(", ")}`
+    ? `Matched ${matchedCount}/${totalCount}. Unmatched: ${unmatched.join(", ")}`
     : `Matched all ${matchedCount} names.`;
   summaryEl.className = unmatched.length
     ? "name-filter-summary has-misses"
@@ -2701,23 +2701,26 @@ function applyMockDraftPoolFilter(rawText) {
     renderAvailableSelectedTables();
     return;
   }
+
   const matcher = buildNameMatcher(names);
   const playersForCheck = latestTrueskillPlayers || [];
-  const matched = playersForCheck.filter((p) => matcher.matches(p));
-  const { matchedCount, totalCount, unmatched } = matcher.checkCoverage(playersForCheck);
+  const { unmatched } = matcher.checkCoverage(playersForCheck);
 
-  mockDraftPool = matched.map((p) => ({
-    identityKey: p.identityKey, group: p.group,
-    conservativeRating: p.conservativeRating, mu: p.mu, sigma: p.sigma
-  }));
+  // Every pasted/uploaded name becomes a pool entry -- matched names get
+  // their real TrueSkill data, names with no match at all (genuinely new
+  // people, not in the system yet) become a manual stub with null
+  // ratings instead of being silently dropped. This is the same shape
+  // resolvePoolPlayerByName already produces for a name typed directly
+  // into a board cell, so both paths behave consistently.
+  mockDraftPool = names.map((rawName) => resolvePoolPlayerByName(rawName, playersForCheck));
 
   summaryEl.textContent = unmatched.length
-    ? `Matched ${matchedCount}/${totalCount}. Not found: ${unmatched.join(', ')}`
-    : `Matched all ${matchedCount} names.`;
+    ? `Matched ${names.length - unmatched.length}/${names.length}. New/unrecognized (added with no TrueSkill data): ${unmatched.join(', ')}`
+    : `Matched all ${names.length} names.`;
   summaryEl.className = unmatched.length ? 'name-filter-summary has-misses' : 'name-filter-summary';
 
   renderMockDraftPlayerDatalist();
-  draftPicks = new Map(); // pool changed -- stale picks would reference the old pool
+  draftPicks = new Map();
   renderDraftBoard();
   renderAvailableSelectedTables();
 }
