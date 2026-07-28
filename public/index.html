@@ -27,7 +27,9 @@
       <button class="tab-btn" data-tab="rankings">Comparing Pick Order and Results</button>
       <button class="tab-btn" data-tab="draftiq">Draft vs. TrueSkill</button>
       <button class="tab-btn" data-tab="teambalance">Team Balance</button>
-    <button class="tab-btn" data-tab="mockdraft">Mock Draft</button>
+      <button class="tab-btn" data-tab="mockdraft">Mock Draft</button>
+      <!-- Change display:none as needed -->
+      <button class="tab-btn" data-tab="upcomingroster" id="upcomingRosterTabBtn" style="display:none;">Summer LoL 2026</button>
       <button class="tab-btn" data-tab="draftdata">Draft Data</button>
       <button class="tab-btn" data-tab="matchdata">Matchup Data</button>
     </nav>
@@ -218,6 +220,10 @@ Xemacs
       </div>
     </section>
 
+    <!-- ================= Upcoming Roster TAB ================= -->
+    <section class="tab-panel" id="tab-upcomingroster">
+      <div id="upcomingRosterContent"></div>
+    </section>
     <!-- ================= DRAFT DATA TAB ================= -->
     <section class="tab-panel" id="tab-draftdata">
       <div class="table-controls">

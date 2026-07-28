@@ -2967,6 +2967,68 @@ tabButtons.forEach((btn) => {
     });
   }
 });
+
+// ==================== Upcoming Roster tab ====================
+let upcomingRosterLoaded = false;
+
+async function loadUpcomingRoster() {
+  if (upcomingRosterLoaded) return;
+  try {
+    const res = await fetch('/api/upcoming-roster');
+    if (res.status === 404) return; // no file present -- tab stays hidden, this is expected/normal
+    const data = await res.json();
+    if (!data.exists) return;
+
+    document.getElementById('upcomingRosterTabBtn').textContent = data.title;
+    document.getElementById('upcomingRosterTabBtn').style.display = '';
+    document.getElementById('upcomingRosterContent').innerHTML = renderUpcomingRoster(data);
+    upcomingRosterLoaded = true;
+  } catch (err) {
+    // silently do nothing -- absence of this feature should never surface as an error to the user
+  }
+}
+
+function renderUpcomingRoster(data) {
+  return data.teams.map((team) => {
+    const rosterRows = team.roster.map((p) => {
+      const nameHtml = p.identityKey && p.identified
+        ? `<a href="#" class="player-link" data-player-key="${escapeHtml(p.identityKey)}">${renderNameWithTag(p.displayName)}</a>`
+        : renderNameWithTag(p.displayName);
+      const ratingHtml = p.conservativeRating !== null
+        ? renderTrueSkillValue(p.conservativeRating, p.mu)
+        : '<span class="stat-formula">unrated (no games yet)</span>';
+      return `<tr>
+        <td>#${p.pickOrder}</td>
+        <td>${nameHtml}</td>
+        <td>${ratingHtml}</td>
+        <td>${p.entryRank !== null ? '#' + p.entryRank : '–'}</td>
+        <td class="${p.value > 0 ? 'outcome-win' : p.value < 0 ? 'outcome-loss' : ''}">${p.value !== null ? (p.value > 0 ? '+' : '') + p.value : '–'}</td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <div class="fun-facts-box" style="margin-bottom:16px;">
+        <div class="collapsible-body" style="padding:16px 18px;">
+          <h4>${renderNameWithTag(team.captain.displayName)}</h4>
+          <div class="profile-summary">
+            <span>Avg Entry TrueSkill: ${team.avgEntryRating !== null ? renderTrueSkillValue(team.avgEntryRating) : '–'} (${team.ratedCount}/${team.totalCount} rated)</span>
+            <span>Draft IQ: ${team.draftIQ !== null ? (team.draftIQ > 0 ? '+' : '') + team.draftIQ : '–'}</span>
+          </div>
+          <table class="profile-history-table">
+            <thead><tr><th>Pick #</th><th>Player</th><th>TrueSkill</th><th>Rank</th><th>Value</th></tr></thead>
+            <tbody>${rosterRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+tabButtons.forEach((btn) => {
+  if (btn.dataset.tab === 'upcomingroster') {
+    btn.addEventListener('click', () => loadUpcomingRoster());
+  }
+});
+
 // ==================== Draft Data tab ====================
 const DRAFT_DATA_COLUMNS = [
   {
@@ -3246,5 +3308,6 @@ async function loadMeta() {
   await loadMeta();
   await fetchStats(RANKINGS_RISK, RANKINGS_HALF_LIFE);
   loadtrueskillData();
+  loadUpcomingRoster();
   writeStateToURL();
 })();

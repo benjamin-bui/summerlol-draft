@@ -1,7 +1,9 @@
-name: Build beta image
+name: Build release image
 on:
   push:
-    tags: ['v*-beta*']
+    tags:
+      - 'v*'
+      - '!v*-beta*'   # exclude beta tags from this trigger -- handled by the workflow above instead
 
 jobs:
   build:
@@ -16,9 +18,9 @@ jobs:
       - name: Build and tag
         run: |
           IMAGE=forgejo:3000/${{ github.repository_owner }}/summerlol-draft
-          docker build -t $IMAGE:beta -t $IMAGE:${{ steps.version.outputs.version }} .
+          docker build -t $IMAGE:${{ steps.version.outputs.version }} -t $IMAGE:latest .
       - name: Push
         run: |
           IMAGE=forgejo:3000/${{ github.repository_owner }}/summerlol-draft
-          docker push $IMAGE:beta
           docker push $IMAGE:${{ steps.version.outputs.version }}
+          docker push $IMAGE:latest

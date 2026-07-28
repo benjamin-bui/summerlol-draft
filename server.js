@@ -340,9 +340,25 @@ app.get('/api/presets/:id', (req, res) => {
   const match = getAvailablePresets().find((p) => p.id === req.params.id);
   if (!match) return res.status(404).json({ error: 'Preset not found' });
   const text = fs.readFileSync(path.join(PRESETS_DIR, match.id), 'utf-8');
-  const names = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
-    .filter((l) => l.toLowerCase() !== 'name'); // tolerate an optional header row
-  res.json({ id: match.id, label: match.label, names });
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  const hasAnyCommaFormat = lines.some((l) => l.includes(','));
+
+  if (!hasAnyCommaFormat) {
+    const names = lines.filter((l) => l.toLowerCase() !== 'name');
+    return res.json({ id: match.id, label: match.label, names, captains: [] });
+  }
+
+  const names = [];
+  const captains = [];
+  for (const line of lines) {
+    if (/^name\s*,\s*captain/i.test(line)) continue; // tolerate a "name,captain" header row
+    const [namePart, flagPart] = line.split(',').map((s) => s.trim());
+    if (!namePart) continue;
+    names.push(namePart);
+    if (flagPart === '1') captains.push(namePart);
+  }
+  res.json({ id: match.id, label: match.label, names, captains });
 });
 
 // Comparing TrueSkill against draft data
@@ -527,6 +543,107 @@ app.get("/api/raw", (req, res) => {
   res.json({ columns, rows: enriched });
 });
 
+// Upcoming Roster
+const UPCOMING_ROSTER_DIR = path.join(__dirname, 'data', 'upcoming-roster');
+
+function titleFromFilename(filename) {
+  return filename
+    .replace(/\.csv$/i, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function findUpcomingRosterFile() {
+  if (!fs.existsSync(UPCOMING_ROSTER_DIR)) return null;
+  const files = fs.readdirSync(UPCOMING_ROSTER_DIR).filter((f) => f.toLowerCase().endsWith('.csv')).sort();
+  return files.length ? files[0] : null;
+}
+
+app.get('/api/upcoming-roster', (req, res) => {
+  const filename = findUpcomingRosterFile();
+  if (!filename) return res.status(404).json({ exists: false });
+
+  const text = fs.readFileSync(path.join(UPCOMING_ROSTER_DIR, filename), 'utf-8');
+  const [header, ...lines] = parseCsv(text); // reuses ingest-matches.js's parser -- export it from there if not already
+  const idx = { captain: header.indexOf('Captain'), player: header.indexOf('Player'), pickOrder: header.indexOf('Pick Order') };
+  for (const [key, i] of Object.entries(idx)) {
+    if (i === -1) return res.status(500).json({ error: `Missing expected column "${key}" in ${filename}` });
+  }
+
+  const identityMap = loadIdentityMap(db);
+  const resolve = (name) => {
+    const identity = identityMap.get(name);
+    return identity
+      ? { identityKey: identity.identityKey, displayName: identity.displayName, profileUrl: identity.profileUrl, identified: identity.resolved }
+      : { identityKey: name, displayName: name, profileUrl: null, identified: false };
+  };
+
+  // Current, present-day rating -- this hasn't happened yet, so there's
+  // no historical "entering this tournament" snapshot to use the way
+  // Draft IQ does for past events. Whatever a player's rating is RIGHT
+  // NOW is the honest proxy for what they're entering this draft with.
+  const allRows = resolveIdentities(getAllRows(), identityMap);
+  const matches = getMatches();
+  const trueskillResult = computeTrueSkillFromMatches(matches, allRows, identityMap, {});
+  const ratingByKey = new Map(trueskillResult.players.map((p) => [p.identityKey, p]));
+  const { mu, sigma, conservativeK } = trueskillResult.params;
+  const defaultRating = { mu, sigma, conservativeRating: round3(mu - conservativeK * sigma), games: 0 };
+
+  const rows = lines.filter((r) => r[idx.captain]).map((r) => {
+    const captain = resolve(r[idx.captain]);
+    const player = resolve(r[idx.player]);
+    const pickOrder = parseInt(r[idx.pickOrder], 10);
+    const rating = ratingByKey.get(player.identityKey) || null; // null = never played a rated game -- genuinely unrated, not just "no CSV match"
+    return { captain, player, pickOrder, rating };
+  });
+
+  // Rank the whole draft class by current rating for Draft IQ purposes.
+  // Players with no rating at all (never played) can't be meaningfully
+  // ranked -- they're excluded from the ranking pool entirely, same
+  // treatment as an unresolved/never-seen player anywhere else in this
+  // app, but still shown on their team's roster with no rank/value.
+  const rated = rows.filter((r) => r.rating).sort((a, b) => b.rating.conservativeRating - a.rating.conservativeRating);
+  const entryRankByKey = new Map(rated.map((r, i) => [r.player.identityKey, i + 1]));
+
+  const byCaptain = new Map();
+  for (const row of rows) {
+    const key = row.captain.identityKey;
+    if (!byCaptain.has(key)) byCaptain.set(key, { captain: row.captain, players: [] });
+    const entryRank = entryRankByKey.get(row.player.identityKey) ?? null;
+    byCaptain.get(key).players.push({
+      ...row.player,
+      pickOrder: row.pickOrder,
+      mu: row.rating ? row.rating.mu : null,
+      sigma: row.rating ? row.rating.sigma : null,
+      conservativeRating: row.rating ? row.rating.conservativeRating : null,
+      games: row.rating ? row.rating.games : 0,
+      entryRank,
+      value: entryRank !== null ? entryRank - row.pickOrder : null
+    });
+  }
+
+  const teams = [...byCaptain.values()].map((team) => {
+    const ratedPlayers = team.players.filter((p) => p.conservativeRating !== null);
+    const avgEntryRating = ratedPlayers.length
+      ? round3(ratedPlayers.reduce((s, p) => s + p.conservativeRating, 0) / ratedPlayers.length)
+      : null;
+    const valued = team.players.filter((p) => p.value !== null);
+    const draftIQ = valued.length
+      ? round3(valued.reduce((s, p) => s + p.value, 0) / valued.length)
+      : null;
+    return {
+      captain: team.captain,
+      avgEntryRating,
+      ratedCount: ratedPlayers.length,
+      totalCount: team.players.length,
+      draftIQ,
+      roster: team.players.sort((a, b) => a.pickOrder - b.pickOrder)
+    };
+  });
+  teams.sort((a, b) => (b.avgEntryRating ?? -Infinity) - (a.avgEntryRating ?? -Infinity));
+
+  res.json({ exists: true, title: titleFromFilename(filename), teams });
+});
 // Match data endpoint
 function getRawMatchColumns() {
   return db
