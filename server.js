@@ -288,17 +288,44 @@ const RANK_TIER_ORDER = [
 ];
 const DIVISION_ORDER = { I: 0, II: 1, III: 2, IV: 3 };
 
-function getSoloQueueRankMap(db) {
+function getRankMap(db, type = 'RANKED_SOLO_5x5') {
   const rows = db.prepare(`
     SELECT player_id, tier, division, league_points
     FROM player_ranked_stats
-    WHERE queue_type = 'RANKED_SOLO_5x5'
-  `).all();
+    WHERE queue_type = ?
+  `).all(type);
   return new Map(rows.map((r) => [`p${r.player_id}`, {
     tier: r.tier,
     division: r.division,
     leaguePoints: r.league_points
   }]));
+}
+
+function getAllRanksMap(db, queueTypes = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR', 'RANKED_PREMADE_5x5']) {
+  const placeholders = queueTypes.map(() => '?').join(', ');
+  
+  const rows = db.prepare(`
+    SELECT player_id, queue_type, tier, division, league_points
+    FROM player_ranked_stats
+    WHERE queue_type IN (${placeholders})
+  `).all(...queueTypes);
+
+  // Map: 'p123' => { RANKED_SOLO_5x5: {...}, RANKED_FLEX_SR: {...} }
+  const playerMap = new Map();
+
+  for (const r of rows) {
+    const key = `p${r.player_id}`;
+    if (!playerMap.has(key)) {
+      playerMap.set(key, {});
+    }
+    playerMap.get(key)[r.queue_type] = {
+      tier: r.tier,
+      division: r.division,
+      leaguePoints: r.league_points
+    };
+  }
+
+  return playerMap;
 }
 
 // Sort key: tier first (Challenger highest), then division (I highest
@@ -335,8 +362,17 @@ app.get("/api/trueskill", (req, res) => {
   }
   const result = computeTrueSkillFromMatches(matches, allRows, identityMap, opts);
 
-  const rankMap = getSoloQueueRankMap(db);
-  result.players = result.players.map((p) => ({ ...p, soloQueueRank: rankMap.get(p.identityKey) || null }));
+  const rankMap = getAllRanksMap(db);
+
+  result.players = result.players.map((p) => {
+    const playerRanks = rankMap.get(p.identityKey) || {};
+    return {
+      ...p,
+      soloQueueRank: playerRanks['RANKED_SOLO_5x5'] || null,
+      flexQueueRank: playerRanks['RANKED_FLEX_SR'] || null,
+      premade5x5Rank: playerRanks['RANKED_PREMADE_5x5'] || null,
+    };
+  });
 
   result.funFacts = computeFunFacts(result);
   res.json(result);
