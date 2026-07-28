@@ -63,14 +63,15 @@ function escapeHtml(str) {
 // subtitle. Falls back to showing the whole string as the name with no
 // subtitle if there's no '#' to split on (unidentified/tagless names).
 function renderNameWithTag(fullName) {
-  const idx = fullName.lastIndexOf('#');
-  if (idx === -1) return `<span class="player-name">${escapeHtml(fullName)}</span>`;
+  const idx = fullName.lastIndexOf("#");
+  if (idx === -1)
+    return `<span class="player-name">${escapeHtml(fullName)}</span>`;
   const name = fullName.slice(0, idx);
   const tag = fullName.slice(idx);
   return `<span class="player-name">${escapeHtml(name)}</span><span class="player-tag">${escapeHtml(tag)}</span>`;
 }
 function renderPlayerCell(row) {
-  const fullName = row.group || row.displayName || '';
+  const fullName = row.group || row.displayName || "";
   const identityKey = row.identityKey || row._playerIdentityKey || null;
   const nameHtml = renderNameWithTag(fullName);
   if (identityKey) {
@@ -174,11 +175,12 @@ function closePlayerProfile() {
 }
 
 function renderPlayerProfileContent(player) {
-  const title = player?.group || player?.identityKey || 'Player';
-  const titleIdx = title.lastIndexOf('#');
-  const titleHtml = titleIdx === -1
-    ? escapeHtml(title)
-    : `${escapeHtml(title.slice(0, titleIdx))}<br><span class="stat-formula">${escapeHtml(title.slice(titleIdx))}</span>`;
+  const title = player?.group || player?.identityKey || "Player";
+  const titleIdx = title.lastIndexOf("#");
+  const titleHtml =
+    titleIdx === -1
+      ? escapeHtml(title)
+      : `${escapeHtml(title.slice(0, titleIdx))}<br><span class="stat-formula">${escapeHtml(title.slice(titleIdx))}</span>`;
 
   const summaryRows = [
     `<div class="profile-summary">`,
@@ -1224,44 +1226,51 @@ function parseNameList(text) {
 
 // Identifies player list for each tournament
 function seasonRankLocal(tournament) {
-  const t = String(tournament || '').trim().toLowerCase();
-  if (t === 'winter') return 0;
-  if (t === 'summer') return 1;
+  const t = String(tournament || "")
+    .trim()
+    .toLowerCase();
+  if (t === "winter") return 0;
+  if (t === "summer") return 1;
   return 2;
 }
 
 function buildPastDraftOptions(optgroupEl) {
-  optgroupEl.innerHTML = '';
+  optgroupEl.innerHTML = "";
   if (!latestTrueskillPlayers) return;
   const combos = new Set();
   latestTrueskillPlayers.forEach((p) => {
     (p.history || []).forEach((h) => combos.add(`${h.year}::${h.tournament}`));
   });
-  [...combos].sort((a, b) => {
-    const [ay, at] = a.split('::'), [by, bt] = b.split('::');
-    if (ay !== by) return by - ay;
-    return seasonRankLocal(at) - seasonRankLocal(bt);
-  }).forEach((combo) => {
-    const [year, tournament] = combo.split('::');
-    const opt = document.createElement('option');
-    opt.value = `past::${combo}`;
-    opt.textContent = `${tournament} ${year}`;
-    optgroupEl.appendChild(opt);
-  });
+  [...combos]
+    .sort((a, b) => {
+      const [ay, at] = a.split("::"),
+        [by, bt] = b.split("::");
+      if (ay !== by) return by - ay;
+      return seasonRankLocal(at) - seasonRankLocal(bt);
+    })
+    .forEach((combo) => {
+      const [year, tournament] = combo.split("::");
+      const opt = document.createElement("option");
+      opt.value = `past::${combo}`;
+      opt.textContent = `${tournament} ${year}`;
+      optgroupEl.appendChild(opt);
+    });
 }
 
 async function buildAdminPresetOptions(optgroupEl) {
-  optgroupEl.innerHTML = '';
+  optgroupEl.innerHTML = "";
   try {
-    const res = await fetch('/api/presets');
+    const res = await fetch("/api/presets");
     const data = await res.json();
     data.presets.forEach((preset) => {
-      const opt = document.createElement('option');
+      const opt = document.createElement("option");
       opt.value = `admin::${preset.id}`;
       opt.textContent = preset.label;
       optgroupEl.appendChild(opt);
     });
-  } catch (err) { /* no presets dir yet */ }
+  } catch (err) {
+    /* no presets dir yet */
+  }
 }
 
 // Everyone (captains + players) with at least one recorded game that
@@ -1270,7 +1279,9 @@ async function buildAdminPresetOptions(optgroupEl) {
 function namesForPastDraft(year, tournament) {
   const names = new Set();
   (latestTrueskillPlayers || []).forEach((p) => {
-    const played = (p.history || []).some((h) => String(h.year) === String(year) && h.tournament === tournament);
+    const played = (p.history || []).some(
+      (h) => String(h.year) === String(year) && h.tournament === tournament,
+    );
     if (played) names.add(p.group);
   });
   return [...names];
@@ -1279,7 +1290,11 @@ function namesForPastDraftCaptains(year, tournament) {
   const captainNames = new Set();
   (latestTrueskillPlayers || []).forEach((p) => {
     (p.history || []).forEach((h) => {
-      if (String(h.year) === String(year) && h.tournament === tournament && h.ownTeam?.name) {
+      if (
+        String(h.year) === String(year) &&
+        h.tournament === tournament &&
+        h.ownTeam?.name
+      ) {
         captainNames.add(h.ownTeam.name);
       }
     });
@@ -1296,13 +1311,17 @@ function namesForPastDraftCaptains(year, tournament) {
 function buildNameMatcher(names) {
   const normalized = new Set(names.map((n) => n.trim().toLowerCase()));
   const bareNameOf = (s) => {
-    const idx = s.lastIndexOf('#');
+    const idx = s.lastIndexOf("#");
     return (idx === -1 ? s : s.slice(0, idx)).trim().toLowerCase();
   };
   return {
     matches(player) {
       const candidates = [player.group, player.identityKey].filter(Boolean);
-      return candidates.some((c) => normalized.has(c.trim().toLowerCase()) || normalized.has(bareNameOf(c)));
+      return candidates.some(
+        (c) =>
+          normalized.has(c.trim().toLowerCase()) ||
+          normalized.has(bareNameOf(c)),
+      );
     },
     checkCoverage(players) {
       const matchedNames = new Set();
@@ -1421,21 +1440,40 @@ function renderTrueSkillValue(rating, mu) {
 }
 
 // Formatting solo queue rank for display in the table. Returns a string like "Gold II · 75 LP" or "Unranked".
-function formatSoloQueueRank(rank) {
-  if (!rank || !rank.tier || rank.tier === 'UNRANKED') return 'Unranked';
-  const tierLabel = rank.tier.charAt(0) + rank.tier.slice(1).toLowerCase();
-  const isApex = ['CHALLENGER', 'GRANDMASTER', 'MASTER'].includes(rank.tier.toUpperCase());
-  const divisionPart = isApex ? '' : ` ${rank.division}`;
-  return `${tierLabel}${divisionPart} · ${rank.leaguePoints} LP`;
+// Works on other league of legends api derived rank
+function renderSoloQueueRank(rank) {
+  if (!rank || !rank.tier || rank.tier === "UNRANKED") return "Unranked";
+  const tierName = rank.tier.toLowerCase();
+  const isApex = ["CHALLENGER", "GRANDMASTER", "MASTER"].includes(
+    rank.tier.toUpperCase(),
+  );
+  const divisionPart = isApex ? " " : ` ${rank.division}`;
+
+  return `<span class="trueskill-cell">${renderRankBadge(tierName)} ${divisionPart} · ${rank.leaguePoints} LP</span>`;
 }
-const RANK_TIER_ORDER = ['CHALLENGER', 'GRANDMASTER', 'MASTER', 'DIAMOND', 'EMERALD', 'PLATINUM', 'GOLD', 'SILVER', 'BRONZE', 'IRON'];
+const RANK_TIER_ORDER = [
+  "CHALLENGER",
+  "GRANDMASTER",
+  "MASTER",
+  "DIAMOND",
+  "EMERALD",
+  "PLATINUM",
+  "GOLD",
+  "SILVER",
+  "BRONZE",
+  "IRON",
+];
 const DIVISION_ORDER = { I: 0, II: 1, III: 2, IV: 3 };
 
 function soloQueueSortValueClient(rank) {
-  if (!rank || !rank.tier || rank.tier === 'UNRANKED') return -1;
+  if (!rank || !rank.tier || rank.tier === "UNRANKED") return -1;
   const tierIdx = RANK_TIER_ORDER.indexOf(rank.tier.toUpperCase());
   const divIdx = DIVISION_ORDER[rank.division] ?? 4;
-  return (RANK_TIER_ORDER.length - tierIdx) * 10000 - divIdx * 100 + (rank.leaguePoints || 0);
+  return (
+    (RANK_TIER_ORDER.length - tierIdx) * 10000 -
+    divIdx * 100 +
+    (rank.leaguePoints || 0)
+  );
 }
 // ==================== trueskill tab ====================
 
@@ -1484,9 +1522,37 @@ const TRUESKILL_COLUMNS = [
     className: "adj-avg",
     render: renderTrueSkillValue,
   },
-{ key: 'soloQueueRank', label: 'Solo Queue', sortable: true, hideable: true, filterable: true, type: 'string',
-  sortValue: (row) => soloQueueSortValueClient(row.soloQueueRank),
-  render: (val) => escapeHtml(formatSoloQueueRank(val)) },
+  {
+    key: "soloQueueRank",
+    label: "Solo Queue",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+    sortValue: (row) => soloQueueSortValueClient(row.soloQueueRank),
+    render: (val) => renderSoloQueueRank(val),
+  },
+  {
+    key: "flexQueueRank",
+    label: "Flex Queue",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+    sortValue: (row) => soloQueueSortValueClient(row.flexQueueRank),
+    render: (val) => renderSoloQueueRank(val),
+  },
+  {
+    key: "premade5x5Rank",
+    label: "5x5 Queue",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+    defaultHidden: true,
+    sortValue: (row) => soloQueueSortValueClient(row.premade5x5Rank),
+    render: (val) => renderSoloQueueRank(val),
+  },
   {
     key: "mu",
     label: "μ",
@@ -1496,6 +1562,7 @@ const TRUESKILL_COLUMNS = [
     type: "number",
     decimals: 2,
     className: "adj-avg",
+    defaultHidden: true,
   },
   {
     key: "sigma",
@@ -1581,7 +1648,7 @@ async function loadtrueskillData(forceRefresh) {
   const res = await fetch(`/api/trueskill`);
   const data = await res.json();
   latestTrueskillPlayers = data.players;
-  buildPastDraftOptions(document.getElementById('pastDraftsOptgroup'));
+  buildPastDraftOptions(document.getElementById("pastDraftsOptgroup"));
   globalRankTiers = data.funFacts.staticCutoffs;
   document.getElementById("trueskill-fun-facts").innerHTML = renderFunFactsHtml(
     data.funFacts,
@@ -1590,27 +1657,27 @@ async function loadtrueskillData(forceRefresh) {
   trueskillLoaded = true;
 }
 
+document
+  .getElementById("nameFilterPresetSelect")
+  .addEventListener("change", async (e) => {
+    const val = e.target.value;
+    if (!val) return;
+    const textarea = document.getElementById("nameFilterInput");
 
+    if (val.startsWith("past::")) {
+      const [, year, tournament] = val.split("::");
+      textarea.value = namesForPastDraft(year, tournament).join("\n");
+    } else if (val.startsWith("admin::")) {
+      const id = val.slice("admin::".length);
+      const res = await fetch(`/api/presets/${encodeURIComponent(id)}`);
+      const data = await res.json();
+      textarea.value = data.names.join("\n");
+    }
+    applyNameFilter(textarea.value);
+    e.target.value = "";
+  });
 
-document.getElementById('nameFilterPresetSelect').addEventListener('change', async (e) => {
-  const val = e.target.value;
-  if (!val) return;
-  const textarea = document.getElementById('nameFilterInput');
-
-  if (val.startsWith('past::')) {
-    const [, year, tournament] = val.split('::');
-    textarea.value = namesForPastDraft(year, tournament).join('\n');
-  } else if (val.startsWith('admin::')) {
-    const id = val.slice('admin::'.length);
-    const res = await fetch(`/api/presets/${encodeURIComponent(id)}`);
-    const data = await res.json();
-    textarea.value = data.names.join('\n');
-  }
-  applyNameFilter(textarea.value);
-  e.target.value = '';
-});
-
-buildAdminPresetOptions(document.getElementById('adminPresetsOptgroup'));
+buildAdminPresetOptions(document.getElementById("adminPresetsOptgroup"));
 
 // ==================== Naive Pick Order vs Results ====================
 
@@ -2072,11 +2139,15 @@ function initDraftScatterToggle() {
 function studentTPValue(t, df) {
   if (isNaN(t) || df <= 0) return 1;
   const absT = Math.abs(t);
-  
+
   // Normal approximation for large sample sizes (df > 300)
   if (df > 300) {
     const z = absT;
-    const b1 = 0.319381530, b2 = -0.356563782, b3 = 1.781477937, b4 = -1.821255978, b5 = 1.330274429;
+    const b1 = 0.31938153,
+      b2 = -0.356563782,
+      b3 = 1.781477937,
+      b4 = -1.821255978,
+      b5 = 1.330274429;
     const k = 1 / (1 + 0.2316419 * z);
     const poly = k * (b1 + k * (b2 + k * (b3 + k * (b4 + k * b5))));
     const phi = (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * z * z);
@@ -2088,7 +2159,8 @@ function studentTPValue(t, df) {
   const cos = Math.cos(theta);
   const sin = Math.sin(theta);
 
-  if (df % 2 === 1) { // Odd df
+  if (df % 2 === 1) {
+    // Odd df
     let term = sin * cos;
     let sum = term;
     for (let i = 3; i < df; i += 2) {
@@ -2097,7 +2169,8 @@ function studentTPValue(t, df) {
     }
     const cdf = (2 / Math.PI) * (theta + (df === 1 ? 0 : sum));
     return Math.max(0, 1 - cdf);
-  } else { // Even df
+  } else {
+    // Even df
     let term = sin;
     let sum = term;
     for (let i = 2; i < df; i += 2) {
@@ -2129,7 +2202,11 @@ function renderDraftScatter(container, data) {
     const absT = Math.abs(t);
     if (df > 300) {
       const z = absT;
-      const b1 = 0.319381530, b2 = -0.356563782, b3 = 1.781477937, b4 = -1.821255978, b5 = 1.330274429;
+      const b1 = 0.31938153,
+        b2 = -0.356563782,
+        b3 = 1.781477937,
+        b4 = -1.821255978,
+        b5 = 1.330274429;
       const k = 1 / (1 + 0.2316419 * z);
       const poly = k * (b1 + k * (b2 + k * (b3 + k * (b4 + k * b5))));
       const phi = (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * z * z);
@@ -2170,7 +2247,9 @@ function renderDraftScatter(container, data) {
     const meanX = pts.reduce((s, p) => s + p.avgDraftValue, 0) / n;
     const meanY = pts.reduce((s, p) => s + p.winRate, 0) / n;
 
-    let ssXX = 0, ssYY = 0, ssXY = 0;
+    let ssXX = 0,
+      ssYY = 0,
+      ssXY = 0;
     for (const p of pts) {
       const dx = p.avgDraftValue - meanX;
       const dy = p.winRate - meanY;
@@ -2185,7 +2264,8 @@ function renderDraftScatter(container, data) {
     const intercept = meanY - slope * meanX;
 
     // Calculate R-squared
-    const rSquared = ssYY === 0 ? 0 : Math.min(1, Math.max(0, (ssXY * ssXY) / (ssXX * ssYY)));
+    const rSquared =
+      ssYY === 0 ? 0 : Math.min(1, Math.max(0, (ssXY * ssXY) / (ssXX * ssYY)));
 
     // Calculate p-value (t-test on slope)
     const df = n - 2;
@@ -2296,7 +2376,8 @@ function renderDraftScatter(container, data) {
     const yScale = (y) =>
       padT + plotH - ((y - domain.yMin) / (domain.yMax - domain.yMin)) * plotH;
 
-    const xTicks = 5, yTicks = 5;
+    const xTicks = 5,
+      yTicks = 5;
     const gridlines = [
       ...Array.from({ length: xTicks + 1 }, (_, i) => {
         const val = domain.xMin + (domain.xMax - domain.xMin) * (i / xTicks);
@@ -2713,10 +2794,10 @@ let mockDraftPool = [];
 
 function applyMockDraftPoolFilter(rawText) {
   const names = parseNameList(rawText);
-  const summaryEl = document.getElementById('mockDraftFilterSummary');
+  const summaryEl = document.getElementById("mockDraftFilterSummary");
   if (names.length === 0) {
     mockDraftPool = [];
-    summaryEl.textContent = '';
+    summaryEl.textContent = "";
     renderMockDraftPlayerDatalist();
     renderAvailableSelectedTables();
     return;
@@ -2732,12 +2813,16 @@ function applyMockDraftPoolFilter(rawText) {
   // ratings instead of being silently dropped. This is the same shape
   // resolvePoolPlayerByName already produces for a name typed directly
   // into a board cell, so both paths behave consistently.
-  mockDraftPool = names.map((rawName) => resolvePoolPlayerByName(rawName, playersForCheck));
+  mockDraftPool = names.map((rawName) =>
+    resolvePoolPlayerByName(rawName, playersForCheck),
+  );
 
   summaryEl.textContent = unmatched.length
-    ? `Matched ${names.length - unmatched.length}/${names.length}. New/unrecognized (added with no TrueSkill data): ${unmatched.join(', ')}`
+    ? `Matched ${names.length - unmatched.length}/${names.length}. New/unrecognized (added with no TrueSkill data): ${unmatched.join(", ")}`
     : `Matched all ${names.length} names.`;
-  summaryEl.className = unmatched.length ? 'name-filter-summary has-misses' : 'name-filter-summary';
+  summaryEl.className = unmatched.length
+    ? "name-filter-summary has-misses"
+    : "name-filter-summary";
 
   renderMockDraftPlayerDatalist();
   draftPicks = new Map();
@@ -2745,68 +2830,87 @@ function applyMockDraftPoolFilter(rawText) {
   renderAvailableSelectedTables();
 }
 
-document.getElementById('mockDraftFilterApplyBtn').addEventListener('click', () =>
-  applyMockDraftPoolFilter(document.getElementById('mockDraftFilterInput').value));
-document.getElementById('mockDraftFilterClearBtn').addEventListener('click', () => {
-  document.getElementById('mockDraftFilterInput').value = '';
-  document.getElementById('mockDraftFilterFile').value = '';
-  applyMockDraftPoolFilter('');
-});
-document.getElementById('mockDraftFilterFile').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const text = await file.text();
-  document.getElementById('mockDraftFilterInput').value = text;
-  applyMockDraftPoolFilter(text);
-});
-document.getElementById('mockDraftPresetSelect').addEventListener('change', async (e) => {
-  const val = e.target.value;
-  if (!val) return;
-  const textarea = document.getElementById('mockDraftFilterInput');
-  let names = [], captains = [];
+document
+  .getElementById("mockDraftFilterApplyBtn")
+  .addEventListener("click", () =>
+    applyMockDraftPoolFilter(
+      document.getElementById("mockDraftFilterInput").value,
+    ),
+  );
+document
+  .getElementById("mockDraftFilterClearBtn")
+  .addEventListener("click", () => {
+    document.getElementById("mockDraftFilterInput").value = "";
+    document.getElementById("mockDraftFilterFile").value = "";
+    applyMockDraftPoolFilter("");
+  });
+document
+  .getElementById("mockDraftFilterFile")
+  .addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    document.getElementById("mockDraftFilterInput").value = text;
+    applyMockDraftPoolFilter(text);
+  });
+document
+  .getElementById("mockDraftPresetSelect")
+  .addEventListener("change", async (e) => {
+    const val = e.target.value;
+    if (!val) return;
+    const textarea = document.getElementById("mockDraftFilterInput");
+    let names = [],
+      captains = [];
 
-  if (val.startsWith('past::')) {
-    const [, year, tournament] = val.split('::');
-    names = namesForPastDraft(year, tournament);
-    // Past drafts already know who captained -- reuse that instead of
-    // guessing, same idea as the CSV captain-flag feature below.
-    captains = namesForPastDraftCaptains(year, tournament);
-  } else if (val.startsWith('admin::')) {
-    const res = await fetch(`/api/presets/${encodeURIComponent(val.slice(7))}`);
-    const data = await res.json();
-    names = data.names;
-    captains = data.captains || [];
-  }
+    if (val.startsWith("past::")) {
+      const [, year, tournament] = val.split("::");
+      names = namesForPastDraft(year, tournament);
+      // Past drafts already know who captained -- reuse that instead of
+      // guessing, same idea as the CSV captain-flag feature below.
+      captains = namesForPastDraftCaptains(year, tournament);
+    } else if (val.startsWith("admin::")) {
+      const res = await fetch(
+        `/api/presets/${encodeURIComponent(val.slice(7))}`,
+      );
+      const data = await res.json();
+      names = data.names;
+      captains = data.captains || [];
+    }
 
-  textarea.value = names.join('\n');
-  applyMockDraftPoolFilter(textarea.value);
+    textarea.value = names.join("\n");
+    applyMockDraftPoolFilter(textarea.value);
 
-  if (captains.length > 0) {
-    document.getElementById('mockNumCaptains').value = captains.length;
-    // Picks per captain: infer from pool size / captain count, rounded
-    // down -- a reasonable default the user can still override by hand
-    // before generating the board.
-    const nonCaptainCount = names.length - captains.length;
-    const inferredPicks = Math.max(1, Math.floor(nonCaptainCount / captains.length));
-    document.getElementById('mockPicksPerCaptain').value = inferredPicks;
+    if (captains.length > 0) {
+      document.getElementById("mockNumCaptains").value = captains.length;
+      // Picks per captain: infer from pool size / captain count, rounded
+      // down -- a reasonable default the user can still override by hand
+      // before generating the board.
+      const nonCaptainCount = names.length - captains.length;
+      const inferredPicks = Math.max(
+        1,
+        Math.floor(nonCaptainCount / captains.length),
+      );
+      document.getElementById("mockPicksPerCaptain").value = inferredPicks;
 
-    numCaptains = captains.length;
-    picksPerCaptain = inferredPicks;
-    renderCaptainInputs(numCaptains);
-    captains.forEach((name, i) => {
-      mockCaptains[i] = resolvePoolPlayerByName(name, mockDraftPool);
-      document.querySelectorAll('.mock-captain-input')[i].value = mockCaptains[i].group;
-    });
-    renderDraftBoard();
-    renderAvailableSelectedTables();
-  }
+      numCaptains = captains.length;
+      picksPerCaptain = inferredPicks;
+      renderCaptainInputs(numCaptains);
+      captains.forEach((name, i) => {
+        mockCaptains[i] = resolvePoolPlayerByName(name, mockDraftPool);
+        document.querySelectorAll(".mock-captain-input")[i].value =
+          mockCaptains[i].group;
+      });
+      renderDraftBoard();
+      renderAvailableSelectedTables();
+    }
 
-  e.target.value = '';
-});
+    e.target.value = "";
+  });
 
 function renderMockDraftPlayerDatalist() {
-  document.getElementById('mockDraftPlayerDatalist').innerHTML =
-    mockDraftPool.map((p) => `<option value="${escapeHtml(p.group)}"></option>`).join('');
+  document.getElementById("mockDraftPlayerDatalist").innerHTML = mockDraftPool
+    .map((p) => `<option value="${escapeHtml(p.group)}"></option>`)
+    .join("");
 }
 
 // Matches typed text against a given pool (case/tag-tolerant, same
@@ -2818,7 +2922,7 @@ function resolvePoolPlayerByName(text, pool) {
   const norm = text.trim().toLowerCase();
   if (!norm) return null;
   const bareOf = (s) => {
-    const idx = s.lastIndexOf('#');
+    const idx = s.lastIndexOf("#");
     return (idx === -1 ? s : s.slice(0, idx)).trim().toLowerCase();
   };
   const found = pool.find((p) => {
@@ -2827,12 +2931,20 @@ function resolvePoolPlayerByName(text, pool) {
   });
   return found
     ? { ...found, manual: false }
-    : { identityKey: null, group: text.trim(), conservativeRating: null, mu: null, sigma: null, manual: true };
+    : {
+        identityKey: null,
+        group: text.trim(),
+        conservativeRating: null,
+        mu: null,
+        sigma: null,
+        manual: true,
+      };
 }
 
 // Draft board
 let draftPicks = new Map(); // `${round}::${captainIndex}` -> resolved player or null
-let numCaptains = 8, picksPerCaptain = 4;
+let numCaptains = 8,
+  picksPerCaptain = 4;
 
 // Standard snake: round 0 goes captain 0..N-1, round 1 reverses N-1..0,
 // alternating -- "left to right, then sweep back" exactly as described.
@@ -2840,10 +2952,12 @@ function generateSnakeSlots(nCaptains, nPicks) {
   const slots = [];
   let overall = 1;
   for (let round = 0; round < nPicks; round++) {
-    const order = round % 2 === 0
-      ? [...Array(nCaptains).keys()]
-      : [...Array(nCaptains).keys()].reverse();
-    for (const captainIndex of order) slots.push({ round, captainIndex, overall: overall++ });
+    const order =
+      round % 2 === 0
+        ? [...Array(nCaptains).keys()]
+        : [...Array(nCaptains).keys()].reverse();
+    for (const captainIndex of order)
+      slots.push({ round, captainIndex, overall: overall++ });
   }
   return slots;
 }
@@ -2852,20 +2966,20 @@ function generateSnakeSlots(nCaptains, nPicks) {
 let mockCaptains = [];
 
 function renderCaptainInputs(n) {
-  const container = document.getElementById('mockCaptainInputs');
-  container.innerHTML = '';
+  const container = document.getElementById("mockCaptainInputs");
+  container.innerHTML = "";
   mockCaptains = mockCaptains.slice(0, n);
   for (let i = 0; i < n; i++) {
-    const wrap = document.createElement('div');
-    wrap.className = 'mock-captain-input-wrap';
+    const wrap = document.createElement("div");
+    wrap.className = "mock-captain-input-wrap";
     wrap.innerHTML = `<label>Captain ${i + 1}</label>`;
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.setAttribute('list', 'mockDraftPlayerDatalist');
-    input.className = 'mock-captain-input';
-    input.placeholder = 'Type or pick a name…';
-    input.value = mockCaptains[i]?.group || '';
-    input.addEventListener('change', () => {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.setAttribute("list", "mockDraftPlayerDatalist");
+    input.className = "mock-captain-input";
+    input.placeholder = "Type or pick a name…";
+    input.value = mockCaptains[i]?.group || "";
+    input.addEventListener("change", () => {
       mockCaptains[i] = resolvePoolPlayerByName(input.value, mockDraftPool);
       renderDraftBoard();
       renderAvailableSelectedTables();
@@ -2874,17 +2988,26 @@ function renderCaptainInputs(n) {
     container.appendChild(wrap);
   }
 }
-document.getElementById('mockGenerateBoardBtn').addEventListener('click', () => {
-  numCaptains = Math.max(2, parseInt(document.getElementById('mockNumCaptains').value, 10) || 2);
-  picksPerCaptain = Math.max(1, parseInt(document.getElementById('mockPicksPerCaptain').value, 10) || 1);
-  draftPicks = new Map();
-  renderCaptainInputs(numCaptains);
-  renderDraftBoard();
-  renderAvailableSelectedTables();
-});
+document
+  .getElementById("mockGenerateBoardBtn")
+  .addEventListener("click", () => {
+    numCaptains = Math.max(
+      2,
+      parseInt(document.getElementById("mockNumCaptains").value, 10) || 2,
+    );
+    picksPerCaptain = Math.max(
+      1,
+      parseInt(document.getElementById("mockPicksPerCaptain").value, 10) || 1,
+    );
+    draftPicks = new Map();
+    renderCaptainInputs(numCaptains);
+    renderDraftBoard();
+    renderAvailableSelectedTables();
+  });
 
 function getAvailablePlayers() {
-  const draftedKeys = new Set(), draftedNames = new Set();
+  const draftedKeys = new Set(),
+    draftedNames = new Set();
   draftPicks.forEach((pick) => {
     if (!pick) return;
     if (pick.identityKey) draftedKeys.add(pick.identityKey);
@@ -2895,19 +3018,28 @@ function getAvailablePlayers() {
     if (captain.identityKey) draftedKeys.add(captain.identityKey);
     else draftedNames.add(captain.group.toLowerCase());
   });
-  return mockDraftPool.filter((p) => !draftedKeys.has(p.identityKey) && !draftedNames.has(p.group.toLowerCase()));
+  return mockDraftPool.filter(
+    (p) =>
+      !draftedKeys.has(p.identityKey) &&
+      !draftedNames.has(p.group.toLowerCase()),
+  );
 }
 
 function renderMockDraftAvailableDatalist() {
-  document.getElementById('mockDraftAvailableDatalist').innerHTML =
-    getAvailablePlayers().map((p) => `<option value="${escapeHtml(p.group)}"></option>`).join('');
+  document.getElementById("mockDraftAvailableDatalist").innerHTML =
+    getAvailablePlayers()
+      .map((p) => `<option value="${escapeHtml(p.group)}"></option>`)
+      .join("");
 }
 
 function renderDraftBoard() {
   const slots = generateSnakeSlots(numCaptains, picksPerCaptain);
-  const table = document.getElementById('mockDraftBoardTable');
-  const headerCells = Array.from({ length: numCaptains }, (_, i) =>
-    `<th>${escapeHtml(mockCaptains[i]?.group || `Captain ${i + 1}`)}</th>`).join('');
+  const table = document.getElementById("mockDraftBoardTable");
+  const headerCells = Array.from(
+    { length: numCaptains },
+    (_, i) =>
+      `<th>${escapeHtml(mockCaptains[i]?.group || `Captain ${i + 1}`)}</th>`,
+  ).join("");
 
   const rows = [];
   for (let round = 0; round < picksPerCaptain; round++) {
@@ -2919,21 +3051,27 @@ function renderDraftBoard() {
         <span class="mock-pick-number">#${slot.overall}</span>
         <input type="text" list="mockDraftAvailableDatalist" class="mock-pick-input"
           data-round="${round}" data-captain="${c}"
-          value="${pick ? escapeHtml(pick.group) : ''}" placeholder="Type or pick…" />
+          value="${pick ? escapeHtml(pick.group) : ""}" placeholder="Type or pick…" />
       </div></td>`);
     }
-    rows.push(`<tr><td class="round-label">Round ${round + 1}</td>${cells.join('')}</tr>`);
+    rows.push(
+      `<tr><td class="round-label">Round ${round + 1}</td>${cells.join("")}</tr>`,
+    );
   }
 
-  table.innerHTML = `<thead><tr><th></th>${headerCells}</tr></thead><tbody>${rows.join('')}</tbody>`;
+  table.innerHTML = `<thead><tr><th></th>${headerCells}</tr></thead><tbody>${rows.join("")}</tbody>`;
   renderMockDraftAvailableDatalist();
 
-  table.querySelectorAll('.mock-pick-input').forEach((input) => {
-    input.addEventListener('change', () => {
+  table.querySelectorAll(".mock-pick-input").forEach((input) => {
+    input.addEventListener("change", () => {
       const key = `${input.dataset.round}::${input.dataset.captain}`;
       const text = input.value.trim();
       if (!text) draftPicks.delete(key);
-      else draftPicks.set(key, resolvePoolPlayerByName(text, getAvailablePlayers()));
+      else
+        draftPicks.set(
+          key,
+          resolvePoolPlayerByName(text, getAvailablePlayers()),
+        );
       renderMockDraftAvailableDatalist();
       renderAvailableSelectedTables();
     });
@@ -2941,30 +3079,109 @@ function renderDraftBoard() {
 }
 
 const MOCK_PLAYER_COLUMNS = [
-  { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, type: 'string', className: 'group-name' },
-  { key: 'conservativeRating', label: 'TrueSkill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg', render: (val) => renderTrueSkillValue(val) },
-  { key: 'soloQueueRank', label: 'Solo Queue', sortable: true, hideable: true, filterable: true, type: 'string',
+  {
+    key: "group",
+    label: "Player",
+    sortable: true,
+    hideable: false,
+    filterable: true,
+    type: "string",
+    className: "group-name",
+  },
+  {
+    key: "conservativeRating",
+    label: "TrueSkill",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+    className: "adj-avg",
+    render: (val) => renderTrueSkillValue(val),
+  },
+  {
+    key: "soloQueueRank",
+    label: "Solo Queue",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
     sortValue: (row) => soloQueueSortValueClient(row.soloQueueRank),
-    render: (val) => escapeHtml(formatSoloQueueRank(val)) },
-  { key: 'mu', label: 'μ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 },
-  { key: 'sigma', label: 'σ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 }
+    render: (val) => renderSoloQueueRank(val),
+  },
+  {
+    key: "flexQueueRank",
+    label: "Flex Queue",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+    sortValue: (row) => soloQueueSortValueClient(row.flexQueueRank),
+    render: (val) => renderSoloQueueRank(val),
+  },
+  {
+    key: "premade5x5Rank",
+    label: "5x5 Queue",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+    defaultHidden: true,
+    sortValue: (row) => soloQueueSortValueClient(row.premade5x5Rank),
+    render: (val) => renderSoloQueueRank(val),
+  },
+  {
+    key: "mu",
+    label: "μ",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+  },
+  {
+    key: "sigma",
+    label: "σ",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+  },
 ];
 const MOCK_SELECTED_COLUMNS = [
   ...MOCK_PLAYER_COLUMNS,
-  { key: 'pickLabel', label: 'Pick', sortable: true, hideable: true, filterable: true, type: 'string', sortValue: (row) => row.overall }
+  {
+    key: "pickLabel",
+    label: "Pick",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "string",
+    sortValue: (row) => row.overall,
+  },
 ];
 
 const mockAvailableTable = createTabTable({
-  columns: MOCK_PLAYER_COLUMNS, headerRowEl: document.getElementById('mockAvailableHeaderRow'),
-  bodyEl: document.getElementById('mockAvailableBody'), columnsBtnEl: document.getElementById('mockAvailableColumnsBtn'),
-  columnsPanelEl: document.getElementById('mockAvailableColumnsPanel'), ownerKey: 'mockavailable',
-  defaultSortColumn: 'conservativeRating', emptyMessage: 'No players remaining -- add a pool above'
+  columns: MOCK_PLAYER_COLUMNS,
+  headerRowEl: document.getElementById("mockAvailableHeaderRow"),
+  bodyEl: document.getElementById("mockAvailableBody"),
+  columnsBtnEl: document.getElementById("mockAvailableColumnsBtn"),
+  columnsPanelEl: document.getElementById("mockAvailableColumnsPanel"),
+  ownerKey: "mockavailable",
+  defaultSortColumn: "conservativeRating",
+  emptyMessage: "No players remaining -- add a pool above",
 });
 const mockSelectedTable = createTabTable({
-  columns: MOCK_SELECTED_COLUMNS, headerRowEl: document.getElementById('mockSelectedHeaderRow'),
-  bodyEl: document.getElementById('mockSelectedBody'), columnsBtnEl: document.getElementById('mockSelectedColumnsBtn'),
-  columnsPanelEl: document.getElementById('mockSelectedColumnsPanel'), ownerKey: 'mockselected',
-  defaultSortColumn: 'pickLabel', defaultSortDirection: 'asc', emptyMessage: 'No picks made yet'
+  columns: MOCK_SELECTED_COLUMNS,
+  headerRowEl: document.getElementById("mockSelectedHeaderRow"),
+  bodyEl: document.getElementById("mockSelectedBody"),
+  columnsBtnEl: document.getElementById("mockSelectedColumnsBtn"),
+  columnsPanelEl: document.getElementById("mockSelectedColumnsPanel"),
+  ownerKey: "mockselected",
+  defaultSortColumn: "pickLabel",
+  defaultSortDirection: "asc",
+  emptyMessage: "No picks made yet",
 });
 
 function renderAvailableSelectedTables() {
@@ -2973,20 +3190,27 @@ function renderAvailableSelectedTables() {
   const selected = [];
   draftPicks.forEach((pick, key) => {
     if (!pick) return;
-    const [round, captainIndex] = key.split('::').map(Number);
-    const slot = slots.find((s) => s.round === round && s.captainIndex === captainIndex);
-    selected.push({ ...pick, overall: slot?.overall ?? 0,
-      pickLabel: `#${slot?.overall ?? '?'} (${mockCaptains[captainIndex]?.group || `Captain ${captainIndex + 1}`})` });
+    const [round, captainIndex] = key.split("::").map(Number);
+    const slot = slots.find(
+      (s) => s.round === round && s.captainIndex === captainIndex,
+    );
+    selected.push({
+      ...pick,
+      overall: slot?.overall ?? 0,
+      pickLabel: `#${slot?.overall ?? "?"} (${mockCaptains[captainIndex]?.group || `Captain ${captainIndex + 1}`})`,
+    });
   });
   mockSelectedTable.setData(selected);
 }
 
 tabButtons.forEach((btn) => {
-  if (btn.dataset.tab === 'mockdraft') {
-    btn.addEventListener('click', async () => {
+  if (btn.dataset.tab === "mockdraft") {
+    btn.addEventListener("click", async () => {
       await loadtrueskillData(false);
-      buildPastDraftOptions(document.getElementById('mockPastDraftsOptgroup'));
-      buildAdminPresetOptions(document.getElementById('mockAdminPresetsOptgroup'));
+      buildPastDraftOptions(document.getElementById("mockPastDraftsOptgroup"));
+      buildAdminPresetOptions(
+        document.getElementById("mockAdminPresetsOptgroup"),
+      );
     });
   }
 });
@@ -2997,14 +3221,15 @@ let upcomingRosterLoaded = false;
 async function loadUpcomingRoster() {
   if (upcomingRosterLoaded) return;
   try {
-    const res = await fetch('/api/upcoming-roster');
+    const res = await fetch("/api/upcoming-roster");
     if (res.status === 404) return; // no file present -- tab stays hidden, this is expected/normal
     const data = await res.json();
     if (!data.exists) return;
 
-    document.getElementById('upcomingRosterTabBtn').textContent = data.title;
-    document.getElementById('upcomingRosterTabBtn').style.display = '';
-    document.getElementById('upcomingRosterContent').innerHTML = renderUpcomingRoster(data);
+    document.getElementById("upcomingRosterTabBtn").textContent = data.title;
+    document.getElementById("upcomingRosterTabBtn").style.display = "";
+    document.getElementById("upcomingRosterContent").innerHTML =
+      renderUpcomingRoster(data);
     upcomingRosterLoaded = true;
   } catch (err) {
     // silently do nothing -- absence of this feature should never surface as an error to the user
@@ -3012,30 +3237,35 @@ async function loadUpcomingRoster() {
 }
 
 function renderUpcomingRoster(data) {
-  return data.teams.map((team) => {
-    const rosterRows = team.roster.map((p) => {
-      const nameHtml = p.identityKey && p.identified
-        ? `<a href="#" class="player-link" data-player-key="${escapeHtml(p.identityKey)}">${renderNameWithTag(p.displayName)}</a>`
-        : renderNameWithTag(p.displayName);
-      const ratingHtml = p.conservativeRating !== null
-        ? renderTrueSkillValue(p.conservativeRating, p.mu)
-        : '<span class="stat-formula">unrated (no games yet)</span>';
-      return `<tr>
+  return data.teams
+    .map((team) => {
+      const rosterRows = team.roster
+        .map((p) => {
+          const nameHtml =
+            p.identityKey && p.identified
+              ? `<a href="#" class="player-link" data-player-key="${escapeHtml(p.identityKey)}">${renderNameWithTag(p.displayName)}</a>`
+              : renderNameWithTag(p.displayName);
+          const ratingHtml =
+            p.conservativeRating !== null
+              ? renderTrueSkillValue(p.conservativeRating, p.mu)
+              : '<span class="stat-formula">unrated (no games yet)</span>';
+          return `<tr>
         <td>#${p.pickOrder}</td>
         <td>${nameHtml}</td>
         <td>${ratingHtml}</td>
-        <td>${p.entryRank !== null ? '#' + p.entryRank : '–'}</td>
-        <td class="${p.value > 0 ? 'outcome-win' : p.value < 0 ? 'outcome-loss' : ''}">${p.value !== null ? (p.value > 0 ? '+' : '') + p.value : '–'}</td>
+        <td>${p.entryRank !== null ? "#" + p.entryRank : "–"}</td>
+        <td class="${p.value > 0 ? "outcome-win" : p.value < 0 ? "outcome-loss" : ""}">${p.value !== null ? (p.value > 0 ? "+" : "") + p.value : "–"}</td>
       </tr>`;
-    }).join('');
+        })
+        .join("");
 
-    return `
+      return `
       <div class="fun-facts-box" style="margin-bottom:16px;">
         <div class="collapsible-body" style="padding:16px 18px;">
           <h4>${renderNameWithTag(team.captain.displayName)}</h4>
           <div class="profile-summary">
-            <span>Avg Entry TrueSkill: ${team.avgEntryRating !== null ? renderTrueSkillValue(team.avgEntryRating) : '–'} (${team.ratedCount}/${team.totalCount} rated)</span>
-            <span>Draft IQ: ${team.draftIQ !== null ? (team.draftIQ > 0 ? '+' : '') + team.draftIQ : '–'}</span>
+            <span>Avg Entry TrueSkill: ${team.avgEntryRating !== null ? renderTrueSkillValue(team.avgEntryRating) : "–"} (${team.ratedCount}/${team.totalCount} rated)</span>
+            <span>Draft IQ: ${team.draftIQ !== null ? (team.draftIQ > 0 ? "+" : "") + team.draftIQ : "–"}</span>
           </div>
           <table class="profile-history-table">
             <thead><tr><th>Pick #</th><th>Player</th><th>TrueSkill</th><th>Rank</th><th>Value</th></tr></thead>
@@ -3043,12 +3273,13 @@ function renderUpcomingRoster(data) {
           </table>
         </div>
       </div>`;
-  }).join('');
+    })
+    .join("");
 }
 
 tabButtons.forEach((btn) => {
-  if (btn.dataset.tab === 'upcomingroster') {
-    btn.addEventListener('click', () => loadUpcomingRoster());
+  if (btn.dataset.tab === "upcomingroster") {
+    btn.addEventListener("click", () => loadUpcomingRoster());
   }
 });
 
