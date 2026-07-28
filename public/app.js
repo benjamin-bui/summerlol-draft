@@ -1274,17 +1274,19 @@ async function buildAdminPresetOptions(optgroupEl) {
 }
 
 async function buildAdminPresetOptions(optgroupEl) {
-  optgroupEl.innerHTML = '';
+  optgroupEl.innerHTML = "";
   try {
-    const res = await fetch('/api/presets');
+    const res = await fetch("/api/presets");
     const data = await res.json();
     data.presets.forEach((preset) => {
-      const opt = document.createElement('option');
+      const opt = document.createElement("option");
       opt.value = `admin::${preset.id}`;
       opt.textContent = preset.label;
       optgroupEl.appendChild(opt);
     });
-  } catch (err) { /* no presets dir yet */ }
+  } catch (err) {
+    /* no presets dir yet */
+  }
 }
 
 // Everyone (captains + players) with at least one recorded game that
