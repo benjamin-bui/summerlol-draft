@@ -340,9 +340,25 @@ app.get('/api/presets/:id', (req, res) => {
   const match = getAvailablePresets().find((p) => p.id === req.params.id);
   if (!match) return res.status(404).json({ error: 'Preset not found' });
   const text = fs.readFileSync(path.join(PRESETS_DIR, match.id), 'utf-8');
-  const names = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
-    .filter((l) => l.toLowerCase() !== 'name'); // tolerate an optional header row
-  res.json({ id: match.id, label: match.label, names });
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  const hasAnyCommaFormat = lines.some((l) => l.includes(','));
+
+  if (!hasAnyCommaFormat) {
+    const names = lines.filter((l) => l.toLowerCase() !== 'name');
+    return res.json({ id: match.id, label: match.label, names, captains: [] });
+  }
+
+  const names = [];
+  const captains = [];
+  for (const line of lines) {
+    if (/^name\s*,\s*captain/i.test(line)) continue; // tolerate a "name,captain" header row
+    const [namePart, flagPart] = line.split(',').map((s) => s.trim());
+    if (!namePart) continue;
+    names.push(namePart);
+    if (flagPart === '1') captains.push(namePart);
+  }
+  res.json({ id: match.id, label: match.label, names, captains });
 });
 
 // Comparing TrueSkill against draft data
