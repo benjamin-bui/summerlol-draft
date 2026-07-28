@@ -30,6 +30,15 @@ const DEFAULT_REGION = process.env.RIOT_REGION || "americas";
 // routing (na1/euw1/etc), which is a different, unrelated concept.
 const VALID_REGIONS = new Set(["americas", "europe", "asia", "sea"]);
 
+const REGIONAL_TO_PLATFORM = {
+  americas: 'na1',
+  europe: 'euw1',
+  asia: 'kr'
+};
+
+function platformHost(regionalRegion) {
+  return REGIONAL_TO_PLATFORM[regionalRegion] || regionalRegion;
+}
 class RiotApiError extends Error {
   constructor(message, status) {
     super(message);
@@ -279,10 +288,76 @@ async function refreshKnown(
   return { updated, unchanged, failed };
 }
 
+// Tracking rank status
+
+const TRACKED_QUEUES = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR', 'RANKED_PREMADE_5x5'];
+
+async function getLeagueEntriesByPuuid(platform, puuid) {
+  const path = `${platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/${puuid}`;
+  return riotFetch(path); // returns Set[LeagueEntryDTO] -- reuses the existing rate-limit/retry wrapper
+}
+
+// Writes one row per tracked queue for this player, EVERY sync pass --
+// a queue with no matching entry this time gets explicitly written as
+// UNRANKED rather than leaving whatever tier/division was there before.
+// This is what makes "rank always reflects current state" true even
+// for someone who's dropped out of ranked entirely since the last sync.
+function upsertRankedStats(db, playerId, queueType, entry) {
+  const tier = entry ? entry.tier : 'UNRANKED';
+  const division = entry ? entry.rank : null;
+  const leaguePoints = entry ? entry.leaguePoints : 0;
+
+  db.prepare(`
+    INSERT INTO player_ranked_stats (player_id, queue_type, tier, division, league_points, synced_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(player_id, queue_type) DO UPDATE SET
+      tier = excluded.tier,
+      division = excluded.division,
+      league_points = excluded.league_points,
+      synced_at = excluded.synced_at
+  `).run(playerId, queueType, tier, division, leaguePoints);
+}
+
+/**
+ * Re-fetches every tracked player's league entries and writes current
+ * tier/division/leaguePoints for all three tracked queues. `fetchLeagueEntries`
+ * is injectable for testing, same convention as resolvePending/refreshKnown.
+ */
+async function refreshRankedStats(db, { limit = 500, fetchLeagueEntries = getLeagueEntriesByPuuid } = {}) {
+  const rows = db
+    .prepare(`SELECT id, puuid, riot_region FROM players WHERE puuid IS NOT NULL ORDER BY id ASC LIMIT ?`)
+    .all(limit);
+
+  let updated = 0;
+  let failed = 0;
+
+  for (const row of rows) {
+    const region = row.riot_region || DEFAULT_REGION;
+    const platform = platformHost(region); // league-v4 is PLATFORM-routed, not regional -- see platformHost above
+
+    let entries;
+    try {
+      entries = await fetchLeagueEntries(platform, row.puuid);
+    } catch (err) {
+      failed += 1;
+      continue;
+    }
+
+    for (const queueType of TRACKED_QUEUES) {
+      const entry = entries.find((e) => e.queueType === queueType) || null;
+      upsertRankedStats(db, row.id, queueType, entry);
+    }
+    updated += 1;
+  }
+
+  return { updated, failed };
+}
+
 async function runFullSync(db, options = {}) {
   const pendingResult = await resolvePending(db, options);
   const refreshResult = await refreshKnown(db, options);
-  return { pending: pendingResult, refresh: refreshResult };
+  const rankedResult = await refreshRankedStats(db, options);
+  return { pending: pendingResult, refresh: refreshResult, ranked: rankedResult };
 }
 
 module.exports = {
@@ -290,10 +365,13 @@ module.exports = {
   riotFetch,
   getAccountByRiotId,
   getAccountByPuuid,
+  getLeagueEntriesByPuuid,
   applyResolvedAccount,
   updateNameIfChanged,
+  upsertRankedStats,
   resolvePending,
   refreshKnown,
+  refreshRankedStats,
   runFullSync,
   VALID_REGIONS,
 };
