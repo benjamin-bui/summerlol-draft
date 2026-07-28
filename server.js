@@ -507,7 +507,7 @@ app.get("/api/player/:key", (req, res) => {
 
   const key = decodeURIComponent(req.params.key);
 
-  const rankMap = getSoloQueueRankMap(db);
+  const rankMap = getRankMap(db);
   const player = result.players.find((p) => p.identityKey === key);
   if (!player) return res.status(404).json({ error: 'Player not found' });
   res.json({ ...player, soloQueueRank: rankMap.get(player.identityKey) || null });

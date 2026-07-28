@@ -168,8 +168,8 @@ Xemacs
       <div class="name-filter-box">
         <label for="mockDraftFilterInput">Player pool (paste names, one per line or comma-separated, or upload a file):</label>
         <textarea id="mockDraftFilterInput" rows="3" placeholder="Voidliss#NA1
-    Xemacs#LOR
-    ..."></textarea>
+Xemacs#LOR
+..."></textarea>
         <div class="name-filter-controls">
           <input type="file" id="mockDraftFilterFile" accept=".csv,.txt" />
           <button id="mockDraftFilterApplyBtn" type="button">Apply Pool</button>
@@ -182,7 +182,6 @@ Xemacs
           <span id="mockDraftFilterSummary" class="name-filter-summary"></span>
         </div>
       </div>
-
       <div class="control-panel mock-draft-setup">
         <label>Number of captains
           <input type="number" id="mockNumCaptains" min="2" value="8" class="total-n-input" />
@@ -200,7 +199,8 @@ Xemacs
       <div class="table-section" id="mockDraftBoardWrap" style="overflow-x:auto;">
         <table id="mockDraftBoardTable"></table>
       </div>
-
+      <button id="mockEvaluateDraftIQBtn" type="button" class="download-btn">Evaluate Draft IQ</button>
+      <div id="mockDraftIQResults"></div>
       <h3 class="mock-section-heading">Available Players</h3>
       <div class="table-controls">
         <button id="mockAvailableColumnsBtn" class="columns-btn">Columns ▾</button>
