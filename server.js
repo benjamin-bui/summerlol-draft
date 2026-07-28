@@ -282,7 +282,60 @@ function getMatches() {
     )
     .all();
 }
+const RANK_TIER_ORDER = [
+  'CHALLENGER', 'GRANDMASTER', 'MASTER', 'DIAMOND', 'EMERALD',
+  'PLATINUM', 'GOLD', 'SILVER', 'BRONZE', 'IRON', 'UNRANKED'
+];
+const DIVISION_ORDER = { I: 0, II: 1, III: 2, IV: 3 };
 
+function getRankMap(db, type = 'RANKED_SOLO_5x5') {
+  const rows = db.prepare(`
+    SELECT player_id, tier, division, league_points
+    FROM player_ranked_stats
+    WHERE queue_type = ?
+  `).all(type);
+  return new Map(rows.map((r) => [`p${r.player_id}`, {
+    tier: r.tier,
+    division: r.division,
+    leaguePoints: r.league_points
+  }]));
+}
+
+function getAllRanksMap(db, queueTypes = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR', 'RANKED_PREMADE_5x5']) {
+  const placeholders = queueTypes.map(() => '?').join(', ');
+  
+  const rows = db.prepare(`
+    SELECT player_id, queue_type, tier, division, league_points
+    FROM player_ranked_stats
+    WHERE queue_type IN (${placeholders})
+  `).all(...queueTypes);
+
+  // Map: 'p123' => { RANKED_SOLO_5x5: {...}, RANKED_FLEX_SR: {...} }
+  const playerMap = new Map();
+
+  for (const r of rows) {
+    const key = `p${r.player_id}`;
+    if (!playerMap.has(key)) {
+      playerMap.set(key, {});
+    }
+    playerMap.get(key)[r.queue_type] = {
+      tier: r.tier,
+      division: r.division,
+      leaguePoints: r.league_points
+    };
+  }
+
+  return playerMap;
+}
+
+// Sort key: tier first (Challenger highest), then division (I highest
+// within a tier), then league points as the final tiebreaker.
+function soloQueueSortValue(rank) {
+  if (!rank || !rank.tier || rank.tier === 'UNRANKED') return -1;
+  const tierIdx = RANK_TIER_ORDER.indexOf(rank.tier.toUpperCase());
+  const divIdx = DIVISION_ORDER[rank.division] ?? 4;
+  return (RANK_TIER_ORDER.length - tierIdx) * 10000 - divIdx * 100 + (rank.leaguePoints || 0);
+}
 const { computeFunFacts } = require("./src/lib/trueskill-funfacts");
 
 app.get("/api/trueskill", (req, res) => {
@@ -307,15 +360,24 @@ app.get("/api/trueskill", (req, res) => {
       opts[key] = val;
     }
   }
-  const result = computeTrueSkillFromMatches(
-    matches,
-    allRows,
-    identityMap,
-    opts,
-  );
+  const result = computeTrueSkillFromMatches(matches, allRows, identityMap, opts);
+
+  const rankMap = getAllRanksMap(db);
+
+  result.players = result.players.map((p) => {
+    const playerRanks = rankMap.get(p.identityKey) || {};
+    return {
+      ...p,
+      soloQueueRank: playerRanks['RANKED_SOLO_5x5'] || null,
+      flexQueueRank: playerRanks['RANKED_FLEX_SR'] || null,
+      premade5x5Rank: playerRanks['RANKED_PREMADE_5x5'] || null,
+    };
+  });
+
   result.funFacts = computeFunFacts(result);
   res.json(result);
 });
+
 
 // Read in filter preset
 const fs = require('fs'); // add if not already imported
@@ -444,10 +506,11 @@ app.get("/api/player/:key", (req, res) => {
   const result = computeTrueSkillFromMatches(matches, allRows, identityMap, {});
 
   const key = decodeURIComponent(req.params.key);
-  const player = result.players.find((p) => p.identityKey === key);
-  if (!player) return res.status(404).json({ error: "Player not found" });
 
-  res.json(player);
+  const rankMap = getSoloQueueRankMap(db);
+  const player = result.players.find((p) => p.identityKey === key);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+  res.json({ ...player, soloQueueRank: rankMap.get(player.identityKey) || null });
 });
 
 app.get("/api/meta", (req, res) => {

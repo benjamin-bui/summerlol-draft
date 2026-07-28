@@ -24,6 +24,19 @@ CREATE TABLE IF NOT EXISTS players (
     created_at            TEXT DEFAULT (datetime('now'))
 );
 
+-- Ranked stats per queue type, refreshed on every sync -- a queue with
+-- no entry returned this pass is written as UNRANKED explicitly, never
+-- left stale from a prior sync. One row per (player, queue).
+CREATE TABLE IF NOT EXISTS player_ranked_stats (
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  queue_type TEXT NOT NULL,
+  tier TEXT,
+  division TEXT,
+  league_points INTEGER,
+  synced_at TEXT,
+  PRIMARY KEY (player_id, queue_type)
+);
+
 
 -- Aliases queued for Riot lookup but not yet resolved (either no
 -- game_name/tag_line known yet, or looked up and failed/not found).
