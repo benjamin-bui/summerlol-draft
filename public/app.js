@@ -2796,9 +2796,24 @@ function applyMockDraftPoolFilter(rawText) {
   const names = parseNameList(rawText);
   const summaryEl = document.getElementById("mockDraftFilterSummary");
   if (names.length === 0) {
-    mockDraftPool = [];
-    summaryEl.textContent = "";
+    // No list typed/pasted/loaded -- default to every known player rather
+    // than an empty pool, so Mock Draft is immediately usable without
+    // requiring a preset first.
+    mockDraftPool = (latestTrueskillPlayers || []).map((p) => ({
+      identityKey: p.identityKey,
+      group: p.group,
+      conservativeRating: p.conservativeRating,
+      mu: p.mu,
+      sigma: p.sigma,
+      soloQueueRank: p.soloQueueRank,
+      manual: false
+    }));
+    summaryEl.textContent = mockDraftPool.length
+      ? `Showing all ${mockDraftPool.length} known players (no list applied).`
+      : '';
     renderMockDraftPlayerDatalist();
+    draftPicks = new Map(); // pool changed -- stale picks would reference the previous pool
+    renderDraftBoard();
     renderAvailableSelectedTables();
     return;
   }
@@ -3203,15 +3218,18 @@ function renderAvailableSelectedTables() {
   mockSelectedTable.setData(selected);
 }
 
+async function initMockDraftTab() {
+  await loadtrueskillData(false);
+  buildPastDraftOptions(document.getElementById('mockPastDraftsOptgroup'));
+  buildAdminPresetOptions(document.getElementById('mockAdminPresetsOptgroup'));
+  if (mockDraftPool.length === 0 && !document.getElementById('mockDraftFilterInput').value) {
+    applyMockDraftPoolFilter('');
+  }
+}
+
 tabButtons.forEach((btn) => {
-  if (btn.dataset.tab === "mockdraft") {
-    btn.addEventListener("click", async () => {
-      await loadtrueskillData(false);
-      buildPastDraftOptions(document.getElementById("mockPastDraftsOptgroup"));
-      buildAdminPresetOptions(
-        document.getElementById("mockAdminPresetsOptgroup"),
-      );
-    });
+  if (btn.dataset.tab === 'mockdraft') {
+    btn.addEventListener('click', () => initMockDraftTab());
   }
 });
 
@@ -3522,13 +3540,12 @@ tabButtons.forEach((btn) => {
 
 function readStateFromURL() {
   const params = new URLSearchParams(window.location.search);
-
-  const tab = params.get("tab") || "trueskill";
-
+  const tab = params.get('tab') || 'trueskill';
   setActiveTab(tab);
-  if (tab === "draftdata") loadDraftData();
-  if (tab === "matchdata") loadMatchData();
-  if (tab === "draftiq" || tab === "teambalance") loadDraftAnalysis();
+  if (tab === 'draftdata') loadDraftData();
+  if (tab === 'matchdata') loadMatchData();
+  if (tab === 'draftiq' || tab === 'teambalance') loadDraftAnalysis();
+  if (tab === 'mockdraft') initMockDraftTab();
 }
 
 function writeStateToURL() {
