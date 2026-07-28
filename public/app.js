@@ -1273,6 +1273,20 @@ async function buildAdminPresetOptions(optgroupEl) {
   }
 }
 
+async function buildAdminPresetOptions(optgroupEl) {
+  optgroupEl.innerHTML = '';
+  try {
+    const res = await fetch('/api/presets');
+    const data = await res.json();
+    data.presets.forEach((preset) => {
+      const opt = document.createElement('option');
+      opt.value = `admin::${preset.id}`;
+      opt.textContent = preset.label;
+      optgroupEl.appendChild(opt);
+    });
+  } catch (err) { /* no presets dir yet */ }
+}
+
 // Everyone (captains + players) with at least one recorded game that
 // year+tournament -- since captains are always force-included on their
 // own roster and always play, this naturally covers both.
