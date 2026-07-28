@@ -1420,6 +1420,23 @@ function renderTrueSkillValue(rating, mu) {
   return `<span class="trueskill-cell">${renderRankBadge(rating)}${formatRating(rating)} (${formatRating(mu)})</span>`;
 }
 
+// Formatting solo queue rank for display in the table. Returns a string like "Gold II · 75 LP" or "Unranked".
+function formatSoloQueueRank(rank) {
+  if (!rank || !rank.tier || rank.tier === 'UNRANKED') return 'Unranked';
+  const tierLabel = rank.tier.charAt(0) + rank.tier.slice(1).toLowerCase();
+  const isApex = ['CHALLENGER', 'GRANDMASTER', 'MASTER'].includes(rank.tier.toUpperCase());
+  const divisionPart = isApex ? '' : ` ${rank.division}`;
+  return `${tierLabel}${divisionPart} · ${rank.leaguePoints} LP`;
+}
+const RANK_TIER_ORDER = ['CHALLENGER', 'GRANDMASTER', 'MASTER', 'DIAMOND', 'EMERALD', 'PLATINUM', 'GOLD', 'SILVER', 'BRONZE', 'IRON'];
+const DIVISION_ORDER = { I: 0, II: 1, III: 2, IV: 3 };
+
+function soloQueueSortValueClient(rank) {
+  if (!rank || !rank.tier || rank.tier === 'UNRANKED') return -1;
+  const tierIdx = RANK_TIER_ORDER.indexOf(rank.tier.toUpperCase());
+  const divIdx = DIVISION_ORDER[rank.division] ?? 4;
+  return (RANK_TIER_ORDER.length - tierIdx) * 10000 - divIdx * 100 + (rank.leaguePoints || 0);
+}
 // ==================== trueskill tab ====================
 
 const TRUESKILL_COLUMNS = [
@@ -1467,6 +1484,9 @@ const TRUESKILL_COLUMNS = [
     className: "adj-avg",
     render: renderTrueSkillValue,
   },
+{ key: 'soloQueueRank', label: 'Solo Queue', sortable: true, hideable: true, filterable: true, type: 'string',
+  sortValue: (row) => soloQueueSortValueClient(row.soloQueueRank),
+  render: (val) => escapeHtml(formatSoloQueueRank(val)) },
   {
     key: "mu",
     label: "μ",
@@ -2923,6 +2943,9 @@ function renderDraftBoard() {
 const MOCK_PLAYER_COLUMNS = [
   { key: 'group', label: 'Player', sortable: true, hideable: false, filterable: true, type: 'string', className: 'group-name' },
   { key: 'conservativeRating', label: 'TrueSkill', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2, className: 'adj-avg', render: (val) => renderTrueSkillValue(val) },
+  { key: 'soloQueueRank', label: 'Solo Queue', sortable: true, hideable: true, filterable: true, type: 'string',
+    sortValue: (row) => soloQueueSortValueClient(row.soloQueueRank),
+    render: (val) => escapeHtml(formatSoloQueueRank(val)) },
   { key: 'mu', label: 'μ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 },
   { key: 'sigma', label: 'σ', sortable: true, hideable: true, filterable: true, type: 'number', decimals: 2 }
 ];
