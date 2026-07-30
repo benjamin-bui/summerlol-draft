@@ -3150,6 +3150,7 @@ const MOCK_PLAYER_COLUMNS = [
     filterable: true,
     type: "number",
     decimals: 2,
+    defaultHidden: true
   },
   {
     key: "sigma",
@@ -3159,6 +3160,43 @@ const MOCK_PLAYER_COLUMNS = [
     filterable: true,
     type: "number",
     decimals: 2,
+  },
+  {
+    key: "wins",
+    label: "Wins",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "losses",
+    label: "Losses",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+  },
+  {
+    key: "winrate",
+    label: "Win Rate %",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 0,
+    sortValue: (row) => {
+      if (!row.games || row.games === 0) return 0;
+      return row.wins / row.games;
+    },
+    render: (val, row) => {
+      const games = row.games || 0;
+      const wins = row.wins || 0;
+      if (games === 0) return "0.0%";
+      return ((wins / games) * 100).toFixed(1) + "%";
+    },
   },
 ];
 const MOCK_SELECTED_COLUMNS = [
@@ -3261,7 +3299,7 @@ function evaluateMockDraftIQ() {
     };
   });
 
-  captainResults.sort((a, b) => (b.avgDraftValue ?? -Infinity) - (a.avgDraftValue ?? -Infinity));
+  captainResults.sort((a, b) =>  (a.avgDraftValue ?? -Infinity)) - (b.avgDraftValue ?? -Infinity) 
   return captainResults;
 }
 
