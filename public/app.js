@@ -162,7 +162,7 @@ function buildPastDraftOptions(optgroupEl) {
 async function buildAdminPresetOptions(optgroupEl) {
   optgroupEl.innerHTML = "";
   try {
-    const res = await fetch("/api/presets");
+    const res = await fetch("/api/presets", { cache: "no-store" });
     const data = await res.json();
     data.presets.forEach((preset) => {
       const opt = document.createElement("option");
@@ -487,7 +487,9 @@ document
       textarea.value = namesForPastDraft(year, tournament).join("\n");
     } else if (val.startsWith("admin::")) {
       const id = val.slice("admin::".length);
-      const res = await fetch(`/api/presets/${encodeURIComponent(id)}`);
+      const res = await fetch(`/api/presets/${encodeURIComponent(id)}`, {
+        cache: "no-store",
+      });
       const data = await res.json();
       textarea.value = data.names.join("\n");
     }
@@ -1693,6 +1695,7 @@ document
     } else if (val.startsWith("admin::")) {
       const res = await fetch(
         `/api/presets/${encodeURIComponent(val.slice(7))}`,
+        { cache: "no-store" },
       );
       const data = await res.json();
       names = data.names;

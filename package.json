@@ -1,6 +1,6 @@
 {
   "name": "summerlol-draft",
-  "version": "1.1.2-beta",
+  "version": "1.4",
   "description": "Risk-adjusted LoL draft player rankings with Riot API identity tracking",
   "main": "server.js",
   "scripts": {

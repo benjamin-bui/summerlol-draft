@@ -399,6 +399,11 @@ app.get("/api/trueskill", async (req, res) => {
 // Read in filter preset
 const PRESETS_DIR = path.join(__dirname, 'data', 'presets');
 
+function setNoStoreHeaders(res) {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.set('Pragma', 'no-cache');
+}
+
 function getAvailablePresets() {
   if (!fs.existsSync(PRESETS_DIR)) return [];
   return fs.readdirSync(PRESETS_DIR)
@@ -410,6 +415,7 @@ function getAvailablePresets() {
 }
 
 app.get('/api/presets', (req, res) => {
+  setNoStoreHeaders(res);
   res.json({ presets: getAvailablePresets() });
 });
 
@@ -545,6 +551,7 @@ app.get("/api/meta", (req, res) => {
 
 // Mock Draft
 app.get('/api/presets/:id', (req, res) => {
+  setNoStoreHeaders(res);
   const match = getAvailablePresets().find((p) => p.id === req.params.id);
   if (!match) return res.status(404).json({ error: 'Preset not found' });
   const text = fs.readFileSync(path.join(PRESETS_DIR, match.id), 'utf-8');
