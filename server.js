@@ -1,4 +1,5 @@
 const express = require("express");
+const fs = require("fs");
 const path = require("path");
 const Database = require("better-sqlite3");
 const {
@@ -26,6 +27,12 @@ const SD_MODE = "sample"; // 'sample' (n-1, matches R's sd()) or 'population' (n
 // for a dataset this size. Opened once at startup and reused per request.
 const db = new Database(DB_PATH, { fileMustExist: true });
 db.pragma("journal_mode = WAL");
+
+const identitySchemaPath = path.join(__dirname, "src", "db", "identity-schema.sql");
+if (fs.existsSync(identitySchemaPath)) {
+  const schemaSql = fs.readFileSync(identitySchemaPath, "utf8");
+  db.exec(schemaSql);
+}
 
 // Double-quote identifiers so reserved-word / space-containing column
 // names (e.g. "Pick Order") don't break the SQL parser.
@@ -338,50 +345,58 @@ function soloQueueSortValue(rank) {
 }
 const { computeFunFacts } = require("./src/lib/trueskill-funfacts");
 
-app.get("/api/trueskill", (req, res) => {
-  const identityMap = loadIdentityMap(db);
-  const allRows = resolveIdentities(getAllRows(), identityMap);
-  const matches = getMatches();
-  const opts = {};
-  for (const key of [
-    "mu",
-    "sigma",
-    "beta",
-    "tau",
-    "drawProbability",
-    "conservativeK",
-  ]) {
-    if (req.query[key] !== undefined) {
-      const val = parseFloat(req.query[key]);
-      if (Number.isNaN(val))
-        return res
-          .status(400)
-          .json({ error: `${key} query param must be a number` });
-      opts[key] = val;
+app.get("/api/trueskill", async (req, res) => {
+  try {
+    const identityMap = loadIdentityMap(db);
+    const allRows = resolveIdentities(getAllRows(), identityMap);
+    const matches = getMatches();
+    const opts = {};
+    for (const key of [
+      "mu",
+      "sigma",
+      "beta",
+      "tau",
+      "drawProbability",
+      "conservativeK",
+    ]) {
+      if (req.query[key] !== undefined) {
+        const val = parseFloat(req.query[key]);
+        if (Number.isNaN(val))
+          return res
+            .status(400)
+            .json({ error: `${key} query param must be a number` });
+        opts[key] = val;
+      }
     }
+    const result = await computeTrueSkillFromMatches(
+      matches,
+      allRows,
+      identityMap,
+      opts,
+    );
+
+    const rankMap = getAllRanksMap(db);
+
+    result.players = result.players.map((p) => {
+      const playerRanks = rankMap.get(p.identityKey) || {};
+      return {
+        ...p,
+        soloQueueRank: playerRanks["RANKED_SOLO_5x5"] || null,
+        flexQueueRank: playerRanks["RANKED_FLEX_SR"] || null,
+        premade5x5Rank: playerRanks["RANKED_PREMADE_5x5"] || null,
+      };
+    });
+
+    result.funFacts = computeFunFacts(result);
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to compute TrueSkill rankings" });
   }
-  const result = computeTrueSkillFromMatches(matches, allRows, identityMap, opts);
-
-  const rankMap = getAllRanksMap(db);
-
-  result.players = result.players.map((p) => {
-    const playerRanks = rankMap.get(p.identityKey) || {};
-    return {
-      ...p,
-      soloQueueRank: playerRanks['RANKED_SOLO_5x5'] || null,
-      flexQueueRank: playerRanks['RANKED_FLEX_SR'] || null,
-      premade5x5Rank: playerRanks['RANKED_PREMADE_5x5'] || null,
-    };
-  });
-
-  result.funFacts = computeFunFacts(result);
-  res.json(result);
 });
 
 
 // Read in filter preset
-const fs = require('fs'); // add if not already imported
-
 const PRESETS_DIR = path.join(__dirname, 'data', 'presets');
 
 function getAvailablePresets() {
@@ -398,30 +413,6 @@ app.get('/api/presets', (req, res) => {
   res.json({ presets: getAvailablePresets() });
 });
 
-app.get('/api/presets/:id', (req, res) => {
-  const match = getAvailablePresets().find((p) => p.id === req.params.id);
-  if (!match) return res.status(404).json({ error: 'Preset not found' });
-  const text = fs.readFileSync(path.join(PRESETS_DIR, match.id), 'utf-8');
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-
-  const hasAnyCommaFormat = lines.some((l) => l.includes(','));
-
-  if (!hasAnyCommaFormat) {
-    const names = lines.filter((l) => l.toLowerCase() !== 'name');
-    return res.json({ id: match.id, label: match.label, names, captains: [] });
-  }
-
-  const names = [];
-  const captains = [];
-  for (const line of lines) {
-    if (/^name\s*,\s*captain/i.test(line)) continue; // tolerate a "name,captain" header row
-    const [namePart, flagPart] = line.split(',').map((s) => s.trim());
-    if (!namePart) continue;
-    names.push(namePart);
-    if (flagPart === '1') captains.push(namePart);
-  }
-  res.json({ id: match.id, label: match.label, names, captains });
-});
 
 // Comparing TrueSkill against draft data
 const {
@@ -429,88 +420,103 @@ const {
   computeTeamBalance,
 } = require("./src/lib/draft-analysis");
 
-app.get("/api/draft-analysis", (req, res) => {
-  const identityMap = loadIdentityMap(db);
-  const allRows = resolveIdentities(getAllRows(), identityMap);
-  const matches = getMatches();
+app.get("/api/draft-analysis", async (req, res) => {
+  try {
+    const identityMap = loadIdentityMap(db);
+    const allRows = resolveIdentities(getAllRows(), identityMap);
+    const matches = getMatches();
 
-  const trueskillResult = computeTrueSkillFromMatches(
-    matches,
-    allRows,
-    identityMap,
-    {},
-  );
-  const { mu, sigma, conservativeK } = trueskillResult.params;
-  const defaultConservativeRating =
-    Math.round((mu - conservativeK * sigma) * 1000) / 1000;
+    const trueskillResult = await computeTrueSkillFromMatches(
+      matches,
+      allRows,
+      identityMap,
+      {},
+    );
+    const { mu, sigma, conservativeK } = trueskillResult.params;
+    const defaultConservativeRating =
+      Math.round((mu - conservativeK * sigma) * 1000) / 1000;
 
-  const { picks, captainDraftIQ } = computeDraftIQ(
-    allRows,
-    trueskillResult.tournamentEntryRatings,
-    trueskillResult.tournamentExitRatings, // NEW
-    defaultConservativeRating,
-  );
-  const teamBalance = computeTeamBalance(
-    allRows,
-    trueskillResult.tournamentEntryRatings,
-    trueskillResult.games,
-    identityMap,
-    defaultConservativeRating,
-  );
+    const { picks, captainDraftIQ } = computeDraftIQ(
+      allRows,
+      trueskillResult.tournamentEntryRatings,
+      trueskillResult.tournamentExitRatings, // NEW
+      defaultConservativeRating,
+    );
+    const teamBalance = computeTeamBalance(
+      allRows,
+      trueskillResult.tournamentEntryRatings,
+      trueskillResult.games,
+      identityMap,
+      defaultConservativeRating,
+    );
 
-  // Attach each team-instance's own games directly, so the client can
-  // show a match list per row without needing a second endpoint or
-  // re-deriving identity resolution client-side.
-  const resolve = (name) => {
-    const identity = identityMap.get(name);
-    return identity ? identity.identityKey : name;
-  };
-  const teamBalanceWithGames = teamBalance.map((team) => {
-    const captainKey = resolve(team.captain);
-    const teamGames = trueskillResult.games
-      .filter(
-        (g) =>
-          g.year === team.year &&
-          g.tournament === team.tournament &&
-          (g.team1.key === captainKey || g.team2.key === captainKey),
-      )
-      .map((g) => {
-        const isTeam1 = g.team1.key === captainKey;
-        const own = isTeam1 ? g.team1 : g.team2;
-        const opp = isTeam1 ? g.team2 : g.team1;
-        const outcome =
-          g.winner === "draw"
-            ? "draw"
-            : (g.winner === "team1") === isTeam1
-              ? "win"
-              : "loss";
-        return {
-          opponentName: opp.name,
-          outcome,
-          matchStage: g.matchStage,
-          predictedWinProb: isTeam1
-            ? g.predictedWinProbTeam1
-            : Math.round((1 - g.predictedWinProbTeam1) * 1000) / 1000,
-        };
-      });
-    return { ...team, matches: teamGames };
-  });
+    // Attach each team-instance's own games directly, so the client can
+    // show a match list per row without needing a second endpoint or
+    // re-deriving identity resolution client-side.
+    const resolve = (name) => {
+      const identity = identityMap.get(name);
+      return identity ? identity.identityKey : name;
+    };
+    const teamBalanceWithGames = teamBalance.map((team) => {
+      const captainKey = resolve(team.captain);
+      const teamGames = trueskillResult.games
+        .filter(
+          (g) =>
+            g.year === team.year &&
+            g.tournament === team.tournament &&
+            (g.team1.key === captainKey || g.team2.key === captainKey),
+        )
+        .map((g) => {
+          const isTeam1 = g.team1.key === captainKey;
+          const own = isTeam1 ? g.team1 : g.team2;
+          const opp = isTeam1 ? g.team2 : g.team1;
+          const outcome =
+            g.winner === "draw"
+              ? "draw"
+              : (g.winner === "team1") === isTeam1
+                ? "win"
+                : "loss";
+          return {
+            opponentName: opp.name,
+            outcome,
+            matchStage: g.matchStage,
+            predictedWinProb: isTeam1
+              ? g.predictedWinProbTeam1
+              : Math.round((1 - g.predictedWinProbTeam1) * 1000) / 1000,
+          };
+        });
+      return { ...team, matches: teamGames };
+    });
 
-  res.json({ captainDraftIQ, picks, teamBalance: teamBalanceWithGames });
+    res.json({ captainDraftIQ, picks, teamBalance: teamBalanceWithGames });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to compute draft analysis" });
+  }
 });
 
-app.get("/api/player/:key", (req, res) => {
-  const identityMap = loadIdentityMap(db);
-  const allRows = resolveIdentities(getAllRows(), identityMap);
-  const matches = getMatches();
-  const result = computeTrueSkillFromMatches(matches, allRows, identityMap, {});
+app.get("/api/player/:key", async (req, res) => {
+  try {
+    const identityMap = loadIdentityMap(db);
+    const allRows = resolveIdentities(getAllRows(), identityMap);
+    const matches = getMatches();
+    const result = await computeTrueSkillFromMatches(
+      matches,
+      allRows,
+      identityMap,
+      {},
+    );
 
-  const key = decodeURIComponent(req.params.key);
+    const key = decodeURIComponent(req.params.key);
 
-  const rankMap = getRankMap(db);
-  const player = result.players.find((p) => p.identityKey === key);
-  if (!player) return res.status(404).json({ error: 'Player not found' });
-  res.json({ ...player, soloQueueRank: rankMap.get(player.identityKey) || null });
+    const rankMap = getRankMap(db);
+    const player = result.players.find((p) => p.identityKey === key);
+    if (!player) return res.status(404).json({ error: "Player not found" });
+    res.json({ ...player, soloQueueRank: rankMap.get(player.identityKey) || null });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to load player profile" });
+  }
 });
 
 app.get("/api/meta", (req, res) => {
@@ -622,90 +628,95 @@ function findUpcomingRosterFile() {
   return files.length ? files[0] : null;
 }
 
-app.get('/api/upcoming-roster', (req, res) => {
-  const filename = findUpcomingRosterFile();
-  if (!filename) return res.status(404).json({ exists: false });
+app.get('/api/upcoming-roster', async (req, res) => {
+  try {
+    const filename = findUpcomingRosterFile();
+    if (!filename) return res.status(404).json({ exists: false });
 
-  const text = fs.readFileSync(path.join(UPCOMING_ROSTER_DIR, filename), 'utf-8');
-  const [header, ...lines] = parseCsv(text); // reuses ingest-matches.js's parser -- export it from there if not already
-  const idx = { captain: header.indexOf('Captain'), player: header.indexOf('Player'), pickOrder: header.indexOf('Pick Order') };
-  for (const [key, i] of Object.entries(idx)) {
-    if (i === -1) return res.status(500).json({ error: `Missing expected column "${key}" in ${filename}` });
-  }
+    const text = fs.readFileSync(path.join(UPCOMING_ROSTER_DIR, filename), 'utf-8');
+    const [header, ...lines] = parseCsv(text); // reuses ingest-matches.js's parser -- export it from there if not already
+    const idx = { captain: header.indexOf('Captain'), player: header.indexOf('Player'), pickOrder: header.indexOf('Pick Order') };
+    for (const [key, i] of Object.entries(idx)) {
+      if (i === -1) return res.status(500).json({ error: `Missing expected column "${key}" in ${filename}` });
+    }
 
-  const identityMap = loadIdentityMap(db);
-  const resolve = (name) => {
-    const identity = identityMap.get(name);
-    return identity
-      ? { identityKey: identity.identityKey, displayName: identity.displayName, profileUrl: identity.profileUrl, identified: identity.resolved }
-      : { identityKey: name, displayName: name, profileUrl: null, identified: false };
-  };
-
-  // Current, present-day rating -- this hasn't happened yet, so there's
-  // no historical "entering this tournament" snapshot to use the way
-  // Draft IQ does for past events. Whatever a player's rating is RIGHT
-  // NOW is the honest proxy for what they're entering this draft with.
-  const allRows = resolveIdentities(getAllRows(), identityMap);
-  const matches = getMatches();
-  const trueskillResult = computeTrueSkillFromMatches(matches, allRows, identityMap, {});
-  const ratingByKey = new Map(trueskillResult.players.map((p) => [p.identityKey, p]));
-  const { mu, sigma, conservativeK } = trueskillResult.params;
-  const defaultRating = { mu, sigma, conservativeRating: round3(mu - conservativeK * sigma), games: 0 };
-
-  const rows = lines.filter((r) => r[idx.captain]).map((r) => {
-    const captain = resolve(r[idx.captain]);
-    const player = resolve(r[idx.player]);
-    const pickOrder = parseInt(r[idx.pickOrder], 10);
-    const rating = ratingByKey.get(player.identityKey) || null; // null = never played a rated game -- genuinely unrated, not just "no CSV match"
-    return { captain, player, pickOrder, rating };
-  });
-
-  // Rank the whole draft class by current rating for Draft IQ purposes.
-  // Players with no rating at all (never played) can't be meaningfully
-  // ranked -- they're excluded from the ranking pool entirely, same
-  // treatment as an unresolved/never-seen player anywhere else in this
-  // app, but still shown on their team's roster with no rank/value.
-  const rated = rows.filter((r) => r.rating).sort((a, b) => b.rating.conservativeRating - a.rating.conservativeRating);
-  const entryRankByKey = new Map(rated.map((r, i) => [r.player.identityKey, i + 1]));
-
-  const byCaptain = new Map();
-  for (const row of rows) {
-    const key = row.captain.identityKey;
-    if (!byCaptain.has(key)) byCaptain.set(key, { captain: row.captain, players: [] });
-    const entryRank = entryRankByKey.get(row.player.identityKey) ?? null;
-    byCaptain.get(key).players.push({
-      ...row.player,
-      pickOrder: row.pickOrder,
-      mu: row.rating ? row.rating.mu : null,
-      sigma: row.rating ? row.rating.sigma : null,
-      conservativeRating: row.rating ? row.rating.conservativeRating : null,
-      games: row.rating ? row.rating.games : 0,
-      entryRank,
-      value: entryRank !== null ? entryRank - row.pickOrder : null
-    });
-  }
-
-  const teams = [...byCaptain.values()].map((team) => {
-    const ratedPlayers = team.players.filter((p) => p.conservativeRating !== null);
-    const avgEntryRating = ratedPlayers.length
-      ? round3(ratedPlayers.reduce((s, p) => s + p.conservativeRating, 0) / ratedPlayers.length)
-      : null;
-    const valued = team.players.filter((p) => p.value !== null);
-    const draftIQ = valued.length
-      ? round3(valued.reduce((s, p) => s + p.value, 0) / valued.length)
-      : null;
-    return {
-      captain: team.captain,
-      avgEntryRating,
-      ratedCount: ratedPlayers.length,
-      totalCount: team.players.length,
-      draftIQ,
-      roster: team.players.sort((a, b) => a.pickOrder - b.pickOrder)
+    const identityMap = loadIdentityMap(db);
+    const resolve = (name) => {
+      const identity = identityMap.get(name);
+      return identity
+        ? { identityKey: identity.identityKey, displayName: identity.displayName, profileUrl: identity.profileUrl, identified: identity.resolved }
+        : { identityKey: name, displayName: name, profileUrl: null, identified: false };
     };
-  });
-  teams.sort((a, b) => (b.avgEntryRating ?? -Infinity) - (a.avgEntryRating ?? -Infinity));
 
-  res.json({ exists: true, title: titleFromFilename(filename), teams });
+    // Current, present-day rating -- this hasn't happened yet, so there's
+    // no historical "entering this tournament" snapshot to use the way
+    // Draft IQ does for past events. Whatever a player's rating is RIGHT
+    // NOW is the honest proxy for what they're entering this draft with.
+    const allRows = resolveIdentities(getAllRows(), identityMap);
+    const matches = getMatches();
+    const trueskillResult = await computeTrueSkillFromMatches(matches, allRows, identityMap, {});
+    const ratingByKey = new Map(trueskillResult.players.map((p) => [p.identityKey, p]));
+    const { mu, sigma, conservativeK } = trueskillResult.params;
+    const defaultRating = { mu, sigma, conservativeRating: round3(mu - conservativeK * sigma), games: 0 };
+
+    const rows = lines.filter((r) => r[idx.captain]).map((r) => {
+      const captain = resolve(r[idx.captain]);
+      const player = resolve(r[idx.player]);
+      const pickOrder = parseInt(r[idx.pickOrder], 10);
+      const rating = ratingByKey.get(player.identityKey) || null; // null = never played a rated game -- genuinely unrated, not just "no CSV match"
+      return { captain, player, pickOrder, rating };
+    });
+
+    // Rank the whole draft class by current rating for Draft IQ purposes.
+    // Players with no rating at all (never played) can't be meaningfully
+    // ranked -- they're excluded from the ranking pool entirely, same
+    // treatment as an unresolved/never-seen player anywhere else in this
+    // app, but still shown on their team's roster with no rank/value.
+    const rated = rows.filter((r) => r.rating).sort((a, b) => b.rating.conservativeRating - a.rating.conservativeRating);
+    const entryRankByKey = new Map(rated.map((r, i) => [r.player.identityKey, i + 1]));
+
+    const byCaptain = new Map();
+    for (const row of rows) {
+      const key = row.captain.identityKey;
+      if (!byCaptain.has(key)) byCaptain.set(key, { captain: row.captain, players: [] });
+      const entryRank = entryRankByKey.get(row.player.identityKey) ?? null;
+      byCaptain.get(key).players.push({
+        ...row.player,
+        pickOrder: row.pickOrder,
+        mu: row.rating ? row.rating.mu : null,
+        sigma: row.rating ? row.rating.sigma : null,
+        conservativeRating: row.rating ? row.rating.conservativeRating : null,
+        games: row.rating ? row.rating.games : 0,
+        entryRank,
+        value: entryRank !== null ? entryRank - row.pickOrder : null
+      });
+    }
+
+    const teams = [...byCaptain.values()].map((team) => {
+      const ratedPlayers = team.players.filter((p) => p.conservativeRating !== null);
+      const avgEntryRating = ratedPlayers.length
+        ? round3(ratedPlayers.reduce((s, p) => s + p.conservativeRating, 0) / ratedPlayers.length)
+        : null;
+      const valued = team.players.filter((p) => p.value !== null);
+      const draftIQ = valued.length
+        ? round3(valued.reduce((s, p) => s + p.value, 0) / valued.length)
+        : null;
+      return {
+        captain: team.captain,
+        avgEntryRating,
+        ratedCount: ratedPlayers.length,
+        totalCount: team.players.length,
+        draftIQ,
+        roster: team.players.sort((a, b) => a.pickOrder - b.pickOrder)
+      };
+    });
+    teams.sort((a, b) => (b.avgEntryRating ?? -Infinity) - (a.avgEntryRating ?? -Infinity));
+
+    res.json({ exists: true, title: titleFromFilename(filename), teams });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to load upcoming roster" });
+  }
 });
 // Match data endpoint
 function getRawMatchColumns() {
@@ -734,32 +745,37 @@ const MATCH_COLUMN_DISPLAY_NAMES = {
   csv_row_index: "CSV Row Index", // internal-ish, but included for completeness if ever un-hidden
 };
 
-app.get("/api/raw-matches", (req, res) => {
-  const { columns, rows } = getRawMatchRows();
+app.get("/api/raw-matches", async (req, res) => {
+  try {
+    const { columns, rows } = getRawMatchRows();
 
-  const identityMap = loadIdentityMap(db);
-  const allRows = resolveIdentities(getAllRows(), identityMap);
-  const matches = getMatches();
-  const trueskillResult = computeTrueSkillFromMatches(
-    matches,
-    allRows,
-    identityMap,
-    {},
-  );
-  const gameByRowIndex = new Map(
-    trueskillResult.games.map((g) => [g.csvRowIndex, g]),
-  );
+    const identityMap = loadIdentityMap(db);
+    const allRows = resolveIdentities(getAllRows(), identityMap);
+    const matches = getMatches();
+    const trueskillResult = await computeTrueSkillFromMatches(
+      matches,
+      allRows,
+      identityMap,
+      {},
+    );
+    const gameByRowIndex = new Map(
+      trueskillResult.games.map((g) => [g.csvRowIndex, g]),
+    );
 
-  const enriched = rows.map((row) => {
-    const game = gameByRowIndex.get(row.csv_row_index);
-    return {
-      ...row,
-      _team1Roster: game?.team1 ?? null,
-      _team2Roster: game?.team2 ?? null,
-    };
-  });
+    const enriched = rows.map((row) => {
+      const game = gameByRowIndex.get(row.csv_row_index);
+      return {
+        ...row,
+        _team1Roster: game?.team1 ?? null,
+        _team2Roster: game?.team2 ?? null,
+      };
+    });
 
-  res.json({ columns, rows: enriched });
+    res.json({ columns, rows: enriched });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to enrich match data" });
+  }
 });
 
 app.get("/api/raw-matches.csv", (req, res) => {

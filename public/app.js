@@ -1,87 +1,39 @@
+import { initTheme } from "./js/theme.js";
+import {
+  round3,
+  escapeHtml,
+  renderNameWithTag,
+  renderPlayerCell,
+  renderRankBadge,
+  renderTrueSkillValue,
+  renderSoloQueueRank,
+  soloQueueSortValueClient,
+  setRankTiers,
+  parseNameList,
+  seasonRankLocal,
+} from "./js/utils.js";
+import { initPlayerProfile } from "./js/player-profile.js";
+import { createTabTable, coerceNumericColumns } from "./js/table-utils.js";
+
+let groupColName = "Player";
+let latestStats = [];
+let trueskillLoaded = false;
+let latestTrueskillPlayers = [];
+let draftScatterBuilt = false;
+let draftAnalysisLoaded = false;
+let latestDraftAnalysis = null;
+let mockDraftPool = [];
+let draftPicks = new Map();
+let numCaptains = 8;
+let picksPerCaptain = 4;
+let mockCaptains = [];
+let draftDataLoaded = false;
+let matchDataLoaded = false;
+let upcomingRosterLoaded = false;
+
 // ==================== Theme toggle ====================
-// Dark is the original look; light is the new addition. Default follows
-// the OS/browser color-scheme preference; an explicit manual choice
-// (stored in localStorage) overrides that from then on. Applied
-// immediately (not inside the async init below) so there's no flash of
-// the wrong theme while data is still loading.
-
-const THEME_STORAGE_KEY = "lol-draft-theme";
-const themeToggleBtn = document.getElementById("themeToggle");
-
-function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
-  themeToggleBtn.textContent = theme === "light" ? "☀️" : "🌙";
-}
-
-function currentTheme() {
-  return document.documentElement.getAttribute("data-theme") || "dark";
-}
-
-(function initTheme() {
-  const stored = localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === "light" || stored === "dark") {
-    applyTheme(stored);
-    return;
-  }
-  // No explicit choice saved yet — follow the system preference.
-  const prefersLight =
-    window.matchMedia &&
-    window.matchMedia("(prefers-color-scheme: light)").matches;
-  applyTheme(prefersLight ? "light" : "dark");
-})();
-
-// If the user hasn't manually overridden the theme, keep following the
-// system preference live (e.g. their OS switches at sunset).
-if (window.matchMedia) {
-  window
-    .matchMedia("(prefers-color-scheme: light)")
-    .addEventListener("change", (e) => {
-      if (localStorage.getItem(THEME_STORAGE_KEY)) return; // manual override wins
-      applyTheme(e.matches ? "light" : "dark");
-    });
-}
-
-themeToggleBtn.addEventListener("click", () => {
-  const next = currentTheme() === "light" ? "dark" : "light";
-  applyTheme(next);
-  localStorage.setItem(THEME_STORAGE_KEY, next);
-});
-
-function round3(x) {
-  return Math.round(x * 1000) / 1000;
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-// Splits a "Name#Tag" style string into a bold name + muted tag
-// subtitle. Falls back to showing the whole string as the name with no
-// subtitle if there's no '#' to split on (unidentified/tagless names).
-function renderNameWithTag(fullName) {
-  const idx = fullName.lastIndexOf("#");
-  if (idx === -1)
-    return `<span class="player-name">${escapeHtml(fullName)}</span>`;
-  const name = fullName.slice(0, idx);
-  const tag = fullName.slice(idx);
-  return `<span class="player-name">${escapeHtml(name)}</span><span class="player-tag">${escapeHtml(tag)}</span>`;
-}
-function renderPlayerCell(row) {
-  const fullName = row.group || row.displayName || "";
-  const identityKey = row.identityKey || row._playerIdentityKey || null;
-  const nameHtml = renderNameWithTag(fullName);
-  if (identityKey) {
-    return `<a href="#" class="player-link" data-player-key="${escapeHtml(identityKey)}" title="View profile">${nameHtml}</a>`;
-  }
-  if (row.profileUrl) {
-    return `<a href="${escapeHtml(row.profileUrl)}" target="_blank" rel="noopener noreferrer" class="player-link" title="View on op.gg">${nameHtml}</a>`;
-  }
-  return nameHtml;
-}
+// The theme initialization now lives in its own module so the app entry
+// point can focus on orchestration rather than UI bootstrapping.
 // TrueSkill Fun Facts
 function renderFunFactsHtml(ff) {
   if (!ff) return "";
@@ -161,806 +113,7 @@ document.addEventListener("click", (e) => {
   toggle.setAttribute("aria-expanded", String(!isOpen));
   toggle.textContent = (isOpen ? "▶" : "▼") + " Fun facts";
 });
-// Modal Player Profile
-const playerProfileModal = document.getElementById("playerProfileModal");
-const playerProfileCloseBtn = document.getElementById("playerProfileClose");
-const playerProfileContent = document.getElementById("playerProfileContent");
-const playerProfileTitle = document.getElementById("playerProfileTitle");
-
-function closePlayerProfile() {
-  if (!playerProfileModal) return;
-  playerProfileModal.classList.remove("open");
-  playerProfileModal.setAttribute("aria-hidden", "true");
-  playerProfileContent.innerHTML = "Loading…";
-}
-
-function renderPlayerProfileContent(player) {
-  const title = player?.group || player?.identityKey || "Player";
-  const titleIdx = title.lastIndexOf("#");
-  const titleHtml =
-    titleIdx === -1
-      ? escapeHtml(title)
-      : `${escapeHtml(title.slice(0, titleIdx))}<br><span class="stat-formula">${escapeHtml(title.slice(titleIdx))}</span>`;
-
-  const summaryRows = [
-    `<div class="profile-summary">`,
-    `<span><strong>${titleHtml}</strong></span>`,
-    `<span>${player?.identified ? "Identified" : "Unidentified"}</span>`,
-    player?.profileUrl
-      ? `<a href="${escapeHtml(player.profileUrl)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>`
-      : "",
-    `</div>`,
-  ]
-    .filter(Boolean)
-    .join("");
-
-  const statsRows = [
-    `<div class="profile-summary">`,
-    `<span>Games: ${player?.games ?? "–"}</span>`,
-    `<span>Wins: ${player?.wins ?? "–"}</span>`,
-    `<span>Losses: ${player?.losses ?? "–"}</span>`,
-    `</div>`,
-  ].join("");
-
-  const ratingRows = [
-    `<div class="profile-summary">`,
-    `<span>TrueSkill: ${renderRankBadge(player.conservativeRating)} ${player?.conservativeRating ?? "–"} <span class="stat-formula">(μ ${player?.mu ?? "–"} − ${player?.conservativeK ?? 1}σ)</span></span>`,
-    `<span>μ: ${player?.mu ?? "–"}</span>`,
-    `<span>σ: ${player?.sigma ?? "–"}</span>`,
-    `</div>`,
-  ].join("");
-
-  const history = player?.history || [];
-  const conservativeK = player?.conservativeK ?? 3;
-
-  const historyRows = history
-    .map((entry, idx) => {
-      const outcomeClass =
-        entry.outcome === "win"
-          ? "outcome-win"
-          : entry.outcome === "loss"
-            ? "outcome-loss"
-            : "outcome-draw";
-      const rosterId = `roster-detail-${idx}`;
-
-      const rosterList = (team) =>
-        (team?.roster || [])
-          .map(
-            (m) =>
-              `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating)}</span></li>`,
-          )
-          .join("");
-
-      const changeClass =
-        entry.ratingChange > 0
-          ? "outcome-win"
-          : entry.ratingChange < 0
-            ? "outcome-loss"
-            : "";
-      const changeLabel =
-        entry.ratingChange > 0
-          ? `+${entry.ratingChange}`
-          : `${entry.ratingChange}`;
-
-      return `<tr>
-      <td><button class="roster-toggle" data-target="${rosterId}" aria-expanded="false">▶</button></td>
-      <td>${escapeHtml(entry.year ?? "–")}</td>
-      <td>${escapeHtml(entry.tournament || "–")}${entry.matchStage ? ` <span class="match-stage">(${escapeHtml(entry.matchStage)})</span>` : ""}</td>
-      <td>${escapeHtml(entry.ownTeam?.name || "–")}</td>
-      <td>${escapeHtml(entry.opponent || "–")}</td>
-      <td class="${outcomeClass}">${escapeHtml(entry.outcome || "–")}</td>
-      <td>${Math.round((entry.predictedWinProb ?? 0) * 100)}%</td>
-      <td>${entry.ownTeam?.avgConservativeRating ?? "–"}</td>
-      <td>${entry.opponentTeam?.avgConservativeRating ?? "–"}</td>
-      <td>${renderTrueSkillValue(entry.conservativeRating)}</td>
-      <td class="${changeClass}">${changeLabel}</td>
-      <td>${entry.mu ?? "–"}</td>
-      <td>${entry.sigma ?? "–"}</td>
-    </tr>
-    <tr id="${rosterId}" class="roster-detail-row" hidden>
-	    <td colspan="12">
-	      <div class="roster-detail">
-	        <div>
-	          <strong>${escapeHtml(entry.ownTeam?.name || "Your team")} - </strong> avg TrueSkill: ${entry.ownTeam?.avgConservativeRating ?? "–"} (${entry.ownTeam?.avgMu ?? "-"})
-	          <ul>${rosterList(entry.ownTeam)}</ul>
-	        </div>
-	        <div>
-	          <strong>${escapeHtml(entry.opponentTeam?.name || "Opponent")} - </strong> avg TrueSkill: ${entry.opponentTeam?.avgConservativeRating ?? "–"} (${entry.opponentTeam?.avgMu ?? "-"})
-	          <ul>${rosterList(entry.opponentTeam)}</ul>
-	        </div>
-	      </div>
-	    </td>
-	  </tr>`;
-    })
-    .join("");
-
-  playerProfileTitle.textContent = title;
-  return [
-    summaryRows,
-    statsRows,
-    ratingRows,
-    buildChartHtml(history),
-    historyRows
-      ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Captain</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill</th><th>Change</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
-      : "<p>No match history available.</p>",
-  ].join("");
-}
-
-// Returns an inline SVG (as a string, to fit the innerHTML-based render
-// above) plotting TrueSkill over each game in order.
-
-function buildChartHtml(history) {
-  if (!history.length) {
-    return '<p class="profile-chart-empty">No games recorded yet.</p>';
-  }
-
-  const width = 900,
-    height = 260,
-    padL = 45,
-    padR = 15,
-    padT = 15,
-    padB = 30;
-  const plotW = width - padL - padR,
-    plotH = height - padT - padB;
-
-  const points = history.map((h, i) => ({
-    x: i + 1,
-    trueskill: h.conservativeRating,
-    mu: h.mu,
-    sigma: h.sigma,
-    outcome: h.outcome,
-    opponent: h.opponent,
-    year: h.year,
-    tournament: h.tournament,
-  }));
-
-  const xScale = (x) => padL + ((x - 1) / Math.max(1, xMax - 1)) * plotW;
-  const yScale = (y) =>
-    padT +
-    plotH -
-    ((y - (yMin - yPad)) / (yMax + yPad - (yMin - yPad))) * plotH;
-
-  const xMax = points.length;
-  const yMin = Math.min(...points.map((p) => p.trueskill));
-  const yMax = Math.max(...points.map((p) => p.trueskill));
-  const yPad = (yMax - yMin) * 0.05 || 1;
-
-  // Define size and spacing for the badges
-  const badgeSize = 16;
-  const badgeOffset = 6; // How many pixels above the dot the badge should float
-
-  const badges = points
-    .map((p) => {
-      // Re-use your existing logic to determine the tier
-      const tier = getRankTier(p.trueskill);
-      const tierName = tier && tier.name ? tier.name.toLowerCase() : "unranked";
-      const iconPath = `/icons/${tierName}.webp`;
-
-      // Calculate center of the dot
-      const cx = xScale(p.x);
-      const cy = yScale(p.trueskill);
-
-      // SVG <image> x/y coordinates map to the top-left corner of the image
-      const imgX = cx - badgeSize / 2;
-      const imgY = cy - badgeSize - badgeOffset;
-
-      return `
-      <image href="${iconPath}" x="${imgX}" y="${imgY}" width="${badgeSize}" height="${badgeSize}">
-        <title>${tier ? tier.name : "Unranked"} Rank</title>
-      </image>
-    `;
-    })
-    .join("");
-
-  const trueskillPath = points
-    .map(
-      (p, i) => `${i === 0 ? "M" : "L"} ${xScale(p.x)} ${yScale(p.trueskill)}`,
-    )
-    .join(" ");
-
-  const outcomeColor = { win: "#2e7d32", loss: "#c62828" };
-  const dots = points
-    .map(
-      (p) => `
-    <circle cx="${xScale(p.x)}" cy="${yScale(p.trueskill)}" r="3.5" fill="${outcomeColor[p.outcome] || "#888"}">
-    <title>${escapeHtml(`${p.year} ${p.tournament}${p.matchStage ? " (" + p.matchStage + ")" : ""} vs ${p.opponent}: ${p.outcome} (TrueSkill = ${p.trueskill}, μ=${p.mu}, σ=${p.sigma})`)}</title>
-    </circle>
-  `,
-    )
-    .join("");
-
-  const ticks = 4;
-  const gridlines = Array.from({ length: ticks + 1 }, (_, i) => {
-    const val = yMin - yPad + (yMax + yPad - (yMin - yPad)) * (i / ticks);
-    const y = yScale(val);
-    return `
-      <line x1="${padL}" y1="${y}" x2="${width - padR}" y2="${y}" stroke="#eee" stroke-width="1" />
-      <text x="${padL - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="#888">${val.toFixed(1)}</text>
-    `;
-  }).join("");
-
-  return `
-    <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" class="draft-scatter-svg">
-      ${gridlines}
-      <path d="${trueskillPath}" fill="none" stroke="#2b6cb0" stroke-width="2" />
-      ${dots}
-      ${badges} <!-- ADDED HERE -->
-      <text x="${padL}" y="${height - 6}" font-size="10" fill="#888">Game 1</text>
-      <text x="${width - padR}" y="${height - 6}" text-anchor="end" font-size="10" fill="#888">Game ${xMax}</text>
-    </svg>
-    <div class="profile-chart-legend">
-      <span><i style="background:#2b6cb0"></i> TrueSkill (skill estimate)</span>
-      <span><i style="background:#2e7d32"></i> win</span>
-      <span><i style="background:#c62828"></i> loss</span>
-    </div>
-  `;
-}
-
-async function openPlayerProfile(identityKey) {
-  if (!identityKey || !playerProfileModal) return;
-  playerProfileModal.classList.add("open");
-  playerProfileModal.setAttribute("aria-hidden", "false");
-  playerProfileContent.innerHTML = "Loading…";
-
-  try {
-    const res = await fetch(`/api/player/${encodeURIComponent(identityKey)}`);
-    if (!res.ok) throw new Error("Player profile not found");
-    const player = await res.json();
-    playerProfileContent.innerHTML = renderPlayerProfileContent(player);
-  } catch (err) {
-    playerProfileContent.innerHTML = `<p>${escapeHtml(err.message || "Unable to load player profile")}</p>`;
-  }
-}
-
-function renderPlayerCell(row) {
-  const name = escapeHtml(row.group || row.displayName || "");
-  const identityKey = row.identityKey || row._playerIdentityKey || null;
-  if (identityKey) {
-    return `<a href="#" class="player-link" data-player-key="${escapeHtml(identityKey)}">${name}</a>`;
-  }
-  if (row.profileUrl) {
-    return `<a href="${escapeHtml(row.profileUrl)}" target="_blank" rel="noopener noreferrer" class="player-link" title="View on op.gg">${name}</a>`;
-  }
-  return name;
-}
-
-document.addEventListener("click", (event) => {
-  const link = event.target.closest(".player-link[data-player-key]");
-  if (!link) return;
-  event.preventDefault();
-  openPlayerProfile(link.dataset.playerKey);
-});
-
-document.addEventListener("click", (e) => {
-  const toggle = e.target.closest(".roster-toggle");
-  if (!toggle) return;
-  const target = document.getElementById(toggle.dataset.target);
-  if (!target) return;
-  const isOpen = !target.hidden;
-  target.hidden = isOpen;
-  toggle.setAttribute("aria-expanded", String(!isOpen));
-  toggle.textContent = isOpen ? "▶" : "▼";
-});
-
-playerProfileCloseBtn?.addEventListener("click", closePlayerProfile);
-playerProfileModal?.addEventListener("click", (event) => {
-  if (
-    event.target.classList.contains("player-profile-backdrop") ||
-    event.target.dataset.close === "true"
-  ) {
-    closePlayerProfile();
-  }
-});
-document.addEventListener("keydown", (event) => {
-  if (
-    event.key === "Escape" &&
-    playerProfileModal?.classList.contains("open")
-  ) {
-    closePlayerProfile();
-  }
-});
-
-// ==================== Column configuration ====================
-
-function formatCell(value, col) {
-  if (value === null || value === undefined) return "–";
-  if (col.type === "number" && typeof value === "number") {
-    if (col.percentage) return (value * 100).toFixed(col.decimals) + "%";
-    return value.toFixed(col.decimals);
-  }
-  return String(value);
-}
-
-// ==================== Generic sort helper ====================
-
-function sortRows(rows, columns, sortColumn, sortDirection) {
-  const col = columns.find((c) => c.key === sortColumn);
-  const dir = sortDirection === "asc" ? 1 : -1;
-  return [...rows].sort((a, b) => {
-    if (sortColumn === "latestGameTournament") {
-      const parseTournamentValue = (row) => {
-        const raw = String(row.latestGameTournament || "").trim();
-        const match = raw.match(/^(winter|summer)\s*(\d{4})?$/i);
-        if (!match) return { year: 0, seasonRank: 2, raw };
-        return {
-          year: parseInt(match[2] || "0", 10),
-          seasonRank: match[1].toLowerCase() === "winter" ? 0 : 1,
-          raw,
-        };
-      };
-      const av = parseTournamentValue(a);
-      const bv = parseTournamentValue(b);
-      if (av.year !== bv.year) return dir * (bv.year - av.year);
-      if (av.seasonRank !== bv.seasonRank) return av.seasonRank - bv.seasonRank;
-      return dir * String(av.raw).localeCompare(String(bv.raw));
-    }
-
-    const av =
-      col && typeof col.sortValue === "function"
-        ? col.sortValue(a)
-        : a[sortColumn];
-    const bv =
-      col && typeof col.sortValue === "function"
-        ? col.sortValue(b)
-        : b[sortColumn];
-    if (av === null || av === undefined) return 1;
-    if (bv === null || bv === undefined) return -1;
-    if (typeof av === "number" || typeof bv === "number") {
-      return dir * (Number(av) - Number(bv));
-    }
-    if (col && col.type === "string")
-      return dir * String(av).localeCompare(String(bv));
-    if (typeof av === "string" || typeof bv === "string") {
-      return dir * String(av).localeCompare(String(bv));
-    }
-    return dir * (av - bv);
-  });
-}
-
-// ==================== Per-column filters (regex for strings, inequality for numbers) ====================
-// filterState shape: { [colKey]: { type: 'regex', pattern } | { type: 'gt'|'lt', value } | { type: 'between', min, max } }
-
-function rowPassesFilter(row, col, filter) {
-  if (!filter) return true;
-  const value = row[col.key];
-
-  if (filter.type === "checkbox") {
-    if (!filter.values || filter.values.length === 0) return true;
-    return filter.values.includes(String(value ?? ""));
-  }
-
-  if (filter.type === "regex") {
-    if (!filter.pattern) return true;
-    try {
-      const re = new RegExp(filter.pattern, "i");
-      return re.test(String(value ?? ""));
-    } catch {
-      return true; // invalid regex already blocked at input time; fail open just in case
-    }
-  }
-  // Numeric filters: a row with no value can't satisfy any comparison
-  if (value === null || value === undefined || Number.isNaN(value))
-    return false;
-
-  if (filter.type === "gt")
-    return filter.value !== null && value > filter.value;
-  if (filter.type === "lt")
-    return filter.value !== null && value < filter.value;
-  if (filter.type === "between") {
-    if (filter.min === null || filter.max === null) return true;
-    return value >= filter.min && value <= filter.max;
-  }
-  return true;
-}
-
-function applyColumnFilters(rows, columns, filterState) {
-  const activeCols = columns.filter((c) => filterState[c.key]);
-  if (activeCols.length === 0) return rows;
-  return rows.filter((row) =>
-    activeCols.every((col) => rowPassesFilter(row, col, filterState[col.key])),
-  );
-}
-
-// Builds the inner HTML for a column's filter popover, based on its type.
-function filterPopoverInnerHTML(col, rows, filterState) {
-  if (col.type === "string" && col.filterType === "checkbox") {
-    const values = [
-      ...new Set(
-        rows
-          .map((row) => row[col.key])
-          .filter(
-            (value) =>
-              value !== null &&
-              value !== undefined &&
-              String(value).trim() !== "",
-          ),
-      ),
-    ].map((value) => String(value));
-
-    const orderedValues = values.sort((a, b) => {
-      const parseTournamentValue = (value) => {
-        const raw = String(value || "").trim();
-        const match = raw.match(/^(winter|summer)\s*(\d{4})?$/i);
-        if (!match) return { year: 0, seasonRank: 2, raw };
-        return {
-          year: parseInt(match[2] || "0", 10),
-          seasonRank: match[1].toLowerCase() === "summer" ? 0 : 1,
-          raw,
-        };
-      };
-      const av = parseTournamentValue(a);
-      const bv = parseTournamentValue(b);
-      if (av.year !== bv.year) return bv.year - av.year;
-      if (av.seasonRank !== bv.seasonRank) return av.seasonRank - bv.seasonRank;
-      return String(av.raw).localeCompare(String(bv.raw));
-    });
-
-    const optionsHtml = orderedValues.length
-      ? orderedValues
-          .map((value) => {
-            const checked = filterState[col.key]?.values?.includes(value)
-              ? "checked"
-              : "";
-            return `<label class="filter-option"><input type="checkbox" class="filter-checkbox-option" value="${escapeHtml(value)}" ${checked} /> ${escapeHtml(value)}</label>`;
-          })
-          .join("")
-      : '<div class="filter-empty">No values</div>';
-
-    return `
-      <label>Select values</label>
-      <div class="filter-checkbox-list">${optionsHtml}</div>
-      <div class="filter-popover-actions">
-        <button type="button" class="filter-clear-btn">Clear</button>
-      </div>`;
-  }
-  if (col.type === "string") {
-    // Free-text/regex filter -- default for open-ended string columns
-    // like Player, Captain, Team 1, Team 2, Result.
-    const existing = filterState[col.key]?.pattern || "";
-    return `
-      <label>Filter (regex, case-insensitive)</label>
-      <input type="text" class="filter-regex-input" placeholder="e.g. voidliss" value="${escapeHtml(existing)}" />
-      <div class="filter-popover-actions">
-        <button type="button" class="filter-clear-btn">Clear</button>
-      </div>`;
-  }
-  const placeholder = col.percentage ? "e.g. 50 for 50%" : "value";
-  const minPlaceholder = col.percentage ? "min %" : "min";
-  const maxPlaceholder = col.percentage ? "max %" : "max";
-  return `
-    <label>Filter${col.percentage ? " (enter as a percentage, e.g. 50 for 50%)" : ""}</label>
-    <select class="filter-op-select">
-      <option value="gt">Greater than</option>
-      <option value="lt">Less than</option>
-      <option value="between">Between</option>
-    </select>
-    <div class="filter-value-single">
-      <input type="number" step="any" class="filter-value-input" placeholder="${placeholder}" />
-    </div>
-    <div class="filter-value-between between-inputs hidden">
-      <input type="number" step="any" class="filter-min-input" placeholder="${minPlaceholder}" />
-      <input type="number" step="any" class="filter-max-input" placeholder="${maxPlaceholder}" />
-    </div>
-    <div class="filter-popover-actions">
-      <button type="button" class="filter-clear-btn">Clear</button>
-    </div>`;
-}
-
-// Wires up a single column's filter popover (already inserted into the DOM
-// inside `th`). Calls onChange() whenever the filter state changes, which
-// should re-render the table BODY only — never rebuild the header, or
-// popovers lose focus/state mid-interaction.
-function wireFilterPopover(
-  th,
-  col,
-  popover,
-  filterState,
-  onChange,
-  closeAllPopovers,
-) {
-  const icon = th.querySelector(".filter-icon");
-
-  icon.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const isHidden = popover.classList.contains("hidden");
-    closeAllPopovers();
-    if (isHidden) {
-      const rect = th.getBoundingClientRect();
-      const popoverWidth = 240; // matches .filter-popover's min-width
-      const clampedLeft = Math.min(
-        rect.left,
-        window.innerWidth - popoverWidth - 12,
-      );
-      popover.style.top = `${rect.bottom + 4}px`;
-      popover.style.left = `${Math.max(8, clampedLeft)}px`;
-      popover.classList.remove("hidden");
-    }
-  });
-  popover.addEventListener("click", (e) => e.stopPropagation());
-
-  function setActive(isActive) {
-    icon.classList.toggle("active", isActive);
-  }
-
-  if (col.type === "string" && col.filterType === "checkbox") {
-    const checkboxes = [...popover.querySelectorAll(".filter-checkbox-option")];
-    const clearBtn = popover.querySelector(".filter-clear-btn");
-
-    function updateFromCheckboxes() {
-      const values = checkboxes
-        .filter((box) => box.checked)
-        .map((box) => box.value);
-      if (values.length > 0) {
-        filterState[col.key] = { type: "checkbox", values };
-        setActive(true);
-      } else {
-        delete filterState[col.key];
-        setActive(false);
-      }
-      onChange();
-    }
-
-    checkboxes.forEach((box) =>
-      box.addEventListener("change", updateFromCheckboxes),
-    );
-    clearBtn.addEventListener("click", () => {
-      checkboxes.forEach((box) => {
-        box.checked = false;
-      });
-      delete filterState[col.key];
-      setActive(false);
-      onChange();
-    });
-  } else if (col.type === "string") {
-    const input = popover.querySelector(".filter-regex-input");
-    const clearBtn = popover.querySelector(".filter-clear-btn");
-
-    function updateFromInput() {
-      const pattern = input.value.trim();
-      if (pattern === "") {
-        delete filterState[col.key];
-        setActive(false);
-        input.classList.remove("invalid");
-        onChange();
-        return;
-      }
-      try {
-        new RegExp(pattern, "i"); // validate before storing -- bad regex shouldn't silently filter everything out
-        filterState[col.key] = { type: "regex", pattern };
-        input.classList.remove("invalid");
-        setActive(true);
-      } catch {
-        input.classList.add("invalid");
-        // don't update filterState with an invalid pattern -- keep last-good filter active
-      }
-      onChange();
-    }
-
-    input.addEventListener("input", updateFromInput);
-    clearBtn.addEventListener("click", () => {
-      input.value = "";
-      delete filterState[col.key];
-      setActive(false);
-      input.classList.remove("invalid");
-      onChange();
-    });
-  } else {
-    const opSelect = popover.querySelector(".filter-op-select");
-    const singleWrap = popover.querySelector(".filter-value-single");
-    const betweenWrap = popover.querySelector(".filter-value-between");
-    const valueInput = popover.querySelector(".filter-value-input");
-    const minInput = popover.querySelector(".filter-min-input");
-    const maxInput = popover.querySelector(".filter-max-input");
-    const clearBtn = popover.querySelector(".filter-clear-btn");
-
-    function updateFromInputs() {
-      // Percentage columns display value*100 with a "%" suffix, but the
-      // underlying stored value (and what rowPassesFilter compares
-      // against) is still the raw 0-1 fraction — so a value typed here
-      // (in percentage terms, matching what's displayed) needs converting
-      // back down before it's stored as a filter threshold.
-      const scale = col.percentage ? 0.01 : 1;
-      const op = opSelect.value;
-      if (op === "between") {
-        const min =
-          minInput.value === "" ? null : parseFloat(minInput.value) * scale;
-        const max =
-          maxInput.value === "" ? null : parseFloat(maxInput.value) * scale;
-        if (min !== null && max !== null) {
-          filterState[col.key] = { type: "between", min, max };
-          setActive(true);
-        } else {
-          delete filterState[col.key];
-          setActive(false);
-        }
-      } else {
-        const val =
-          valueInput.value === "" ? null : parseFloat(valueInput.value) * scale;
-        if (val !== null) {
-          filterState[col.key] = { type: op, value: val };
-          setActive(true);
-        } else {
-          delete filterState[col.key];
-          setActive(false);
-        }
-      }
-      onChange();
-    }
-
-    opSelect.addEventListener("change", () => {
-      const isBetween = opSelect.value === "between";
-      singleWrap.classList.toggle("hidden", isBetween);
-      betweenWrap.classList.toggle("hidden", !isBetween);
-      updateFromInputs();
-    });
-    valueInput.addEventListener("input", updateFromInputs);
-    minInput.addEventListener("input", updateFromInputs);
-    maxInput.addEventListener("input", updateFromInputs);
-    clearBtn.addEventListener("click", () => {
-      valueInput.value = "";
-      minInput.value = "";
-      maxInput.value = "";
-      opSelect.value = "gt";
-      singleWrap.classList.remove("hidden");
-      betweenWrap.classList.add("hidden");
-      delete filterState[col.key];
-      setActive(false);
-      onChange();
-    });
-  }
-}
-
-// Tracks all open popovers across both tables so opening one can close
-// the rest, and clicking anywhere outside closes whatever's open. Also
-// used to clean up stale popovers by "owner" (rankings/raw) when a
-// header gets rebuilt, since portaled popovers are no longer removed
-// automatically by clearing the header row's innerHTML.
-const allPopovers = [];
-document.addEventListener("click", () => {
-  allPopovers.forEach((p) => p.classList.add("hidden"));
-});
-// Popovers escape the table's overflow box via fixed positioning (see
-// wireFilterPopover), but that means scrolling anywhere would leave one
-// open in the wrong spot if we didn't also close it — closing on any
-// scroll is simpler and more robust than continuously repositioning.
-// Capture:true is required since scroll events don't bubble, but they
-// are still observable during the capture phase.
-window.addEventListener(
-  "scroll",
-  () => allPopovers.forEach((p) => p.classList.add("hidden")),
-  true,
-);
-
-function closeAllPopovers() {
-  allPopovers.forEach((p) => p.classList.add("hidden"));
-}
-
-function removePopoversOwnedBy(owner) {
-  for (let i = allPopovers.length - 1; i >= 0; i--) {
-    if (allPopovers[i].dataset.owner === owner) {
-      allPopovers[i].remove();
-      allPopovers.splice(i, 1);
-    }
-  }
-}
-
-// Builds a full <th> element for one column, including sort click
-// handling and (if filterable) a filter icon + popover. `owner` tags the
-// popover so removePopoversOwnedBy() can clean up stale ones when this
-// table's header gets rebuilt (e.g. on a column-visibility change).
-function buildHeaderCell(
-  col,
-  sortColumn,
-  sortDirection,
-  filterState,
-  onFilterChange,
-  owner,
-  rows,
-) {
-  const th = document.createElement("th");
-  th.dataset.sort = col.key;
-  if (!col.sortable) th.classList.add("not-sortable");
-  if (col.key === sortColumn)
-    th.classList.add(sortDirection === "asc" ? "sorted-asc" : "sorted-desc");
-
-  const labelSpan = document.createElement("span");
-  labelSpan.textContent = col.label;
-  th.appendChild(labelSpan);
-
-  if (col.filterable !== false) {
-    const icon = document.createElement("span");
-    icon.className = "filter-icon";
-    icon.textContent = "▾";
-    if (filterState[col.key]) icon.classList.add("active");
-    th.appendChild(icon);
-
-    // Appended to document.body (not `th`) and positioned `fixed` so it
-    // escapes the table container's overflow clipping entirely — see the
-    // comment in wireFilterPopover for why that clipping happens.
-    const popover = document.createElement("div");
-    popover.className = "filter-popover hidden";
-    popover.dataset.owner = owner;
-    popover.innerHTML = filterPopoverInnerHTML(col, rows, filterState);
-    document.body.appendChild(popover);
-    allPopovers.push(popover);
-
-    wireFilterPopover(
-      th,
-      col,
-      popover,
-      filterState,
-      onFilterChange,
-      closeAllPopovers,
-    );
-  }
-
-  return th;
-}
-
-// Freezes contiguous run of columns flagged `sticky: true`
-function applyStickyColumns(
-  headerRowEl,
-  bodyEl,
-  visibleColumns,
-  hasToggleCol = false,
-) {
-  const runStart = visibleColumns.findIndex((c) => c.sticky);
-  if (runStart === -1) return;
-
-  let runEnd = runStart;
-  while (
-    runEnd + 1 < visibleColumns.length &&
-    visibleColumns[runEnd + 1].sticky
-  ) {
-    runEnd++;
-  }
-
-  const headerCells = [...headerRowEl.children];
-  const domOffset = hasToggleCol ? 1 : 0;
-  // Toggle column is only pinned when the sticky run itself starts at
-  // column 0 -- otherwise it's just another leading non-sticky column
-  // that scrolls away normally, same as any other.
-  const toggleIsSticky = hasToggleCol && runStart === 0;
-
-  // The sticky run ALWAYS docks flush at the container's true left edge
-  // (left: 0px for the first column in the run) -- non-sticky leading
-  // columns scroll fully away and get clipped by overflow-x, they never
-  // contribute any offset to where the run pins.
-  let cumulativeLeft = 0;
-  if (toggleIsSticky && headerCells[0]) {
-    headerCells[0].classList.add("sticky-col");
-    headerCells[0].style.left = "0px";
-    cumulativeLeft = headerCells[0].getBoundingClientRect().width;
-  }
-
-  for (let i = runStart; i <= runEnd; i++) {
-    const th = headerCells[i + domOffset];
-    if (!th) continue;
-    th.classList.add("sticky-col");
-    if (i === runEnd) th.classList.add("sticky-col-last");
-    th.style.left = `${cumulativeLeft}px`;
-    cumulativeLeft += th.getBoundingClientRect().width;
-  }
-
-  [...bodyEl.children].forEach((tr) => {
-    if (tr.classList.contains("roster-detail-row")) return;
-    const cells = [...tr.children];
-    let left = 0;
-    if (toggleIsSticky && cells[0]) {
-      cells[0].classList.add("sticky-col");
-      cells[0].style.left = "0px";
-      left = cells[0].getBoundingClientRect().width;
-    }
-    for (let i = runStart; i <= runEnd; i++) {
-      const td = cells[i + domOffset];
-      if (!td) continue;
-      td.classList.add("sticky-col");
-      if (i === runEnd) td.classList.add("sticky-col-last");
-      td.style.left = `${left}px`;
-      left += td.getBoundingClientRect().width;
-    }
-  });
-}
+// The player profile modal behavior is now wired from its own module.
 
 // ==================== Tabs ====================
 
@@ -982,257 +135,6 @@ tabButtons.forEach((btn) => {
     scheduleUrlUpdate();
   });
 });
-
-// Converts every value in a genuinely-numeric column from string to a
-// real JS number, once, right when the raw data loads. Fixes two bugs at
-// the source rather than patching symptoms: sortRows' numeric path was
-// only ever reached when typeof already said "number" — since every raw
-// value arrives as a string from SQLite/CSV, that check silently always
-// fell through to string comparison ("1", "10", "2"... instead of
-// 1, 2, 10...). Same root cause would eventually bite the gt/lt/between
-// filters too. Checking ALL rows (not just the first) also avoids
-// misclassifying a column when just the first row happens to be blank
-// or coincidentally numeric-looking.
-function coerceNumericColumns(columns, rows) {
-  columns.forEach((colName) => {
-    let sawValue = false;
-    const allNumericOrBlank = rows.every((row) => {
-      const val = row[colName];
-      if (val === null || val === undefined || val === "") return true;
-      sawValue = true;
-      return !Number.isNaN(parseFloat(val)) && String(val).trim() !== "";
-    });
-
-    if (allNumericOrBlank && sawValue) {
-      rows.forEach((row) => {
-        const val = row[colName];
-        row[colName] =
-          val === null || val === undefined || val === ""
-            ? null
-            : parseFloat(val);
-      });
-    }
-  });
-}
-
-// ==================== Reusable sortable/filterable/column-toggleable table ====================
-// Starting point for any future tab that's basically "a table of players/rows
-// with some computed metric" — which is most of what this app is.
-// Rankings and Raw Data predate this and aren't using it (they have
-// some tab-specific quirks — Rankings' derived Est. Order columns,
-// Raw Data's dynamic per-dataset column discovery — that made retrofitting
-// riskier than it was worth for two already-working tabs), but there's
-// no reason a new one couldn't.
-//
-// Usage:
-//   const table = createTabTable({
-//     columns: [...],              // same column-def shape used throughout this file
-//     headerRowEl, bodyEl,          // <tr> inside <thead>, <tbody> element
-//     columnsBtnEl, columnsPanelEl, // the Columns ▾ button + its dropdown container
-//     ownerKey: 'someUniqueName',   // tags this table's popovers for cleanup — must be
-//                                   // unique across every table on the page
-//     defaultSortColumn: 'someKey',
-//     emptyMessage: 'optional custom empty-state text'
-//   });
-//   table.setData(arrayOfRowObjects); // replaces data, re-sorts/filters/renders
-function createTabTable({
-  columns,
-  headerRowEl,
-  bodyEl,
-  columnsBtnEl,
-  columnsPanelEl,
-  ownerKey,
-  defaultSortColumn,
-  defaultSortDirection = "desc",
-  emptyMessage = "No rows match the active filters",
-  expandable,
-}) {
-  const state = {
-    data: [],
-    sortColumn: defaultSortColumn,
-    sortDirection: defaultSortDirection,
-    hiddenColumns: new Set(
-      columns.filter((c) => c.defaultHidden).map((c) => c.key),
-    ),
-    filters: {},
-    externalFilter: null,
-  };
-
-  columns
-    .filter((c) => c.hideable)
-    .forEach((col) => {
-      const label = document.createElement("label");
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = !state.hiddenColumns.has(col.key);
-      checkbox.dataset.col = col.key;
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) state.hiddenColumns.delete(col.key);
-        else state.hiddenColumns.add(col.key);
-        rebuildHeader();
-        renderBody();
-      });
-      label.appendChild(checkbox);
-      label.appendChild(document.createTextNode(col.label));
-      columnsPanelEl.appendChild(label);
-    });
-
-  columnsBtnEl.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const isHidden = columnsPanelEl.classList.contains("hidden");
-    closeAllPopovers();
-    columnsPanelEl.classList.toggle("hidden");
-    if (isHidden) columnsPanelEl.classList.remove("hidden");
-  });
-  columnsPanelEl.addEventListener("click", (e) => e.stopPropagation());
-  document.addEventListener("click", () =>
-    columnsPanelEl.classList.add("hidden"),
-  );
-
-  function visibleColumns() {
-    return columns.filter((c) => !state.hiddenColumns.has(c.key));
-  }
-
-  function updateSortIndicators() {
-    [...headerRowEl.children].forEach((th) => {
-      th.classList.remove("sorted-asc", "sorted-desc");
-      if (th.dataset.sort === state.sortColumn) {
-        th.classList.add(
-          state.sortDirection === "asc" ? "sorted-asc" : "sorted-desc",
-        );
-      }
-    });
-  }
-
-  function rebuildHeader() {
-    removePopoversOwnedBy(ownerKey);
-    headerRowEl.innerHTML = "";
-    if (expandable) {
-      const toggleTh = document.createElement("th");
-      toggleTh.classList.add("not-sortable");
-      headerRowEl.appendChild(toggleTh);
-    }
-    visibleColumns().forEach((col) => {
-      const th = buildHeaderCell(
-        col,
-        state.sortColumn,
-        state.sortDirection,
-        state.filters,
-        () => {
-          renderBody();
-        },
-        ownerKey,
-        state.data,
-      );
-      th.addEventListener("click", () => {
-        if (!col.sortable) return;
-        if (state.sortColumn === col.key) {
-          state.sortDirection = state.sortDirection === "asc" ? "desc" : "asc";
-        } else {
-          state.sortColumn = col.key;
-          state.sortDirection = col.key === "group" ? "asc" : "desc";
-        }
-        updateSortIndicators();
-        renderBody();
-      });
-      headerRowEl.appendChild(th);
-    });
-    refreshStickyColumns();
-  }
-
-  function renderBody() {
-    const cols = visibleColumns();
-    const colspan = cols.length + (expandable ? 1 : 0);
-    let filtered = applyColumnFilters(state.data, columns, state.filters);
-    if (state.externalFilter) filtered = filtered.filter(state.externalFilter);
-    const sorted = sortRows(
-      filtered,
-      columns,
-      state.sortColumn,
-      state.sortDirection,
-    );
-
-    if (sorted.length === 0) {
-      bodyEl.innerHTML = `<tr><td colspan="${colspan}" class="empty">${escapeHtml(emptyMessage)}</td></tr>`;
-      return;
-    }
-
-    bodyEl.innerHTML = sorted
-      .map((row, i) => {
-        const cells = cols
-          .map((col) => {
-            if (col.playerLink || col.key === "group") {
-              const playerRow = col.playerLink
-                ? {
-                    group: row[col.key],
-                    profileUrl: row._playerProfileUrl,
-                    identityKey: row._playerIdentityKey,
-                  }
-                : row;
-              return `<td class="group-name">${renderPlayerCell(playerRow)}</td>`;
-            }
-            const val = col.key === "rank" ? i + 1 : row[col.key];
-            const cls = col.className
-              ? ` class="${col.className}"`
-              : col.key === "rank"
-                ? ' class="rank"'
-                : "";
-            if (col.render) return `<td${cls}>${col.render(val, row)}</td>`;
-            return `<td${cls}>${escapeHtml(formatCell(val, col))}</td>`;
-          })
-          .join("");
-
-        if (!expandable) return `<tr>${cells}</tr>`;
-
-        const detailId = `${ownerKey}-detail-${i}`;
-        return `<tr>
-          <td><button class="roster-toggle" data-target="${detailId}" aria-expanded="false">▶</button></td>
-          ${cells}
-        </tr>
-        <tr id="${detailId}" class="roster-detail-row" hidden>
-          <td colspan="${colspan}">${expandable.getDetailHtml(row)}</td>
-        </tr>`;
-      })
-      .join("");
-    refreshStickyColumns();
-  }
-  function refreshStickyColumns() {
-    applyStickyColumns(headerRowEl, bodyEl, visibleColumns(), !!expandable);
-  }
-  rebuildHeader(); // header only depends on columns/hidden-state, safe to build immediately
-
-  return {
-    setData(newData) {
-      state.data = newData;
-      rebuildHeader();
-      renderBody();
-    },
-    setExternalFilter(predicateFn) {
-      state.externalFilter = predicateFn; // pass null to clear
-      renderBody();
-    },
-  };
-}
-// Splits pasted/uploaded text into individual name strings -- accepts
-// newline-separated (a column pasted straight from Excel/Sheets) or
-// comma-separated (a single CSV row/column), trims blank entries either
-// way.
-function parseNameList(text) {
-  return text
-    .split(/[\r\n,]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-// Identifies player list for each tournament
-function seasonRankLocal(tournament) {
-  const t = String(tournament || "")
-    .trim()
-    .toLowerCase();
-  if (t === "winter") return 0;
-  if (t === "summer") return 1;
-  return 2;
-}
 
 function buildPastDraftOptions(optgroupEl) {
   optgroupEl.innerHTML = "";
@@ -1389,90 +291,7 @@ document
   });
 
 // ====================Rank Tier====================
-// Determines categorical rank from numeric TrueSKill and displays corresponding icon
-let globalRankTiers = null;
-
-function getRankTier(rating) {
-  if (rating === null || rating === undefined || Number.isNaN(rating))
-    return null;
-  if (!globalRankTiers || globalRankTiers.length === 0) return null;
-
-  const tier = globalRankTiers.find((t) => rating >= t.ratingCutoff);
-
-  return tier || { name: "Iron", ratingCutoff: 0 };
-}
-
-function renderRankBadge(input) {
-  let tierName = "unranked";
-  let displayName = "Unranked";
-
-  if (typeof input === "string") {
-    // Passed a tier name directly (e.g. 'Iron', 'Master')
-    tierName = input.toLowerCase();
-    displayName = input;
-  } else if (typeof input === "object" && input?.name) {
-    // Passed a tier object directly (e.g. { name: 'Iron' })
-    tierName = input.name.toLowerCase();
-    displayName = input.name;
-  } else if (typeof input === "number" && !Number.isNaN(input)) {
-    // Passed a numeric rating (e.g. 1050)
-    const tier = getRankTier(input);
-    tierName = tier.name.toLowerCase();
-    displayName = tier?.name || "Unranked";
-  }
-
-  return `<img src="/icons/${tierName}.webp" alt="${escapeHtml(displayName)} rank badge" class="rank-badge" />`;
-}
-
-// Combines the badge with the formatted number -- used anywhere a raw
-// TrueSkill/conservativeRating value is displayed.
-function renderTrueSkillValue(rating, mu) {
-  if (rating === null || rating === undefined) return "–";
-
-  const formatRating = (n) =>
-    `<span class="rating-number">${Math.round(n)}</span>`;
-
-  if (mu === null || mu === undefined || isNaN(mu)) {
-    return `<span class="trueskill-cell">${renderRankBadge(rating)}${formatRating(rating)}</span>`;
-  }
-  return `<span class="trueskill-cell">${renderRankBadge(rating)}${formatRating(rating)} (${formatRating(mu)})</span>`;
-}
-
-// Works on other league of legends api derived rank
-function renderSoloQueueRank(rank) {
-  if (!rank || !rank.tier || rank.tier === "UNRANKED") return "";
-  const tierName = rank.tier.toLowerCase();
-  const isApex = ["CHALLENGER", "GRANDMASTER", "MASTER"].includes(
-    rank.tier.toUpperCase(),
-  );
-  const divisionPart = isApex ? " " : ` ${rank.division}`;
-
-  return `<span class="trueskill-cell">${renderRankBadge(tierName)} ${divisionPart} · ${rank.leaguePoints} LP</span>`;
-}
-const RANK_TIER_ORDER = [
-  "CHALLENGER",
-  "GRANDMASTER",
-  "MASTER",
-  "DIAMOND",
-  "EMERALD",
-  "PLATINUM",
-  "GOLD",
-  "SILVER",
-  "BRONZE",
-  "IRON",
-];
-const DIVISION_ORDER = { I: 0, II: 1, III: 2, IV: 3 };
-
-function soloQueueSortValueClient(rank) {
-  if (!rank || !rank.tier || rank.tier === "UNRANKED") return -1;
-  const tierIdx = RANK_TIER_ORDER.indexOf(rank.tier.toUpperCase());
-  const divIdx = DIVISION_ORDER[rank.division] ?? 4;
-  return (
-    (RANK_TIER_ORDER.length - tierIdx) * 10000 -
-    divIdx * 100 +
-    (rank.leaguePoints || 0)
-  );
-}
+// Rank badge rendering and TrueSkill helpers now live in the shared utilities module.
 // ==================== trueskill tab ====================
 
 const TRUESKILL_COLUMNS = [
@@ -1511,14 +330,14 @@ const TRUESKILL_COLUMNS = [
   },
   {
     key: "conservativeRating",
-    label: "TrueSkill",
+    label: "TrueSkill (μ)",
     sortable: true,
     hideable: true,
     filterable: true,
     type: "number",
     decimals: 2,
     className: "adj-avg",
-    render: renderTrueSkillValue,
+    render: (val, row) => renderTrueSkillValue(row.conservativeRating, row.mu),
   },
   {
     key: "soloQueueRank",
@@ -1639,20 +458,20 @@ const trueskillTable = createTabTable({
   defaultSortColumn: "conservativeRating",
 });
 
-let trueskillLoaded = false;
-let latestTrueskillPlayers = [];
 
 async function loadtrueskillData(forceRefresh) {
   if (trueskillLoaded && !forceRefresh) return;
   const res = await fetch(`/api/trueskill`);
   const data = await res.json();
-  latestTrueskillPlayers = data.players;
+  const players = Array.isArray(data.players) ? data.players : [];
+  const funFacts = data.funFacts || { staticCutoffs: [] };
+  latestTrueskillPlayers = players;
   buildPastDraftOptions(document.getElementById("pastDraftsOptgroup"));
-  globalRankTiers = data.funFacts.staticCutoffs;
+  setRankTiers(funFacts.staticCutoffs || []);
   document.getElementById("trueskill-fun-facts").innerHTML = renderFunFactsHtml(
-    data.funFacts,
+    funFacts,
   );
-  trueskillTable.setData(data.players);
+  trueskillTable.setData(players);
   trueskillLoaded = true;
 }
 
@@ -2110,8 +929,6 @@ function buildGroupOrder(data, groupBy) {
   }
   return keys;
 }
-
-let draftScatterBuilt = false;
 
 function initDraftScatterToggle() {
   const box = document.getElementById("draftScatterBox");
@@ -2763,9 +1580,6 @@ const teamBalanceTable = createTabTable({
 
 // ==================== Shared fetch: both tabs come from one endpoint ====================
 
-let draftAnalysisLoaded = false;
-let latestDraftAnalysis = null; // cache so the modal can filter without refetching
-
 async function loadDraftAnalysis() {
   if (draftAnalysisLoaded) return;
   const res = await fetch("/api/draft-analysis");
@@ -2789,7 +1603,6 @@ async function loadDraftAnalysis() {
 }
 
 // ==================== Mock Draft Data tab ====================
-let mockDraftPool = [];
 
 function applyMockDraftPoolFilter(rawText) {
   const names = parseNameList(rawText);
@@ -2955,10 +1768,6 @@ function resolvePoolPlayerByName(text, pool) {
 }
 
 // Draft board
-let draftPicks = new Map(); // `${round}::${captainIndex}` -> resolved player or null
-let numCaptains = 8,
-  picksPerCaptain = 4;
-
 // Standard snake: round 0 goes captain 0..N-1, round 1 reverses N-1..0,
 // alternating -- "left to right, then sweep back" exactly as described.
 function generateSnakeSlots(nCaptains, nPicks) {
@@ -2976,8 +1785,6 @@ function generateSnakeSlots(nCaptains, nPicks) {
 }
 
 // Captains
-let mockCaptains = [];
-
 function renderCaptainInputs(n) {
   const container = document.getElementById("mockCaptainInputs");
   container.innerHTML = "";
@@ -3114,7 +1921,7 @@ const MOCK_PLAYER_COLUMNS = [
     type: "number",
     decimals: 2,
     className: "adj-avg",
-    render: (val) => renderTrueSkillValue(val),
+    render: (val, row) => renderTrueSkillValue(row.conservativeRating, row.mu),
   },
   {
     key: "soloQueueRank",
@@ -3268,7 +2075,7 @@ function evaluateMockDraftIQ() {
     (a, b) => b.conservativeRating - a.conservativeRating,
   );
   const entryRankByKey = new Map(
-    rankedByRating.map((p, i) => [p.identityKey || p.group, i + 1]),
+    rankedByRating.map((p, i) => [p.identityKey || p.group, i]),
   );
 
   const picks = [];
@@ -3388,8 +2195,6 @@ tabButtons.forEach((btn) => {
 });
 
 // ==================== Upcoming Roster tab ====================
-let upcomingRosterLoaded = false;
-
 async function loadUpcomingRoster() {
   if (upcomingRosterLoaded) return;
   try {
@@ -3524,8 +2329,6 @@ const draftDataTable = createTabTable({
   emptyMessage: "No rows match the active filters",
 });
 
-let draftDataLoaded = false;
-
 async function loadDraftData() {
   if (draftDataLoaded) return;
   const res = await fetch("/api/raw");
@@ -3652,7 +2455,6 @@ const matchDataTable = createTabTable({
   expandable: { getDetailHtml: renderMatchRosterDetail },
 });
 
-let matchDataLoaded = false;
 async function loadMatchData() {
   if (matchDataLoaded) return;
   const res = await fetch("/api/raw-matches");
@@ -3729,6 +2531,8 @@ async function loadMeta() {
 }
 
 (async function init() {
+  initTheme();
+  initPlayerProfile();
   readStateFromURL();
   await loadMeta();
   await fetchStats(RANKINGS_RISK, RANKINGS_HALF_LIFE);
