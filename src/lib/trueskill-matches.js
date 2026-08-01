@@ -1,5 +1,13 @@
-const { Rating, TrueSkill } = require("ts-trueskill");
 const { buildReverseIdentityLookup } = require("./player-identity");
+
+let trueskillModulePromise;
+
+async function loadTrueSkillModule() {
+  if (!trueskillModulePromise) {
+    trueskillModulePromise = import("ts-trueskill");
+  }
+  return trueskillModulePromise;
+}
 
 function buildRosterMap(draftRows, identityMap) {
   const resolve = (name) => {
@@ -60,7 +68,7 @@ function resolveOutcome(m) {
 //   resolveIdentities()) -- used only to build rosters, not to rate.
 // matches: raw rows from the `matches` table: {year, tournament, team1, team2, result}
 // identityMap: same alias map used throughout the app.
-function computeTrueSkillFromMatches(
+async function computeTrueSkillFromMatches(
   matches,
   draftRows,
   identityMap,
@@ -73,6 +81,7 @@ function computeTrueSkillFromMatches(
     conservativeK = 1,
   } = {},
 ) {
+  const { Rating, TrueSkill } = await loadTrueSkillModule();
   const env = new TrueSkill(mu, sigma, beta, tau, drawProbability);
   const resolve = (name) => {
     const identity = identityMap.get(name);
