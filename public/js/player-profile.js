@@ -1,4 +1,10 @@
-import { escapeHtml, renderNameWithTag, renderTrueSkillValue, renderRankBadge } from "./utils.js";
+import {
+  escapeHtml,
+  renderNameWithTag,
+  renderTrueSkillValue,
+  renderRankBadge,
+  getRankTier,
+} from "./utils.js";
 
 const playerProfileModal = document.getElementById("playerProfileModal");
 const playerProfileCloseBtn = document.getElementById("playerProfileClose");
@@ -69,7 +75,9 @@ function buildChartHtml(history) {
     .join("");
 
   const trueskillPath = points
-    .map((p, i) => `${i === 0 ? "M" : "L"} ${xScale(p.x)} ${yScale(p.trueskill)}`)
+    .map(
+      (p, i) => `${i === 0 ? "M" : "L"} ${xScale(p.x)} ${yScale(p.trueskill)}`,
+    )
     .join(" ");
 
   const outcomeColor = { win: "#2e7d32", loss: "#c62828" };
@@ -78,7 +86,7 @@ function buildChartHtml(history) {
       (p) => `
     <circle cx="${xScale(p.x)}" cy="${yScale(p.trueskill)}" r="3.5" fill="${outcomeColor[p.outcome] || "#888"}">
     <title>${escapeHtml(`${p.year} ${p.tournament}${p.matchStage ? " (" + p.matchStage + ")" : ""} vs ${p.opponent}: ${p.outcome} (TrueSkill = ${p.trueskill}, μ=${p.mu}, σ=${p.sigma})`)}</title>
-    </circle>`
+    </circle>`,
     )
     .join("");
 
@@ -168,7 +176,10 @@ function renderPlayerProfileContent(player) {
           : entry.ratingChange < 0
             ? "outcome-loss"
             : "";
-      const changeLabel = entry.ratingChange > 0 ? `+${entry.ratingChange}` : `${entry.ratingChange}`;
+      const changeLabel =
+        entry.ratingChange > 0
+          ? `+${entry.ratingChange}`
+          : `${entry.ratingChange}`;
 
       return `<tr>
       <td><button class="roster-toggle" data-target="${rosterId}" aria-expanded="false">▶</button></td>
@@ -260,7 +271,10 @@ export function initPlayerProfile() {
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && playerProfileModal?.classList.contains("open")) {
+    if (
+      event.key === "Escape" &&
+      playerProfileModal?.classList.contains("open")
+    ) {
       closePlayerProfile();
     }
   });
