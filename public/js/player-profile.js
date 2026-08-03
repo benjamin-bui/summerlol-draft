@@ -279,3 +279,38 @@ export function initPlayerProfile() {
     }
   });
 }
+// Client-side equivalent of the server's opggLink() for building a simple op.gg link from a full name string (e.g. "PlayerName#1234").
+
+function buildSimpleOpggLink(fullName) {
+  const idx = fullName.lastIndexOf('#');
+  if (idx === -1) return null; // no tag to split on -- can't build a valid op.gg link
+  const gameName = fullName.slice(0, idx).trim();
+  const tagLine = fullName.slice(idx + 1).trim();
+  if (!gameName || !tagLine) return null;
+  return `https://op.gg/lol/summoners/na/${encodeURIComponent(gameName)}-${encodeURIComponent(tagLine)}`;
+}
+
+function openSimpleProfile(fullName) {
+  const link = buildSimpleOpggLink(fullName);
+  playerProfileModal.classList.add('open');
+  playerProfileModal.setAttribute('aria-hidden', 'false');
+  playerProfileTitle.textContent = fullName;
+  playerProfileContent.innerHTML = `
+    <div class="profile-summary">
+      <span><strong>${escapeHtml(fullName)}</strong></span>
+      ${link
+        ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>`
+        : '<span class="stat-formula">No # tag to build an op.gg link from.</span>'}
+    </div>
+    <p class="stat-formula" style="margin-top:12px;">No TrueSkill history for this name yet.</p>
+  `;
+}
+// Used anywhere a name needs to be clickable but might not have a real
+// identityKey -- Mock Draft board cells, Mock Draft's Available/Selected
+// tables for manual entries, and Upcoming Roster's unrated players.
+export function renderClickableName(fullName, identityKey, identified) {
+  if (identityKey && identified) {
+    return `<a href="#" class="player-link" data-player-key="${escapeHtml(identityKey)}">${renderNameWithTag(fullName)}</a>`;
+  }
+  return `<a href="#" class="simple-profile-link" data-fullname="${escapeHtml(fullName)}">${renderNameWithTag(fullName)}</a>`;
+}

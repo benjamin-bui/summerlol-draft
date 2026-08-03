@@ -122,6 +122,8 @@ function main() {
   console.log(`Loaded ${n} matches into ${DB_PATH}`);
 }
 
-main();
+if (require.main === module) {
+  main();
+}
 
 module.exports = { parseCsv };

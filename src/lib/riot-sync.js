@@ -13,13 +13,22 @@
  * PUUID is stored in players.puuid and is NEVER returned by any API route —
  * treat that column as backend-only, same privacy stance as the reference.
  *
- * IMPORTANT — untested against the real Riot API: api.riotgames.com is not
- * reachable from the sandbox this was built in (network allowlist doesn't
- * include it), so `riotFetch()` below has never made a real request. Every
- * surrounding piece of logic (alias-repoint-on-merge, rename detection,
- * name_history logging, retry/backoff shape) is unit-tested against a
- * mocked version of riotFetch — see test-riot-sync.js. You'll need your own
- * RIOT_API_KEY to verify the actual HTTP layer works end-to-end.
+ *
+ * PROGRESS REPORTING
+ * ------------------
+ * resolvePending / refreshKnown / refreshRankedStats / runFullSync all take
+ * an optional `onProgress` callback in their options object:
+ *
+ *   onProgress({ phase, event, current, total, label })
+ *
+ *   phase: 'pending' | 'refresh' | 'ranked'
+ *   event: 'start' | 'tick' | 'end'
+ *   current/total: row counts within the current phase (only on 'tick'/'end')
+ *   label: short human string, e.g. the raw name or player id being processed
+ *
+ * It's a plain callback (not an EventEmitter) so it stays trivial to pass
+ * through nested calls and trivial to no-op in tests — callers who don't
+ * pass one get a default no-op and behavior is unchanged.
  */
 
 const RIOT_API_KEY = process.env.RIOT_API_KEY || "";
@@ -39,6 +48,11 @@ const REGIONAL_TO_PLATFORM = {
 function platformHost(regionalRegion) {
   return REGIONAL_TO_PLATFORM[regionalRegion] || regionalRegion;
 }
+
+// Default no-op progress callback so every internal call site can invoke
+// onProgress(...) unconditionally without an "if (onProgress)" guard.
+const noopProgress = () => {};
+
 class RiotApiError extends Error {
   constructor(message, status) {
     super(message);
@@ -194,7 +208,11 @@ function updateNameIfChanged(
  */
 async function resolvePending(
   db,
-  { limit = 500, fetchAccountByRiotId = getAccountByRiotId } = {},
+  {
+    limit = 500,
+    fetchAccountByRiotId = getAccountByRiotId,
+    onProgress = noopProgress,
+  } = {},
 ) {
   const rows = db
     .prepare(
@@ -205,10 +223,14 @@ async function resolvePending(
     )
     .all(limit);
 
+  const total = rows.length;
+  onProgress({ phase: "pending", event: "start", total });
+
   let resolved = 0;
   let failed = 0;
 
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     const region = row.region || DEFAULT_REGION;
     let account;
     try {
@@ -220,6 +242,13 @@ async function resolvePending(
          SET attempts = attempts + 1, last_attempt = datetime('now'), last_error = ?
          WHERE raw_name = ?`,
       ).run(String(err.message || err), row.raw_name);
+      onProgress({
+        phase: "pending",
+        event: "tick",
+        current: i + 1,
+        total,
+        label: row.raw_name,
+      });
       continue;
     }
 
@@ -235,8 +264,16 @@ async function resolvePending(
       row.raw_name,
     );
     resolved += 1;
+    onProgress({
+      phase: "pending",
+      event: "tick",
+      current: i + 1,
+      total,
+      label: row.raw_name,
+    });
   }
 
+  onProgress({ phase: "pending", event: "end", total });
   return { resolved, failed, attempted: rows.length };
 }
 
@@ -246,7 +283,11 @@ async function resolvePending(
  */
 async function refreshKnown(
   db,
-  { limit = 500, fetchAccountByPuuid = getAccountByPuuid } = {},
+  {
+    limit = 500,
+    fetchAccountByPuuid = getAccountByPuuid,
+    onProgress = noopProgress,
+  } = {},
 ) {
   const rows = db
     .prepare(
@@ -256,17 +297,25 @@ async function refreshKnown(
     )
     .all(limit);
 
+  const total = rows.length;
+  onProgress({ phase: "refresh", event: "start", total });
+
   let updated = 0;
   let unchanged = 0;
   let failed = 0;
 
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     const region = row.riot_region || DEFAULT_REGION;
+    const label = row.riot_game_name
+      ? `${row.riot_game_name}#${row.riot_tag_line}`
+      : `player ${row.id}`;
     let account;
     try {
       account = await fetchAccountByPuuid(region, row.puuid);
     } catch (err) {
       failed += 1;
+      onProgress({ phase: "refresh", event: "tick", current: i + 1, total, label });
       continue;
     }
 
@@ -283,8 +332,10 @@ async function refreshKnown(
     );
     if (changed) updated += 1;
     else unchanged += 1;
+    onProgress({ phase: "refresh", event: "tick", current: i + 1, total, label });
   }
 
+  onProgress({ phase: "refresh", event: "end", total });
   return { updated, unchanged, failed };
 }
 
@@ -323,23 +374,36 @@ function upsertRankedStats(db, playerId, queueType, entry) {
  * tier/division/leaguePoints for all three tracked queues. `fetchLeagueEntries`
  * is injectable for testing, same convention as resolvePending/refreshKnown.
  */
-async function refreshRankedStats(db, { limit = 500, fetchLeagueEntries = getLeagueEntriesByPuuid } = {}) {
+async function refreshRankedStats(
+  db,
+  {
+    limit = 500,
+    fetchLeagueEntries = getLeagueEntriesByPuuid,
+    onProgress = noopProgress,
+  } = {},
+) {
   const rows = db
     .prepare(`SELECT id, puuid, riot_region FROM players WHERE puuid IS NOT NULL ORDER BY id ASC LIMIT ?`)
     .all(limit);
 
+  const total = rows.length;
+  onProgress({ phase: "ranked", event: "start", total });
+
   let updated = 0;
   let failed = 0;
 
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     const region = row.riot_region || DEFAULT_REGION;
     const platform = platformHost(region); // league-v4 is PLATFORM-routed, not regional -- see platformHost above
+    const label = `player ${row.id}`;
 
     let entries;
     try {
       entries = await fetchLeagueEntries(platform, row.puuid);
     } catch (err) {
       failed += 1;
+      onProgress({ phase: "ranked", event: "tick", current: i + 1, total, label });
       continue;
     }
 
@@ -348,8 +412,10 @@ async function refreshRankedStats(db, { limit = 500, fetchLeagueEntries = getLea
       upsertRankedStats(db, row.id, queueType, entry);
     }
     updated += 1;
+    onProgress({ phase: "ranked", event: "tick", current: i + 1, total, label });
   }
 
+  onProgress({ phase: "ranked", event: "end", total });
   return { updated, failed };
 }
 

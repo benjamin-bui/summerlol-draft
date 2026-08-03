@@ -346,6 +346,13 @@ correctly, not the identity layer.
 ## Folder structure
 
 ```
+docker-compose.yml
+Dockerfile
+docker-entrypoint.sh
+entrypoint.js
+package.json
+server.js
+test/                     # unit tests
 data/                      # pure state -- nothing executable
   app.db
   lol-draft-long.csv
@@ -356,6 +363,17 @@ data/                      # pure state -- nothing executable
                              # filter preset (e.g. an upcoming tournament's
                              # draft pool) -- picked up automatically, no
                              # code change needed
+
+public/
+  app.js
+  js/
+    player-profile.js
+    table-utils.js
+    theme.js
+    utils.js
+  index.html
+  style.css
+  icons/                    # rank-tier badge images (Master/Diamond/.../Iron)
 
 src/
   lib/                      # required by server.js at runtime
@@ -376,13 +394,6 @@ src/
     scheduler.js             # started from server.js at boot, but lives
                              # here alongside the other cron-adjacent scripts
 
-public/
-  app.js
-  index.html
-  style.css
-  icons/                    # rank-tier badge images (Master/Diamond/.../Iron)
-
-server.js
 ```
 
 The `lib` vs `scripts` split is: does `server.js` `require()` it and run

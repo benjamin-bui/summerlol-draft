@@ -12,7 +12,7 @@ import {
   parseNameList,
   seasonRankLocal,
 } from "./js/utils.js";
-import { initPlayerProfile } from "./js/player-profile.js";
+import { initPlayerProfile, renderClickableName } from "./js/player-profile.js";
 import { createTabTable, coerceNumericColumns } from "./js/table-utils.js";
 
 let groupColName = "Player";
@@ -1858,11 +1858,10 @@ function renderMockDraftAvailableDatalist() {
 function renderDraftBoard() {
   const slots = generateSnakeSlots(numCaptains, picksPerCaptain);
   const table = document.getElementById("mockDraftBoardTable");
-  const headerCells = Array.from(
-    { length: numCaptains },
-    (_, i) =>
-      `<th>${escapeHtml(mockCaptains[i]?.group || `Captain ${i + 1}`)}</th>`,
-  ).join("");
+  const headerCells = Array.from({ length: numCaptains }, (_, i) => {
+    const captain = mockCaptains[i];
+    return `<th>${escapeHtml(captain?.group || `Captain ${i + 1}`)}</th>`;
+  }).join("");
 
   const rows = [];
   for (let round = 0; round < picksPerCaptain; round++) {
@@ -1914,6 +1913,7 @@ const MOCK_PLAYER_COLUMNS = [
     filterable: true,
     type: "string",
     className: "group-name",
+    render: (val, row) => renderClickableName(row.group, row.identityKey, !row.manual),
   },
   {
     key: "conservativeRating",
@@ -2221,14 +2221,11 @@ function renderUpcomingRoster(data) {
     .map((team) => {
       const rosterRows = team.roster
         .map((p) => {
-          const nameHtml =
-            p.identityKey && p.identified
-              ? `<a href="#" class="player-link" data-player-key="${escapeHtml(p.identityKey)}">${renderNameWithTag(p.displayName)}</a>`
-              : renderNameWithTag(p.displayName);
+          const nameHtml = renderClickableName(p.displayName, p.identityKey, p.identified);
           const ratingHtml =
             p.conservativeRating !== null
               ? renderTrueSkillValue(p.conservativeRating, p.mu)
-              : '<span class="stat-formula">unrated (no games yet)</span>';
+              : '<span class="stat-formula">Unrated (No games yet)</span>';
           return `<tr>
         <td>#${p.pickOrder}</td>
         <td>${nameHtml}</td>

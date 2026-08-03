@@ -9,9 +9,12 @@ const {
 const { runFullSync } = require("./src/lib/riot-sync");
 const { startPeriodicSync } = require("./src/scripts/scheduler");
 const { computeTrueSkillFromMatches } = require("./src/lib/trueskill-matches");
-
+const { parseCsv } = require("./src/scripts/ingest-matches");
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
 
 // ---- Config: point these at your real table/columns when ready ----
 const DB_PATH = path.join(__dirname, "data", "app.db");
@@ -249,6 +252,9 @@ function computeGroupStats(rows, riskAversion, halfLifeYears) {
 
 function round2(x) {
   return Math.round(x * 100) / 100;
+}
+function round3(x) {
+  return Math.round(x * 1000) / 1000;
 }
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -641,7 +647,7 @@ app.get('/api/upcoming-roster', async (req, res) => {
     if (!filename) return res.status(404).json({ exists: false });
 
     const text = fs.readFileSync(path.join(UPCOMING_ROSTER_DIR, filename), 'utf-8');
-    const [header, ...lines] = parseCsv(text); // reuses ingest-matches.js's parser -- export it from there if not already
+    const [header, ...lines] = await parseCsv(text); // reuses ingest-matches.js's parser -- export it from there if not already
     const idx = { captain: header.indexOf('Captain'), player: header.indexOf('Player'), pickOrder: header.indexOf('Pick Order') };
     for (const [key, i] of Object.entries(idx)) {
       if (i === -1) return res.status(500).json({ error: `Missing expected column "${key}" in ${filename}` });
@@ -665,6 +671,9 @@ app.get('/api/upcoming-roster', async (req, res) => {
     const ratingByKey = new Map(trueskillResult.players.map((p) => [p.identityKey, p]));
     const { mu, sigma, conservativeK } = trueskillResult.params;
     const defaultRating = { mu, sigma, conservativeRating: round3(mu - conservativeK * sigma), games: 0 };
+
+    
+    // Adding captains as unique lines
 
     const rows = lines.filter((r) => r[idx.captain]).map((r) => {
       const captain = resolve(r[idx.captain]);
@@ -880,9 +889,6 @@ app.post("/api/identity/sync", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Listening on port ${PORT}`);
-});
 
 // Automatic 14-day Riot sync — no-ops if RIOT_API_KEY isn't set or the
 // identity tables haven't been bootstrapped yet. See data/scheduler.js.
