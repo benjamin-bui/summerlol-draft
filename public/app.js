@@ -1,5 +1,6 @@
 import { initTheme } from "./js/theme.js";
 import {
+  round1,
   round3,
   escapeHtml,
   renderNameWithTag,
@@ -11,6 +12,7 @@ import {
   setRankTiers,
   parseNameList,
   seasonRankLocal,
+  renderChampionIcon,
 } from "./js/utils.js";
 import { initPlayerProfile, renderClickableName } from "./js/player-profile.js";
 import { createTabTable, coerceNumericColumns } from "./js/table-utils.js";
@@ -458,7 +460,6 @@ const trueskillTable = createTabTable({
   defaultSortColumn: "conservativeRating",
 });
 
-
 async function loadtrueskillData(forceRefresh) {
   if (trueskillLoaded && !forceRefresh) return;
   const res = await fetch(`/api/trueskill`);
@@ -468,9 +469,8 @@ async function loadtrueskillData(forceRefresh) {
   latestTrueskillPlayers = players;
   buildPastDraftOptions(document.getElementById("pastDraftsOptgroup"));
   setRankTiers(funFacts.staticCutoffs || []);
-  document.getElementById("trueskill-fun-facts").innerHTML = renderFunFactsHtml(
-    funFacts,
-  );
+  document.getElementById("trueskill-fun-facts").innerHTML =
+    renderFunFactsHtml(funFacts);
   trueskillTable.setData(players);
   trueskillLoaded = true;
 }
@@ -829,10 +829,6 @@ function openCaptainDraftHistory(captainName) {
   modal.querySelector(".captain-draft-body").innerHTML =
     sections.join("") || "<p>No draft history found.</p>";
   modal.classList.add("open");
-}
-
-function round1(x) {
-  return Math.round(x * 10) / 10;
 }
 
 function ensureCaptainDraftModal() {
@@ -1913,7 +1909,8 @@ const MOCK_PLAYER_COLUMNS = [
     filterable: true,
     type: "string",
     className: "group-name",
-    render: (val, row) => renderClickableName(row.group, row.identityKey, !row.manual),
+    render: (val, row) =>
+      renderClickableName(row.group, row.identityKey, !row.manual),
   },
   {
     key: "conservativeRating",
@@ -2221,15 +2218,24 @@ function renderUpcomingRoster(data) {
     .map((team) => {
       const rosterRows = team.roster
         .map((p) => {
-          const nameHtml = renderClickableName(p.displayName, p.identityKey, p.identified);
+          const nameHtml = renderClickableName(
+            p.displayName,
+            p.identityKey,
+            p.identified,
+            p.profileUrl,
+          );
           const ratingHtml =
             p.conservativeRating !== null
               ? renderTrueSkillValue(p.conservativeRating, p.mu)
               : '<span class="stat-formula">Unrated (No games yet)</span>';
-          return `<tr>
-        <td>#${p.pickOrder}</td>
+          const soloHtml = renderSoloQueueRank(p.soloQueueRank);
+          const flexHtml = renderSoloQueueRank(p.flexQueueRank);
+          return `<tr${p.isCaptain ? ' class="roster-captain-row"' : ""}>
+        <td>${p.isCaptain ? "Cap" : "#" + p.pickOrder}</td>
         <td>${nameHtml}</td>
         <td>${ratingHtml}</td>
+        <td>${soloHtml}</td>
+        <td>${flexHtml}</td>
         <td>${p.entryRank !== null ? "#" + p.entryRank : "–"}</td>
         <td class="${p.value > 0 ? "outcome-win" : p.value < 0 ? "outcome-loss" : ""}">${p.value !== null ? (p.value > 0 ? "+" : "") + p.value : "–"}</td>
       </tr>`;
@@ -2239,13 +2245,18 @@ function renderUpcomingRoster(data) {
       return `
       <div class="fun-facts-box" style="margin-bottom:16px;">
         <div class="collapsible-body" style="padding:16px 18px;">
-          <h4>${renderNameWithTag(team.captain.displayName)}</h4>
+          <h4>${renderClickableName(
+            team.captain.displayName,
+            team.captain.identityKey,
+            team.captain.identified,
+            team.captain.profileUrl,
+          )}</h4>
           <div class="profile-summary">
             <span>Avg Entry TrueSkill: ${team.avgEntryRating !== null ? renderTrueSkillValue(team.avgEntryRating) : "–"} (${team.ratedCount}/${team.totalCount} rated)</span>
             <span>Draft IQ: ${team.draftIQ !== null ? (team.draftIQ > 0 ? "+" : "") + team.draftIQ : "–"}</span>
           </div>
           <table class="profile-history-table">
-            <thead><tr><th>Pick #</th><th>Player</th><th>TrueSkill</th><th>Rank</th><th>Value</th></tr></thead>
+            <thead><tr><th>Pick #</th><th>Player</th><th>TrueSkill</th><th>Solo Queue</th><th>Flex Queue</th><th>Rank</th><th>Value</th></tr></thead>
             <tbody>${rosterRows}</tbody>
           </table>
         </div>
@@ -2353,21 +2364,30 @@ document.getElementById("downloadDraftCsvBtn").addEventListener("click", () => {
   document.body.removeChild(a);
 });
 
-// ==================== Match Data tab ====================
+// ==================== Match History tab ====================
 function renderMatchRosterDetail(row) {
+  const normalizePlayer = (value) => String(value || "").trim().toLowerCase();
+  const detailsByPlayer = new Map(
+    (row.match_details || []).map((detail) => [normalizePlayer(detail.player), detail]),
+  );
   const rosterList = (team) =>
-    (team?.roster || [])
-      .map(
-        (m) =>
-          `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue ? renderTrueSkillValue(m.conservativeRating, m.mu) : m.conservativeRating}</span></li>`,
-      )
-      .join("");
+    (team?.roster || []).map((member) => {
+      const detail = detailsByPlayer.get(normalizePlayer(member.displayName));
+      const detailCells = row.match_details?.length
+        ? `<td>${detail ? renderChampionIcon(detail.champion) : "–"}</td><td>${detail?.kills ?? "–"}</td><td>${detail?.deaths ?? "–"}</td><td>${detail?.assists ?? "–"}</td>`
+        : "";
+      return `<tr><td>${escapeHtml(member.displayName)}</td><td>${renderTrueSkillValue(member.conservativeRating, member.mu)}</td>${detailCells}</tr>`;
+    }).join("");
+  const teamTable = (team, name) => {
+    const detailHeaders = row.match_details?.length
+      ? "<th>Champion</th><th>K</th><th>D</th><th>A</th>"
+      : "";
+    return `<div><strong>${escapeHtml(name)}</strong> - avg TrueSkill: ${renderTrueSkillValue(team?.avg, team?.avgMu)}<table class="match-details-table"><thead><tr><th>Player</th><th>TrueSkill</th>${detailHeaders}</tr></thead><tbody>${rosterList(team)}</tbody></table></div>`;
+  };
   return `
     <div class="roster-detail">
-      <div><strong>${escapeHtml(row._team1Roster?.name || row.team1)}</strong> - avg TrueSkill: ${renderTrueSkillValue(row._team1Roster?.avgConservativeRating, row._team1Roster?.avgMu)}
-        <ul>${rosterList(row._team1Roster)}</ul></div>
-      <div><strong>${escapeHtml(row._team2Roster?.name || row.team2)}</strong> - avg TrueSkill: ${renderTrueSkillValue(row._team2Roster?.avgConservativeRating, row._team2Roster?.avgMu)}
-        <ul>${rosterList(row._team2Roster)}</ul></div>
+      ${teamTable(row._team1Roster, row._team1Roster?.name || row.team1)}
+      ${teamTable(row._team2Roster, row._team2Roster?.name || row.team2)}
     </div>`;
 }
 
@@ -2378,8 +2398,13 @@ const MATCH_DATA_COLUMNS = [
     sortable: true,
     hideable: true,
     filterable: true,
+    filterType: "checkbox",
     type: "number",
     decimals: 0,
+    sortValue: (row) => {
+      const summerFirst = String(row.tournament || "").toLowerCase() === "summer" ? 1 : 0;
+      return Number(row.year || 0) * 1000000000 + summerFirst * 10000000 + Number(row.match_order || 0);
+    },
   },
   {
     key: "tournament",

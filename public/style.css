@@ -909,7 +909,8 @@ thead .sticky-col {
 }
 .profile-history-table th,
 .profile-history-table td {
-  padding: 6px 8px;
+  padding: 4px 8px;
+  line-height: 1.2;
   border-bottom: 1px solid var(--border);
   text-align: left;
 }
@@ -937,12 +938,42 @@ thead .sticky-col {
 }
 .roster-detail-row td {
   background: var(--bg);
-  padding: 10px 14px;
+  padding: 3px 8px;
 }
 .roster-detail {
   display: flex;
   gap: 32px;
   flex-wrap: wrap;
+}
+.match-details-table {
+  margin-top: 3px;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 0.95;
+}
+.match-details-table th,
+.match-details-table td {
+  padding: 0 4px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.champion-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.champion-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: cover;
+  border-radius: 3px;
+  background: var(--panel);
+}
+.match-performance {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .roster-detail ul {
   list-style: none;
@@ -1107,8 +1138,7 @@ td:has(.pick-detail) {
   background: var(
     --bg
   ); /* back to your original neutral background, not the strong accent tint */
-  border-left: 3px solid var(--accent-dim); /* this is now doing the main "distinct section" signaling */
-  padding: 14px 16px 14px 13px;
+  padding: 4px 16px 4px 13px;
 }
 
 /* Section headers ("Roster", "Matches") need breathing room from
@@ -1174,9 +1204,19 @@ td:has(.pick-detail) {
   font-size: 0.7rem;
   color: var(--muted);
 }
-.mock-profile-icon { font-size: 0.85em; opacity: 0.7; margin-left: 2px; }
-.mock-pick-number-link { text-decoration: none; color: var(--accent); font-size: 0.7rem; }
-.mock-pick-number-link:hover { text-decoration: underline; }
+.mock-profile-icon {
+  font-size: 0.85em;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+.mock-pick-number-link {
+  text-decoration: none;
+  color: var(--accent);
+  font-size: 0.7rem;
+}
+.mock-pick-number-link:hover {
+  text-decoration: underline;
+}
 #mockDraftBoardTable td,
 #mockDraftBoardTable th {
   padding: 8px 10px;

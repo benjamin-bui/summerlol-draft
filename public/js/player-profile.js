@@ -4,6 +4,7 @@ import {
   renderTrueSkillValue,
   renderRankBadge,
   getRankTier,
+  renderChampionIcon,
 } from "./utils.js";
 
 const playerProfileModal = document.getElementById("playerProfileModal");
@@ -161,14 +162,36 @@ function renderPlayerProfileContent(player) {
             ? "outcome-loss"
             : "outcome-draw";
       const rosterId = `roster-detail-${idx}`;
-
-      const rosterList = (team) =>
-        (team?.roster || [])
-          .map(
-            (m) =>
-              `<li>${escapeHtml(m.displayName)} <span class="roster-rating">${renderTrueSkillValue(m.conservativeRating)}</span></li>`,
-          )
+      const playerDetail = entry.playerDetails?.[0];
+      const normalizePlayer = (value) =>
+        String(value || "")
+          .trim()
+          .toLowerCase();
+      const detailsByPlayer = new Map(
+        (entry.details || []).map((detail) => [
+          normalizePlayer(detail.player),
+          detail,
+        ]),
+      );
+      const hasDetails = (entry.details || []).length > 0;
+      const rosterTable = (team, name) => {
+        const rows = (team?.roster || [])
+          .map((member) => {
+            const detail = detailsByPlayer.get(
+              normalizePlayer(member.displayName),
+            );
+            return `<tr><td>${escapeHtml(member.displayName)}</td><td>${renderTrueSkillValue(member.conservativeRating)}</td>${
+              hasDetails
+                ? `<td>${detail ? renderChampionIcon(detail.champion) : "–"}</td><td>${detail?.kills ?? "–"}</td><td>${detail?.deaths ?? "–"}</td><td>${detail?.assists ?? "–"}</td>`
+                : ""
+            }</tr>`;
+          })
           .join("");
+        const detailHeaders = hasDetails
+          ? "<th>Champion</th><th>K</th><th>D</th><th>A</th>"
+          : "";
+        return `<div><strong>${escapeHtml(name)}</strong><table class="match-details-table"><thead><tr><th>Player</th><th>TrueSkill</th>${detailHeaders}</tr></thead><tbody>${rows}</tbody></table></div>`;
+      };
 
       const changeClass =
         entry.ratingChange > 0
@@ -187,6 +210,8 @@ function renderPlayerProfileContent(player) {
       <td>${escapeHtml(entry.tournament || "–")}${entry.matchStage ? ` <span class="match-stage">(${escapeHtml(entry.matchStage)})</span>` : ""}</td>
       <td>${escapeHtml(entry.ownTeam?.name || "–")}</td>
       <td>${escapeHtml(entry.opponent || "–")}</td>
+      <td>${playerDetail ? renderChampionIcon(playerDetail.champion) : "–"}</td>
+      <td>${playerDetail ? `${playerDetail.kills ?? "–"}/${playerDetail.deaths ?? "–"}/${playerDetail.assists ?? "–"}` : "–"}</td>
       <td class="${outcomeClass}">${escapeHtml(entry.outcome || "–")}</td>
       <td>${Math.round((entry.predictedWinProb ?? 0) * 100)}%</td>
       <td>${entry.ownTeam?.avgConservativeRating ?? "–"}</td>
@@ -197,16 +222,10 @@ function renderPlayerProfileContent(player) {
       <td>${entry.sigma ?? "–"}</td>
     </tr>
     <tr id="${rosterId}" class="roster-detail-row" hidden>
-      <td colspan="12">
+      <td colspan="15">
         <div class="roster-detail">
-          <div>
-            <strong>${escapeHtml(entry.ownTeam?.name || "Your team")} - </strong> avg TrueSkill: ${entry.ownTeam?.avgConservativeRating ?? "–"} (${entry.ownTeam?.avgMu ?? "-"})
-            <ul>${rosterList(entry.ownTeam)}</ul>
-          </div>
-          <div>
-            <strong>${escapeHtml(entry.opponentTeam?.name || "Opponent")} - </strong> avg TrueSkill: ${entry.opponentTeam?.avgConservativeRating ?? "–"} (${entry.opponentTeam?.avgMu ?? "-"})
-            <ul>${rosterList(entry.opponentTeam)}</ul>
-          </div>
+          ${rosterTable(entry.ownTeam, entry.ownTeam?.name || "Your team")}
+          ${rosterTable(entry.opponentTeam, entry.opponentName || "Opponent")}
         </div>
       </td>
     </tr>`;
@@ -220,7 +239,7 @@ function renderPlayerProfileContent(player) {
     ratingRows,
     buildChartHtml(history),
     historyRows
-      ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Captain</th><th>Opponent</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill</th><th>Change</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
+      ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Captain</th><th>Opponent</th><th>Champion</th><th>K/D/A</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill</th><th>Change</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
       : "<p>No match history available.</p>",
   ].join("");
 }
@@ -282,7 +301,7 @@ export function initPlayerProfile() {
 // Client-side equivalent of the server's opggLink() for building a simple op.gg link from a full name string (e.g. "PlayerName#1234").
 
 function buildSimpleOpggLink(fullName) {
-  const idx = fullName.lastIndexOf('#');
+  const idx = fullName.lastIndexOf("#");
   if (idx === -1) return null; // no tag to split on -- can't build a valid op.gg link
   const gameName = fullName.slice(0, idx).trim();
   const tagLine = fullName.slice(idx + 1).trim();
@@ -292,15 +311,17 @@ function buildSimpleOpggLink(fullName) {
 
 function openSimpleProfile(fullName) {
   const link = buildSimpleOpggLink(fullName);
-  playerProfileModal.classList.add('open');
-  playerProfileModal.setAttribute('aria-hidden', 'false');
+  playerProfileModal.classList.add("open");
+  playerProfileModal.setAttribute("aria-hidden", "false");
   playerProfileTitle.textContent = fullName;
   playerProfileContent.innerHTML = `
     <div class="profile-summary">
       <span><strong>${escapeHtml(fullName)}</strong></span>
-      ${link
-        ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>`
-        : '<span class="stat-formula">No # tag to build an op.gg link from.</span>'}
+      ${
+        link
+          ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>`
+          : '<span class="stat-formula">No # tag to build an op.gg link from.</span>'
+      }
     </div>
     <p class="stat-formula" style="margin-top:12px;">No TrueSkill history for this name yet.</p>
   `;
@@ -308,9 +329,17 @@ function openSimpleProfile(fullName) {
 // Used anywhere a name needs to be clickable but might not have a real
 // identityKey -- Mock Draft board cells, Mock Draft's Available/Selected
 // tables for manual entries, and Upcoming Roster's unrated players.
-export function renderClickableName(fullName, identityKey, identified) {
+export function renderClickableName(
+  fullName,
+  identityKey,
+  identified,
+  profileUrl = null,
+) {
   if (identityKey && identified) {
     return `<a href="#" class="player-link" data-player-key="${escapeHtml(identityKey)}">${renderNameWithTag(fullName)}</a>`;
+  }
+  if (profileUrl) {
+    return `<a href="${escapeHtml(profileUrl)}" target="_blank" rel="noopener noreferrer" class="player-link" title="View on op.gg">${renderNameWithTag(fullName)}</a>`;
   }
   return `<a href="#" class="simple-profile-link" data-fullname="${escapeHtml(fullName)}">${renderNameWithTag(fullName)}</a>`;
 }

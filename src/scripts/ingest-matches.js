@@ -6,6 +6,7 @@
 const fs = require("fs");
 const path = require("path");
 const Database = require("better-sqlite3");
+const { buildMatchKey } = require("../lib/match-identity");
 const DB_PATH = path.join(__dirname, "..", "..", "data", "app.db");
 
 // Minimal RFC4180-ish line parser (handles quoted fields defensively even
@@ -76,6 +77,8 @@ function main() {
 
   const db = new Database(DB_PATH);
   db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = OFF");
+  db.exec("DROP TABLE IF EXISTS match_details");
   db.exec("DROP TABLE IF EXISTS matches");
   db.exec(`
     CREATE TABLE matches (
@@ -87,13 +90,14 @@ function main() {
       result TEXT NOT NULL,
       csv_row_index INTEGER NOT NULL,
       match_order INTEGER NOT NULL,
-      match_stage TEXT
+      match_stage TEXT,
+      match_key TEXT NOT NULL UNIQUE
     )
   `);
 
   const insert = db.prepare(
-    `INSERT INTO matches (year, tournament, team1, team2, result, csv_row_index, match_order, match_stage)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO matches (year, tournament, team1, team2, result, csv_row_index, match_order, match_stage, match_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertMany = db.transaction((rows) => {
     rows.forEach((r, i) => {
@@ -104,15 +108,25 @@ function main() {
           `Row ${i + 2}: "Match Order" value "${r[idx.matchOrder]}" is not a valid integer`,
         );
       }
+      const values = {
+        year: parseInt(r[idx.year], 10),
+        tournament: r[idx.tournament] || null,
+        team1: r[idx.team1],
+        team2: r[idx.team2],
+        result: r[idx.result],
+        matchStage: matchStageIdx === -1 ? null : r[matchStageIdx] || null,
+        matchOrder: matchOrderVal,
+      };
       insert.run(
-        parseInt(r[idx.year], 10),
-        r[idx.tournament] || null,
-        r[idx.team1],
-        r[idx.team2],
-        r[idx.result],
+        values.year,
+        values.tournament,
+        values.team1,
+        values.team2,
+        values.result,
         i, // csv_row_index -- position in file, top of file = 0
-        matchOrderVal,
-        matchStageIdx === -1 ? null : r[matchStageIdx] || null,
+        values.matchOrder,
+        values.matchStage,
+        buildMatchKey(values),
       );
     });
   });

@@ -15,10 +15,12 @@
 const fs = require("fs");
 const path = require("path");
 const { ingestCsv, DB_PATH } = require("./src/scripts/csv-to-sqlite");
+const { ingestMatchDetails } = require("./src/scripts/ingest-match-details");
 const { bootstrap } = require("./src/scripts/bootstrap-player-identities");
 
 const CSV_PATH =
   process.env.CSV_PATH || path.join(__dirname, "data", "draft-data.csv");
+const MATCH_DETAILS_PATH = process.env.MATCH_DETAILS_PATH;
 
 function getMtimeMs(filePath) {
   try {
@@ -80,7 +82,20 @@ function maybeBootstrapIdentities() {
   }
 }
 
+function maybeIngestMatchDetails() {
+  if (!MATCH_DETAILS_PATH || !fs.existsSync(MATCH_DETAILS_PATH)) return;
+  try {
+    const count = ingestMatchDetails(MATCH_DETAILS_PATH);
+    console.log(`[entrypoint] Ingested ${count} match detail rows.`);
+  } catch (error) {
+    console.error(
+      `[entrypoint] Match details ingestion failed: ${error.message}`,
+    );
+  }
+}
+
 maybeIngest();
+maybeIngestMatchDetails();
 maybeBootstrapIdentities();
 
 // Starting the server is just requiring it — server.js calls app.listen()

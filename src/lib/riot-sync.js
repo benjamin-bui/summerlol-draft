@@ -40,9 +40,9 @@ const DEFAULT_REGION = process.env.RIOT_REGION || "americas";
 const VALID_REGIONS = new Set(["americas", "europe", "asia", "sea"]);
 
 const REGIONAL_TO_PLATFORM = {
-  americas: 'na1',
-  europe: 'euw1',
-  asia: 'kr'
+  americas: "na1",
+  europe: "euw1",
+  asia: "kr",
 };
 
 function platformHost(regionalRegion) {
@@ -185,6 +185,28 @@ function updateNameIfChanged(
   if (locked) return false; // admin has locked this player's name from auto-sync
 
   const { riot_game_name: oldName, riot_tag_line: oldTag } = row;
+  const currentDisplayName = `${newName}#${newTag}`;
+  db.prepare(
+    "INSERT OR IGNORE INTO player_aliases (alias, player_id) VALUES (?, ?)",
+  ).run(currentDisplayName, playerId);
+
+  // Keep the CSV-backed draft rows in sync with the current Riot ID. The
+  // alias table still retains historical spellings for identity resolution,
+  // but the data shown/exported as draft data should use the current name.
+  const aliases = db
+    .prepare("SELECT alias FROM player_aliases WHERE player_id = ?")
+    .all(playerId)
+    .map((alias) => alias.alias);
+  if (aliases.length) {
+    const placeholders = aliases.map(() => "?").join(", ");
+    db.prepare(
+      `UPDATE rows SET Player = ? WHERE Player IN (${placeholders})`,
+    ).run(currentDisplayName, ...aliases);
+    db.prepare(
+      `UPDATE rows SET Captain = ? WHERE Captain IN (${placeholders})`,
+    ).run(currentDisplayName, ...aliases);
+  }
+
   if (oldName === newName && oldTag === newTag) return false;
 
   db.prepare(
@@ -315,7 +337,13 @@ async function refreshKnown(
       account = await fetchAccountByPuuid(region, row.puuid);
     } catch (err) {
       failed += 1;
-      onProgress({ phase: "refresh", event: "tick", current: i + 1, total, label });
+      onProgress({
+        phase: "refresh",
+        event: "tick",
+        current: i + 1,
+        total,
+        label,
+      });
       continue;
     }
 
@@ -332,7 +360,13 @@ async function refreshKnown(
     );
     if (changed) updated += 1;
     else unchanged += 1;
-    onProgress({ phase: "refresh", event: "tick", current: i + 1, total, label });
+    onProgress({
+      phase: "refresh",
+      event: "tick",
+      current: i + 1,
+      total,
+      label,
+    });
   }
 
   onProgress({ phase: "refresh", event: "end", total });
@@ -341,7 +375,11 @@ async function refreshKnown(
 
 // Tracking rank status
 
-const TRACKED_QUEUES = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR', 'RANKED_PREMADE_5x5'];
+const TRACKED_QUEUES = [
+  "RANKED_SOLO_5x5",
+  "RANKED_FLEX_SR",
+  "RANKED_PREMADE_5x5",
+];
 
 async function getLeagueEntriesByPuuid(platform, puuid) {
   const path = `${platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/${puuid}`;
@@ -354,11 +392,12 @@ async function getLeagueEntriesByPuuid(platform, puuid) {
 // This is what makes "rank always reflects current state" true even
 // for someone who's dropped out of ranked entirely since the last sync.
 function upsertRankedStats(db, playerId, queueType, entry) {
-  const tier = entry ? entry.tier : 'UNRANKED';
+  const tier = entry ? entry.tier : "UNRANKED";
   const division = entry ? entry.rank : null;
   const leaguePoints = entry ? entry.leaguePoints : 0;
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO player_ranked_stats (player_id, queue_type, tier, division, league_points, synced_at)
     VALUES (?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(player_id, queue_type) DO UPDATE SET
@@ -366,7 +405,8 @@ function upsertRankedStats(db, playerId, queueType, entry) {
       division = excluded.division,
       league_points = excluded.league_points,
       synced_at = excluded.synced_at
-  `).run(playerId, queueType, tier, division, leaguePoints);
+  `,
+  ).run(playerId, queueType, tier, division, leaguePoints);
 }
 
 /**
@@ -383,7 +423,9 @@ async function refreshRankedStats(
   } = {},
 ) {
   const rows = db
-    .prepare(`SELECT id, puuid, riot_region FROM players WHERE puuid IS NOT NULL ORDER BY id ASC LIMIT ?`)
+    .prepare(
+      `SELECT id, puuid, riot_region FROM players WHERE puuid IS NOT NULL ORDER BY id ASC LIMIT ?`,
+    )
     .all(limit);
 
   const total = rows.length;
@@ -403,7 +445,13 @@ async function refreshRankedStats(
       entries = await fetchLeagueEntries(platform, row.puuid);
     } catch (err) {
       failed += 1;
-      onProgress({ phase: "ranked", event: "tick", current: i + 1, total, label });
+      onProgress({
+        phase: "ranked",
+        event: "tick",
+        current: i + 1,
+        total,
+        label,
+      });
       continue;
     }
 
@@ -412,7 +460,13 @@ async function refreshRankedStats(
       upsertRankedStats(db, row.id, queueType, entry);
     }
     updated += 1;
-    onProgress({ phase: "ranked", event: "tick", current: i + 1, total, label });
+    onProgress({
+      phase: "ranked",
+      event: "tick",
+      current: i + 1,
+      total,
+      label,
+    });
   }
 
   onProgress({ phase: "ranked", event: "end", total });
@@ -423,7 +477,11 @@ async function runFullSync(db, options = {}) {
   const pendingResult = await resolvePending(db, options);
   const refreshResult = await refreshKnown(db, options);
   const rankedResult = await refreshRankedStats(db, options);
-  return { pending: pendingResult, refresh: refreshResult, ranked: rankedResult };
+  return {
+    pending: pendingResult,
+    refresh: refreshResult,
+    ranked: rankedResult,
+  };
 }
 
 module.exports = {

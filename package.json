@@ -7,6 +7,8 @@
     "start": "node server.js",
     "ingest-csv": "node src/scripts/csv-to-sqlite.js",
     "watch-csv": "node src/scripts/watch-csv.js",
+    "ingest-match-details": "node src/scripts/ingest-match-details.js",
+    "update-champion-icons": "node src/scripts/update-champion-icons.js",
     "bootstrap-identities": "node src/scripts/bootstrap-player-identities.js",
     "export-pending-tags": "node src/scripts/export-pending-tags.js",
     "import-pending-tags": "node src/scripts/import-pending-tags.js",

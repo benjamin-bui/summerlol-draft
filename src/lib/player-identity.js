@@ -16,6 +16,17 @@ function opggLink(gameName, tagLine, region = OPGG_REGION) {
   return `https://op.gg/lol/summoners/${region}/${encodeURIComponent(gameName)}-${encodeURIComponent(tagLine)}`;
 }
 
+// Build op.gg URL from a Riot ID string (gameName#tagLine), using the
+// same last-# split as the client (renderNameWithTag / buildSimpleOpggLink).
+function opggLinkFromDisplayName(fullName, region = OPGG_REGION) {
+  if (!fullName || typeof fullName !== "string") return null;
+  const idx = fullName.lastIndexOf("#");
+  if (idx === -1) return null;
+  const gameName = fullName.slice(0, idx).trim();
+  const tagLine = fullName.slice(idx + 1).trim();
+  return opggLink(gameName, tagLine, region);
+}
+
 function identityTablesExist(db) {
   const row = db
     .prepare(
@@ -54,7 +65,7 @@ function loadIdentityMap(db) {
       displayName,
       profileUrl: resolved
         ? opggLink(row.riot_game_name, row.riot_tag_line, OPGG_REGION)
-        : null,
+        : opggLinkFromDisplayName(displayName),
       resolved,
     });
   }
@@ -85,5 +96,6 @@ module.exports = {
   loadIdentityMap,
   buildReverseIdentityLookup,
   opggLink,
+  opggLinkFromDisplayName,
   identityTablesExist,
 };

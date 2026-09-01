@@ -5,11 +5,13 @@ const Database = require("better-sqlite3");
 const {
   loadIdentityMap,
   identityTablesExist,
+  opggLinkFromDisplayName,
 } = require("./src/lib/player-identity");
 const { runFullSync } = require("./src/lib/riot-sync");
 const { startPeriodicSync } = require("./src/scripts/scheduler");
 const { computeTrueSkillFromMatches } = require("./src/lib/trueskill-matches");
 const { parseCsv } = require("./src/scripts/ingest-matches");
+const { buildMatchKey } = require("./src/lib/match-identity");
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -30,12 +32,89 @@ const SD_MODE = "sample"; // 'sample' (n-1, matches R's sd()) or 'population' (n
 // for a dataset this size. Opened once at startup and reused per request.
 const db = new Database(DB_PATH, { fileMustExist: true });
 db.pragma("journal_mode = WAL");
+db.pragma("foreign_keys = OFF");
 
-const identitySchemaPath = path.join(__dirname, "src", "db", "identity-schema.sql");
+const identitySchemaPath = path.join(
+  __dirname,
+  "src",
+  "db",
+  "identity-schema.sql",
+);
 if (fs.existsSync(identitySchemaPath)) {
   const schemaSql = fs.readFileSync(identitySchemaPath, "utf8");
   db.exec(schemaSql);
 }
+const existingDetails = db
+  .prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'match_details'",
+  )
+  .get();
+const savedDetails = existingDetails
+  ? db
+      .prepare(
+        "SELECT match_key, player, champion, kills, deaths, assists FROM match_details",
+      )
+      .all()
+  : [];
+db.exec("DROP TABLE IF EXISTS match_details");
+const matchColumns = db.prepare("PRAGMA table_info(matches)").all();
+if (matchColumns.length) {
+  if (!matchColumns.some((column) => column.name === "match_key")) {
+    db.exec("ALTER TABLE matches ADD COLUMN match_key TEXT");
+  }
+  db.exec("DROP INDEX IF EXISTS matches_match_key_unique");
+  const updateMatchKey = db.prepare(
+    "UPDATE matches SET match_key = ? WHERE id = ?",
+  );
+  const usedKeys = new Set();
+  const migrateMatchKeys = db.transaction(() => {
+    for (const match of db.prepare("SELECT * FROM matches ORDER BY id").all()) {
+      const baseKey = buildMatchKey({
+        year: match.year,
+        tournament: match.tournament,
+        matchStage: match.match_stage,
+        matchOrder: match.match_order,
+        team1: match.team1,
+        team2: match.team2,
+      });
+      let matchKey = baseKey;
+      let suffix = 2;
+      while (usedKeys.has(matchKey)) matchKey = `${baseKey}-${suffix++}`;
+      usedKeys.add(matchKey);
+      updateMatchKey.run(matchKey, match.id);
+    }
+  });
+  migrateMatchKeys();
+  db.exec("CREATE UNIQUE INDEX matches_match_key_unique ON matches(match_key)");
+}
+db.exec(`
+  CREATE TABLE IF NOT EXISTS match_details (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_key TEXT NOT NULL,
+    player TEXT NOT NULL,
+    champion TEXT,
+    kills INTEGER,
+    deaths INTEGER,
+    assists INTEGER
+  )
+`);
+const restoreDetail = db.prepare(
+  "INSERT INTO match_details (match_key, player, champion, kills, deaths, assists) VALUES (?, ?, ?, ?, ?, ?)",
+);
+const restoreDetails = db.transaction(() => {
+  for (const detail of savedDetails) {
+    restoreDetail.run(
+      detail.match_key,
+      detail.player,
+      detail.champion,
+      detail.kills,
+      detail.deaths,
+      detail.assists,
+    );
+  }
+});
+restoreDetails();
+db.pragma("foreign_keys = ON");
 
 // Double-quote identifiers so reserved-word / space-containing column
 // names (e.g. "Pick Order") don't break the SQL parser.
@@ -82,7 +161,9 @@ function resolveIdentities(rows, identityMap) {
       ...row,
       identityKey: identity ? identity.identityKey : row.groupVal,
       displayName: identity ? identity.displayName : row.groupVal,
-      profileUrl: identity ? identity.profileUrl : null,
+      profileUrl: identity
+        ? identity.profileUrl
+        : opggLinkFromDisplayName(row.groupVal),
       identified: identity ? identity.resolved : false,
     };
   });
@@ -289,39 +370,78 @@ app.get("/api/stats", (req, res) => {
 
 // TrueSkill: rates players as a sequence of team games, one per year,
 function getMatches() {
-  return db
+  const matches = db
     .prepare(
-      "SELECT year, tournament, team1, team2, result, csv_row_index AS rowIndex, match_order AS matchOrder, match_stage AS matchStage FROM matches",
+      "SELECT year, tournament, team1, team2, result, csv_row_index AS rowIndex, match_order AS matchOrder, match_stage AS matchStage, match_key AS matchKey FROM matches",
     )
     .all();
+  const details = db
+    .prepare(
+      "SELECT match_key AS matchKey, player, champion, kills, deaths, assists FROM match_details ORDER BY id",
+    )
+    .all();
+  const byKey = new Map();
+  for (const detail of details) {
+    if (!byKey.has(detail.matchKey)) byKey.set(detail.matchKey, []);
+    byKey.get(detail.matchKey).push(detail);
+  }
+  return matches.map((match) => ({
+    ...match,
+    details: byKey.get(match.matchKey) || [],
+  }));
 }
 const RANK_TIER_ORDER = [
-  'CHALLENGER', 'GRANDMASTER', 'MASTER', 'DIAMOND', 'EMERALD',
-  'PLATINUM', 'GOLD', 'SILVER', 'BRONZE', 'IRON', 'UNRANKED'
+  "CHALLENGER",
+  "GRANDMASTER",
+  "MASTER",
+  "DIAMOND",
+  "EMERALD",
+  "PLATINUM",
+  "GOLD",
+  "SILVER",
+  "BRONZE",
+  "IRON",
+  "UNRANKED",
 ];
 const DIVISION_ORDER = { I: 0, II: 1, III: 2, IV: 3 };
 
-function getRankMap(db, type = 'RANKED_SOLO_5x5') {
-  const rows = db.prepare(`
+function getRankMap(db, type = "RANKED_SOLO_5x5") {
+  const rows = db
+    .prepare(
+      `
     SELECT player_id, tier, division, league_points
     FROM player_ranked_stats
     WHERE queue_type = ?
-  `).all(type);
-  return new Map(rows.map((r) => [`p${r.player_id}`, {
-    tier: r.tier,
-    division: r.division,
-    leaguePoints: r.league_points
-  }]));
+  `,
+    )
+    .all(type);
+  return new Map(
+    rows.map((r) => [
+      `p${r.player_id}`,
+      {
+        tier: r.tier,
+        division: r.division,
+        leaguePoints: r.league_points,
+      },
+    ]),
+  );
 }
 
-function getAllRanksMap(db, queueTypes = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR', 'RANKED_PREMADE_5x5']) {
-  const placeholders = queueTypes.map(() => '?').join(', ');
-  
-  const rows = db.prepare(`
+function getAllRanksMap(
+  db,
+  queueTypes = ["RANKED_SOLO_5x5", "RANKED_FLEX_SR", "RANKED_PREMADE_5x5"],
+) {
+  const placeholders = queueTypes.map(() => "?").join(", ");
+
+  const rows = db
+    .prepare(
+      `
     SELECT player_id, queue_type, tier, division, league_points
     FROM player_ranked_stats
     WHERE queue_type IN (${placeholders})
-  `).all(...queueTypes);
+  `,
+    )
+    .all(...queueTypes);
 
   // Map: 'p123' => { RANKED_SOLO_5x5: {...}, RANKED_FLEX_SR: {...} }
   const playerMap = new Map();
@@ -334,7 +454,7 @@ function getAllRanksMap(db, queueTypes = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR', '
     playerMap.get(key)[r.queue_type] = {
       tier: r.tier,
       division: r.division,
-      leaguePoints: r.league_points
+      leaguePoints: r.league_points,
     };
   }
 
@@ -344,10 +464,14 @@ function getAllRanksMap(db, queueTypes = ['RANKED_SOLO_5x5', 'RANKED_FLEX_SR', '
 // Sort key: tier first (Challenger highest), then division (I highest
 // within a tier), then league points as the final tiebreaker.
 function soloQueueSortValue(rank) {
-  if (!rank || !rank.tier || rank.tier === 'UNRANKED') return -1;
+  if (!rank || !rank.tier || rank.tier === "UNRANKED") return -1;
   const tierIdx = RANK_TIER_ORDER.indexOf(rank.tier.toUpperCase());
   const divIdx = DIVISION_ORDER[rank.division] ?? 4;
-  return (RANK_TIER_ORDER.length - tierIdx) * 10000 - divIdx * 100 + (rank.leaguePoints || 0);
+  return (
+    (RANK_TIER_ORDER.length - tierIdx) * 10000 -
+    divIdx * 100 +
+    (rank.leaguePoints || 0)
+  );
 }
 const { computeFunFacts } = require("./src/lib/trueskill-funfacts");
 
@@ -401,30 +525,29 @@ app.get("/api/trueskill", async (req, res) => {
   }
 });
 
-
 // Read in filter preset
-const PRESETS_DIR = path.join(__dirname, 'data', 'presets');
+const PRESETS_DIR = path.join(__dirname, "data", "presets");
 
 function setNoStoreHeaders(res) {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  res.set('Pragma', 'no-cache');
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.set("Pragma", "no-cache");
 }
 
 function getAvailablePresets() {
   if (!fs.existsSync(PRESETS_DIR)) return [];
-  return fs.readdirSync(PRESETS_DIR)
-    .filter((f) => f.toLowerCase().endsWith('.csv'))
+  return fs
+    .readdirSync(PRESETS_DIR)
+    .filter((f) => f.toLowerCase().endsWith(".csv"))
     .map((filename) => ({
       id: filename,
-      label: filename.replace(/\.csv$/i, '').replace(/[-_]+/g, ' ')
+      label: filename.replace(/\.csv$/i, "").replace(/[-_]+/g, " "),
     }));
 }
 
-app.get('/api/presets', (req, res) => {
+app.get("/api/presets", (req, res) => {
   setNoStoreHeaders(res);
   res.json({ presets: getAvailablePresets() });
 });
-
 
 // Comparing TrueSkill against draft data
 const {
@@ -524,7 +647,10 @@ app.get("/api/player/:key", async (req, res) => {
     const rankMap = getRankMap(db);
     const player = result.players.find((p) => p.identityKey === key);
     if (!player) return res.status(404).json({ error: "Player not found" });
-    res.json({ ...player, soloQueueRank: rankMap.get(player.identityKey) || null });
+    res.json({
+      ...player,
+      soloQueueRank: rankMap.get(player.identityKey) || null,
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load player profile" });
@@ -556,12 +682,15 @@ app.get("/api/meta", (req, res) => {
 });
 
 // Mock Draft
-app.get('/api/presets/:id', (req, res) => {
+app.get("/api/presets/:id", (req, res) => {
   setNoStoreHeaders(res);
   const match = getAvailablePresets().find((p) => p.id === req.params.id);
-  if (!match) return res.status(404).json({ error: 'Preset not found' });
-  const text = fs.readFileSync(path.join(PRESETS_DIR, match.id), 'utf-8');
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!match) return res.status(404).json({ error: "Preset not found" });
+  const text = fs.readFileSync(path.join(PRESETS_DIR, match.id), "utf-8");
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
 
   // Two supported formats:
   //  - one name per line (existing behavior)
@@ -569,10 +698,10 @@ app.get('/api/presets/:id', (req, res) => {
   // Detected per-line by whether a comma is present at all -- a mixed
   // file (some lines with a flag, some without) is treated leniently:
   // any line without a comma is just a non-captain name.
-  const hasAnyCommaFormat = lines.some((l) => l.includes(','));
+  const hasAnyCommaFormat = lines.some((l) => l.includes(","));
 
   if (!hasAnyCommaFormat) {
-    const names = lines.filter((l) => l.toLowerCase() !== 'name');
+    const names = lines.filter((l) => l.toLowerCase() !== "name");
     return res.json({ id: match.id, label: match.label, names, captains: [] });
   }
 
@@ -580,10 +709,10 @@ app.get('/api/presets/:id', (req, res) => {
   const captains = [];
   for (const line of lines) {
     if (/^name\s*,\s*captain/i.test(line)) continue; // tolerate a header row
-    const [namePart, flagPart] = line.split(',').map((s) => s.trim());
+    const [namePart, flagPart] = line.split(",").map((s) => s.trim());
     if (!namePart) continue;
     names.push(namePart);
-    if (flagPart === '1') captains.push(namePart);
+    if (flagPart === "1") captains.push(namePart);
   }
   res.json({ id: match.id, label: match.label, names, captains });
 });
@@ -618,7 +747,9 @@ app.get("/api/raw", (req, res) => {
     const identity = identityMap.get(row[GROUP_COL]);
     return {
       ...row,
-      _playerProfileUrl: identity ? identity.profileUrl : null,
+      _playerProfileUrl: identity
+        ? identity.profileUrl
+        : opggLinkFromDisplayName(row.groupVal),
       _playerIdentityKey: identity ? identity.identityKey : null,
     };
   });
@@ -626,39 +757,62 @@ app.get("/api/raw", (req, res) => {
 });
 
 // Upcoming Roster
-const UPCOMING_ROSTER_DIR = path.join(__dirname, 'data', 'upcoming-roster');
+const UPCOMING_ROSTER_DIR = path.join(__dirname, "data", "upcoming-roster");
 
 function titleFromFilename(filename) {
   return filename
-    .replace(/\.csv$/i, '')
-    .replace(/[-_]+/g, ' ')
+    .replace(/\.csv$/i, "")
+    .replace(/[-_]+/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function findUpcomingRosterFile() {
   if (!fs.existsSync(UPCOMING_ROSTER_DIR)) return null;
-  const files = fs.readdirSync(UPCOMING_ROSTER_DIR).filter((f) => f.toLowerCase().endsWith('.csv')).sort();
+  const files = fs
+    .readdirSync(UPCOMING_ROSTER_DIR)
+    .filter((f) => f.toLowerCase().endsWith(".csv"))
+    .sort();
   return files.length ? files[0] : null;
 }
 
-app.get('/api/upcoming-roster', async (req, res) => {
+app.get("/api/upcoming-roster", async (req, res) => {
   try {
     const filename = findUpcomingRosterFile();
     if (!filename) return res.status(404).json({ exists: false });
 
-    const text = fs.readFileSync(path.join(UPCOMING_ROSTER_DIR, filename), 'utf-8');
+    const text = fs.readFileSync(
+      path.join(UPCOMING_ROSTER_DIR, filename),
+      "utf-8",
+    );
     const [header, ...lines] = await parseCsv(text); // reuses ingest-matches.js's parser -- export it from there if not already
-    const idx = { captain: header.indexOf('Captain'), player: header.indexOf('Player'), pickOrder: header.indexOf('Pick Order') };
+    const idx = {
+      captain: header.indexOf("Captain"),
+      player: header.indexOf("Player"),
+      pickOrder: header.indexOf("Pick Order"),
+    };
     for (const [key, i] of Object.entries(idx)) {
-      if (i === -1) return res.status(500).json({ error: `Missing expected column "${key}" in ${filename}` });
+      if (i === -1)
+        return res
+          .status(500)
+          .json({ error: `Missing expected column "${key}" in ${filename}` });
     }
 
     const identityMap = loadIdentityMap(db);
     const resolve = (name) => {
       const identity = identityMap.get(name);
       return identity
-        ? { identityKey: identity.identityKey, displayName: identity.displayName, profileUrl: identity.profileUrl, identified: identity.resolved }
-        : { identityKey: name, displayName: name, profileUrl: null, identified: false };
+        ? {
+            identityKey: identity.identityKey,
+            displayName: identity.displayName,
+            profileUrl: identity.profileUrl,
+            identified: identity.resolved,
+          }
+        : {
+            identityKey: name,
+            displayName: name,
+            profileUrl: opggLinkFromDisplayName(name),
+            identified: false,
+          };
     };
 
     // Current, present-day rating -- this hasn't happened yet, so there's
@@ -667,51 +821,111 @@ app.get('/api/upcoming-roster', async (req, res) => {
     // NOW is the honest proxy for what they're entering this draft with.
     const allRows = resolveIdentities(getAllRows(), identityMap);
     const matches = getMatches();
-    const trueskillResult = await computeTrueSkillFromMatches(matches, allRows, identityMap, {});
-    const ratingByKey = new Map(trueskillResult.players.map((p) => [p.identityKey, p]));
+    const trueskillResult = await computeTrueSkillFromMatches(
+      matches,
+      allRows,
+      identityMap,
+      {},
+    );
+    const ratingByKey = new Map(
+      trueskillResult.players.map((p) => [p.identityKey, p]),
+    );
     const { mu, sigma, conservativeK } = trueskillResult.params;
-    const defaultRating = { mu, sigma, conservativeRating: round3(mu - conservativeK * sigma), games: 0 };
+    const defaultRating = {
+      mu,
+      sigma,
+      conservativeRating: round3(mu - conservativeK * sigma),
+      games: 0,
+    };
 
-    
-    // Adding captains as unique lines
-
-    const rows = lines.filter((r) => r[idx.captain]).map((r) => {
-      const captain = resolve(r[idx.captain]);
-      const player = resolve(r[idx.player]);
-      const pickOrder = parseInt(r[idx.pickOrder], 10);
-      const rating = ratingByKey.get(player.identityKey) || null; // null = never played a rated game -- genuinely unrated, not just "no CSV match"
-      return { captain, player, pickOrder, rating };
-    });
+    const rows = lines
+      .filter((r) => r[idx.captain])
+      .map((r) => ({
+        captain: resolve(r[idx.captain]),
+        player: resolve(r[idx.player]),
+        pickOrder: parseInt(r[idx.pickOrder], 10),
+      }));
 
     // Rank the whole draft class by current rating for Draft IQ purposes.
     // Players with no rating at all (never played) can't be meaningfully
     // ranked -- they're excluded from the ranking pool entirely, same
     // treatment as an unresolved/never-seen player anywhere else in this
     // app, but still shown on their team's roster with no rank/value.
-    const rated = rows.filter((r) => r.rating).sort((a, b) => b.rating.conservativeRating - a.rating.conservativeRating);
-    const entryRankByKey = new Map(rated.map((r, i) => [r.player.identityKey, i + 1]));
+    const participantByKey = new Map();
+    for (const row of rows) {
+      participantByKey.set(row.player.identityKey, row.player);
+      participantByKey.set(row.captain.identityKey, row.captain);
+    }
+    const rated = [...participantByKey.values()]
+      .map((p) => ({ p, rating: ratingByKey.get(p.identityKey) || null }))
+      .filter((x) => x.rating)
+      .sort(
+        (a, b) => b.rating.conservativeRating - a.rating.conservativeRating,
+      );
+    const entryRankByKey = new Map(
+      rated.map((x, i) => [x.p.identityKey, i + 1]),
+    );
+
+    const rankMap = getAllRanksMap(db);
+    const rankedQueuesForKey = (identityKey) => {
+      const playerRanks = rankMap.get(identityKey) || {};
+      return {
+        soloQueueRank: playerRanks.RANKED_SOLO_5x5 || null,
+        flexQueueRank: playerRanks.RANKED_FLEX_SR || null,
+      };
+    };
+
+    const rosterMemberFromRating = (
+      person,
+      pickOrder,
+      { isCaptain = false } = {},
+    ) => {
+      const rating = ratingByKey.get(person.identityKey) || null;
+      const entryRank = entryRankByKey.get(person.identityKey) ?? null;
+      return {
+        ...person,
+        pickOrder,
+        isCaptain,
+        mu: rating ? rating.mu : null,
+        sigma: rating ? rating.sigma : null,
+        conservativeRating: rating ? rating.conservativeRating : null,
+        games: rating ? rating.games : 0,
+        entryRank,
+        value: !isCaptain && entryRank !== null ? entryRank - pickOrder : null,
+        ...rankedQueuesForKey(person.identityKey),
+      };
+    };
 
     const byCaptain = new Map();
     for (const row of rows) {
       const key = row.captain.identityKey;
-      if (!byCaptain.has(key)) byCaptain.set(key, { captain: row.captain, players: [] });
-      const entryRank = entryRankByKey.get(row.player.identityKey) ?? null;
-      byCaptain.get(key).players.push({
-        ...row.player,
-        pickOrder: row.pickOrder,
-        mu: row.rating ? row.rating.mu : null,
-        sigma: row.rating ? row.rating.sigma : null,
-        conservativeRating: row.rating ? row.rating.conservativeRating : null,
-        games: row.rating ? row.rating.games : 0,
-        entryRank,
-        value: entryRank !== null ? entryRank - row.pickOrder : null
-      });
+      if (!byCaptain.has(key))
+        byCaptain.set(key, { captain: row.captain, players: [] });
+      byCaptain
+        .get(key)
+        .players.push(rosterMemberFromRating(row.player, row.pickOrder));
+    }
+
+    for (const team of byCaptain.values()) {
+      const hasCaptain = team.players.some(
+        (p) => p.identityKey === team.captain.identityKey,
+      );
+      if (!hasCaptain) {
+        team.players.push(
+          rosterMemberFromRating(team.captain, 0, { isCaptain: true }),
+        );
+      }
     }
 
     const teams = [...byCaptain.values()].map((team) => {
-      const ratedPlayers = team.players.filter((p) => p.conservativeRating !== null);
+      const ratedPlayers = team.players.filter(
+        (p) => p.conservativeRating !== null,
+      );
       const avgEntryRating = ratedPlayers.length
-        ? round3(ratedPlayers.reduce((s, p) => s + p.conservativeRating, 0) / ratedPlayers.length)
+        ? round3(
+            ratedPlayers.reduce((s, p) => s + p.conservativeRating, 0) /
+              ratedPlayers.length,
+          )
         : null;
       const valued = team.players.filter((p) => p.value !== null);
       const draftIQ = valued.length
@@ -723,10 +937,13 @@ app.get('/api/upcoming-roster', async (req, res) => {
         ratedCount: ratedPlayers.length,
         totalCount: team.players.length,
         draftIQ,
-        roster: team.players.sort((a, b) => a.pickOrder - b.pickOrder)
+        roster: team.players.sort((a, b) => a.pickOrder - b.pickOrder),
       };
     });
-    teams.sort((a, b) => (b.avgEntryRating ?? -Infinity) - (a.avgEntryRating ?? -Infinity));
+    teams.sort(
+      (a, b) =>
+        (b.avgEntryRating ?? -Infinity) - (a.avgEntryRating ?? -Infinity),
+    );
 
     res.json({ exists: true, title: titleFromFilename(filename), teams });
   } catch (error) {
@@ -747,6 +964,19 @@ function getRawMatchRows() {
   const columns = getRawMatchColumns();
   const selectCols = columns.map(q).join(", ");
   const rows = db.prepare(`SELECT ${selectCols} FROM matches`).all();
+  const details = db
+    .prepare(
+      "SELECT match_key AS matchKey, player, champion, kills, deaths, assists FROM match_details ORDER BY id",
+    )
+    .all();
+  const byKey = new Map();
+  for (const detail of details) {
+    if (!byKey.has(detail.matchKey)) byKey.set(detail.matchKey, []);
+    byKey.get(detail.matchKey).push(detail);
+  }
+  rows.forEach((row) => {
+    row.match_details = byKey.get(row.match_key) || [];
+  });
   return { columns, rows };
 }
 
@@ -759,6 +989,7 @@ const MATCH_COLUMN_DISPLAY_NAMES = {
   match_order: "Match Order",
   match_stage: "Match Stage",
   csv_row_index: "CSV Row Index", // internal-ish, but included for completeness if ever un-hidden
+  match_key: "Match Key",
 };
 
 app.get("/api/raw-matches", async (req, res) => {
@@ -888,7 +1119,6 @@ app.post("/api/identity/sync", async (req, res) => {
     res.status(500).json({ error: String(err.message || err) });
   }
 });
-
 
 // Automatic 14-day Riot sync — no-ops if RIOT_API_KEY isn't set or the
 // identity tables haven't been bootstrapped yet. See data/scheduler.js.

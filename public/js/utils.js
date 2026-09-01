@@ -30,6 +30,16 @@ export function renderNameWithTag(fullName) {
   return `<span class="player-name">${escapeHtml(name)}</span><span class="player-tag">${escapeHtml(tag)}</span>`;
 }
 
+export function renderChampionIcon(champion) {
+  const label = champion || "Unknown champion";
+  const normalizedKey = String(champion || "unknown")
+    .trim()
+    .replace(/[^a-zA-Z0-9]/g, "");
+  let iconKey = normalizedKey.toLowerCase();
+  iconKey = iconKey === "wukong" ? "monkeyking" : iconKey;
+  return `<span class="champion-cell"><img src="/icons/champions/${escapeHtml(iconKey)}.png" alt="${escapeHtml(label)}" class="champion-icon" onerror="this.hidden=true" /><span>${escapeHtml(label)}</span></span>`;
+}
+
 export function renderPlayerCell(row) {
   const fullName = row.group || row.displayName || "";
   const identityKey = row.identityKey || row._playerIdentityKey || null;

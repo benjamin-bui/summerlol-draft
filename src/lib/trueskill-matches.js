@@ -1,4 +1,7 @@
-const { buildReverseIdentityLookup } = require("./player-identity");
+const {
+  buildReverseIdentityLookup,
+  opggLinkFromDisplayName,
+} = require("./player-identity");
 
 let trueskillModulePromise;
 
@@ -96,12 +99,18 @@ async function computeTrueSkillFromMatches(
       if ((row.identityKey || resolve(row.groupVal)) === key) {
         return {
           displayName: row.displayName || row.groupVal,
-          profileUrl: row.profileUrl || null,
+          profileUrl:
+            row.profileUrl ||
+            opggLinkFromDisplayName(row.displayName || row.groupVal),
           identified: !!row.identified,
         };
       }
     }
-    return { displayName: key, profileUrl: null, identified: false };
+    return {
+      displayName: key,
+      profileUrl: opggLinkFromDisplayName(key),
+      identified: false,
+    };
   };
 
   const roster = buildRosterMap(draftRows, identityMap);
@@ -256,6 +265,7 @@ async function computeTrueSkillFromMatches(
 
         const entry = {
           gameIndex: m.rowIndex ?? m.id ?? 0,
+          matchKey: m.matchKey || null,
           year: m.year,
           tournament: m.tournament,
           matchStage: m.matchStage || null,
@@ -278,6 +288,10 @@ async function computeTrueSkillFromMatches(
             avgConservativeRating: opponentTeam.avg,
             avgMu: opponentTeam.avgMu,
           },
+          details: m.details || [],
+          playerDetails: (m.details || []).filter(
+            (detail) => resolve(detail.player) === key,
+          ),
         };
         history.get(key).push(entry);
         return {
@@ -332,6 +346,7 @@ async function computeTrueSkillFromMatches(
       outcome1 === "win" ? "team1" : outcome2 === "win" ? "team2" : "draw";
 
     games.push({
+      matchKey: m.matchKey || null,
       year: m.year,
       tournament: m.tournament,
       matchStage: m.matchStage || null,
@@ -344,6 +359,7 @@ async function computeTrueSkillFromMatches(
         avgMu: team1AvgMu,
         changes: team1Changes,
       },
+      details: m.details || [],
       team2: {
         key: team2Key,
         name: displayInfo(team2Key).displayName,
