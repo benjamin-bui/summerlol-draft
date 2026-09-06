@@ -51,11 +51,11 @@ Year,Tournament,Match Stage,Match Order,Player,Champion,K,D,A
 2026,Summer,Semifinals,7,police defunder#NA1,Taric,0,7,6
 2026,Summer,Semifinals,6,Voidliss#NA1,Corki,3,4,4
 2026,Summer,Semifinals,6,Taco1518#NA1,Nasus,4,9,5
-2026,Summer,Semifinals,6,RichGamebuddy#NA1,Nocturne,3,8,5
+2026,Summer,Semifinals,6,RichGamebuddy#NA1,Noctunre,3,8,5
 2026,Summer,Semifinals,6,Ene#TFT,Viktor,2,5,7
 2026,Summer,Semifinals,6,maomer#bao,Nami,1,8,7
 2026,Summer,Semifinals,6,Zhangshi#9859,Garen,7,2,8
-2026,Summer,Semifinals,6,Xemacs#LOR,Briar,8,5,9
+2026,Summer,Semifinals,6,Xemacs#LOR,Brair,8,5,9
 2026,Summer,Semifinals,6,一見鍾情#1314,Syndra,13,1,12
 2026,Summer,Semifinals,6,SnuggleHero#NA1,Cassiopeia,2,3,10
 2026,Summer,Semifinals,6,police defunder#NA1,Shen,4,2,20
@@ -104,7 +104,7 @@ Year,Tournament,Match Stage,Match Order,Player,Champion,K,D,A
 2026,Summer,Swiss Round 5,5,Zhangshi#9859,Yone,2,6,5
 2026,Summer,Swiss Round 5,5,一見鍾情#1314,Ezreal,12,2,6
 2026,Summer,Swiss Round 5,5,police defunder#NA1,Leona,3,2,17
-2026,Summer,Swiss Round 5,5,Bloodyninja1122,Mordekaiser,3,7,0
+2026,Summer,Swiss Round 5,5,Bloodyninja1122#NA1,Mordekaiser,3,7,0
 2026,Summer,Swiss Round 5,5,No Love#NA1,Nocturne,7,11,3
 2026,Summer,Swiss Round 5,5,Sarcasm#Riven,Galio,1,2,6
 2026,Summer,Swiss Round 5,5,PlightOfTheFlake#NA1,Syndra,2,8,2
@@ -154,7 +154,7 @@ Year,Tournament,Match Stage,Match Order,Player,Champion,K,D,A
 2026,Summer,Swiss Round 4,4,SK Telecom T1#Faker,Xerath,3,0,11
 2026,Summer,Swiss Round 4,4,rlylost#NA1,Seraphine,3,0,5
 2026,Summer,Swiss Round 4,4,LightningFst#1008,Blitzcrank,1,4,5
-2026,Summer,Swiss Round 4,4,Bloodyninja1122,Yorick,3,5,1
+2026,Summer,Swiss Round 4,4,Bloodyninja1122#NA1,Yorick,3,5,1
 2026,Summer,Swiss Round 4,4,No Love#NA1,Olaf,3,7,2
 2026,Summer,Swiss Round 4,4,Sarcasm#Riven,Malzahar,0,3,1
 2026,Summer,Swiss Round 4,4,PlightOfTheFlake#NA1,Ziggs,1,3,1
@@ -170,7 +170,7 @@ Year,Tournament,Match Stage,Match Order,Player,Champion,K,D,A
 2026,Summer,Swiss Round 3,3,rlylost#NA1,Xerath,3,7,4
 2026,Summer,Swiss Round 3,3,LightningFst#1008,Leona,1,7,6
 2026,Summer,Swiss Round 3,3,No Love#NA1,Naafiri,16,2,5
-2026,Summer,Swiss Round 3,3,Bloodyninja1122,Rumble,7,2,8
+2026,Summer,Swiss Round 3,3,Bloodyninja1122#NA1,Rumble,7,2,8
 2026,Summer,Swiss Round 3,3,Sarcasm#Riven,Renekton,5,2,7
 2026,Summer,Swiss Round 3,3,PlightOfTheFlake#NA1,Seraphine,2,0,9
 2026,Summer,Swiss Round 3,3,ˇchooˇ#hehe,Soraka,1,0,20
@@ -202,7 +202,7 @@ Year,Tournament,Match Stage,Match Order,Player,Champion,K,D,A
 2026,Summer,Swiss Round 2,2,Sarcasm#Riven,Renekton,1,0,6
 2026,Summer,Swiss Round 2,2,No Love#NA1,Nocturne,6,2,9
 2026,Summer,Swiss Round 2,2,PlightOfTheFlake#NA1,Syndra,5,0,5
-2026,Summer,Swiss Round 2,2,Bloodyninja1122,Rumble,6,4,9
+2026,Summer,Swiss Round 2,2,Bloodyninja1122#NA1,Rumble,6,4,9
 2026,Summer,Swiss Round 2,2,ˇchooˇ#hehe,Milio,0,0,17
 2026,Summer,Swiss Round 2,2,War Koala#1650,Ornn,2,1,2
 2026,Summer,Swiss Round 2,2,blizzardpenguin#roast,Bel'Veth,0,4,2
@@ -247,7 +247,7 @@ Year,Tournament,Match Stage,Match Order,Player,Champion,K,D,A
 2026,Summer,Swiss Round 1,1,Sarcasm#Riven,Olaf,4,4,8
 2026,Summer,Swiss Round 1,1,No Love#NA1,Nocturne,10,8,13
 2026,Summer,Swiss Round 1,1,PlightOfTheFlake#NA1,Galio,5,3,16
-2026,Summer,Swiss Round 1,1,Bloodyninja1122,Rumble,10,6,12
+2026,Summer,Swiss Round 1,1,Bloodyninja1122#NA1,Rumble,10,6,12
 2026,Summer,Swiss Round 1,1,ˇchooˇ#hehe,Nami,1,3,22
 2026,Summer,Swiss Round 1,1,Inspiring#309,Tryndamere,0,2,7
 2026,Summer,Swiss Round 1,1,torpid7#kitty,Shaco,13,1,12
@@ -279,3 +279,183 @@ Year,Tournament,Match Stage,Match Order,Player,Champion,K,D,A
 2026,Summer,Swiss Round 1,1,KocLV#FREE,Nasus,6,10,10
 2026,Summer,Swiss Round 1,1,Arachnobat#LOR,Vel'Koz,7,8,9
 2026,Summer,Swiss Round 1,1,WaningEmbers#NA1,Seraphine,1,10,16
+2026,Winter,Finals,10,Voidliss#NA1,Zeri,10,0,7
+2026,Winter,Finals,10,MENTAL MOUNTAIN#KEN,Shen,1,2,12
+2026,Winter,Finals,10,KocLV#FREE,Diana,6,4,11
+2026,Winter,Finals,10,一見鍾情#1314,Viktor,5,5,8
+2026,Winter,Finals,10,AngusMcRib#DLLM,Nautilus,0,5,16
+2026,Winter,Finals,10,I LOVE YOUR AUNT#AUNT,Mordekaiser,6,5,0
+2026,Winter,Finals,10,smile#dude,Udyr,3,2,3
+2026,Winter,Finals,10,SK Telecom T1#Faker,Syndra,3,5,7
+2026,Winter,Finals,10,Zeteo#NA1,Miss Fortune,4,3,5
+2026,Winter,Finals,10,Good in Theory#BAD,Braum,0,7,6
+2026,Winter,Semifinals,9,SK Telecom T1#Faker,Viktor,8,1,7
+2026,Winter,Semifinals,9,I LOVE YOUR AUNT#AUNT,Garen,7,3,2
+2026,Winter,Semifinals,9,smile#dude,Dr. Mundo,4,1,12
+2026,Winter,Semifinals,9,Zeteo#NA1,Sivir,3,3,12
+2026,Winter,Semifinals,9,Good in Theory#BAD,Braum,0,5,15
+2026,Winter,Semifinals,9,Shouba#69420,Sett,0,6,7
+2026,Winter,Semifinals,9,Taco1518#NA1,Kayn,9,4,3
+2026,Winter,Semifinals,9,Buzzzz#NA1,Cassiopeia,3,1,4
+2026,Winter,Semifinals,9,Ene#TFT,Jinx,1,5,6
+2026,Winter,Semifinals,9,Inspiring#309,Thresh,0,6,7
+2026,Winter,Semifinals,9,Voidliss#NA1,Sivir,9,1,14
+2026,Winter,Semifinals,9,MENTAL MOUNTAIN#KEN,Dr. Mundo,6,3,3
+2026,Winter,Semifinals,9,KocLV#FREE,Diana,9,6,11
+2026,Winter,Semifinals,9,一見鍾情#1314,Viktor,6,4,11
+2026,Winter,Semifinals,9,AngusMcRib#DLLM,Braum,1,5,17
+2026,Winter,Semifinals,9,JLu TFT#NA1,Mordekaiser,1,3,6
+2026,Winter,Semifinals,9,Xemacs#LOR,Kayn,8,9,10
+2026,Winter,Semifinals,9,go outsideee,Xerath,7,4,4
+2026,Winter,Semifinals,9,benbooee#BEN,Aphelios,3,8,5
+2026,Winter,Semifinals,9,LN2 Celsius#NA1,Leona,0,7,12
+2026,Winter,Groups Round 8,8,SK Telecom T1#Faker,Ahri,4,5,8
+2026,Winter,Groups Round 8,8,I LOVE YOUR AUNT#AUNT,Garen,10,4,14
+2026,Winter,Groups Round 8,8,smile#dude,Ekko,10,4,14
+2026,Winter,Groups Round 8,8,Zeteo#NA1,Sivir,10,6,17
+2026,Winter,Groups Round 8,8,Good in Theory#BAD,Nautilus,1,5,22
+2026,Winter,Groups Round 8,8,LN2 Celsius#NA1,Malphite,3,5,10
+2026,Winter,Groups Round 8,8,Xemacs#LOR,Jax,3,8,13
+2026,Winter,Groups Round 8,8,go outsideee,Diana,11,6,5
+2026,Winter,Groups Round 8,8,benbooee#BEN,Miss Fortune,6,6,15
+2026,Winter,Groups Round 8,8,JLu TFT#NA1,Leona,1,10,16
+2026,Winter,Groups Round 7,7,Xemacs#LOR,Viego,9,5,13
+2026,Winter,Groups Round 7,7,JLu TFT#NA1,Vayne,7,8,7
+2026,Winter,Groups Round 7,7,go outsideee,Xerath,9,3,12
+2026,Winter,Groups Round 7,7,benbooee#BEN,Miss Fortune,4,7,19
+2026,Winter,Groups Round 7,7,LN2 Celsius#NA1,Leona,1,8,19
+2026,Winter,Groups Round 7,7,HEHEHEHA,Gragas,6,7,13
+2026,Winter,Groups Round 7,7,index#fngr,Zac,12,5,13
+2026,Winter,Groups Round 7,7,LightBulb5942,Azir,4,3,4
+2026,Winter,Groups Round 7,7,linarite,Ashe,7,8,12
+2026,Winter,Groups Round 7,7,therandomdude,Braum,2,7,22
+2026,Winter,Groups Round 7,7,Voidliss#NA1,Vayne,9,3,6
+2026,Winter,Groups Round 7,7,MENTAL MOUNTAIN#KEN,Dr. Mundo,3,0,5
+2026,Winter,Groups Round 7,7,KocLV#FREE,Diana,8,2,8
+2026,Winter,Groups Round 7,7,一見鍾情#1314,Viktor,4,2,6
+2026,Winter,Groups Round 7,7,AngusMcRib#DLLM,Nautilus,1,8,12
+2026,Winter,Groups Round 7,7,Entropy#NA0,Cho'Gath,1,3,0
+2026,Winter,Groups Round 7,7,Duckey#NA1,Viego,5,5,5
+2026,Winter,Groups Round 7,7,abrahampark#NA1,Taliyah,3,3,6
+2026,Winter,Groups Round 7,7,binkyb1inky#NA1,Xayah,4,6,6
+2026,Winter,Groups Round 7,7,GeorgeWShrub#010,Leona,2,8,9
+2026,Winter,Groups Round 6,6,Inspiring#309,Thresh,4,0,7
+2026,Winter,Groups Round 6,6,Shouba#69420,Dr. Mundo,1,1,4
+2026,Winter,Groups Round 6,6,Taco1518#NA1,Master Yi,6,1,3
+2026,Winter,Groups Round 6,6,Buzzzz#NA1,Cassiopeia,5,4,5
+2026,Winter,Groups Round 6,6,Ene#TFT,Jinx,1,0,7
+2026,Winter,Groups Round 6,6,HEHEHEHA,Trundle,1,2,0
+2026,Winter,Groups Round 6,6,index#fngr,Gwen,0,4,2
+2026,Winter,Groups Round 6,6,LightBulb5942,Ryze,3,6,2
+2026,Winter,Groups Round 6,6,linarite,Xayah,0,3,1
+2026,Winter,Groups Round 6,6,therandomdude,Rakan,2,2,2
+2026,Winter,Groups Round 6,6,SK Telecom T1#Faker,Viktor,0,1,14
+2026,Winter,Groups Round 6,6,I LOVE YOUR AUNT#AUNT,Camille,5,2,5
+2026,Winter,Groups Round 6,6,smile#dude,Gwen,15,2,6
+2026,Winter,Groups Round 6,6,Zeteo#NA1,Sivir,7,0,13
+2026,Winter,Groups Round 6,6,Good in Theory#BAD,Seraphine,0,3,16
+2026,Winter,Groups Round 6,6,Taco1518#NA1,Cho'Gath,0,6,2
+2026,Winter,Groups Round 6,6,Inspiring#309,Sylas,1,7,1
+2026,Winter,Groups Round 6,6,Ene#TFT,Zoe,5,2,1
+2026,Winter,Groups Round 6,6,Shouba#69420,Jinx,2,6,1
+2026,Winter,Groups Round 6,6,Buzzzz#NA1,Braum,0,6,4
+2026,Winter,Groups Round 5,5,Inspiring#309,Sylas,3,6,6
+2026,Winter,Groups Round 5,5,Taco1518#NA1,Dr. Mundo,4,2,7
+2026,Winter,Groups Round 5,5,Ene#TFT,Orianna,3,4,12
+2026,Winter,Groups Round 5,5,Shouba#69420,Samira,8,3,7
+2026,Winter,Groups Round 5,5,Buzzzz#NA1,zac,1,3,13
+2026,Winter,Groups Round 5,5,JLu TFT#NA1,Mordekaiser,4,4,4
+2026,Winter,Groups Round 5,5,go outsideee,Lillia,2,6,8
+2026,Winter,Groups Round 5,5,Xemacs#LOR,Naafiri,5,4,7
+2026,Winter,Groups Round 5,5,benbooee#BEN,Jhin,7,2,5
+2026,Winter,Groups Round 5,5,Braum,Braum,0,4,9
+2026,Winter,Groups Round 5,5,abrahampark#NA1,Aurelion Sol,9,2,12
+2026,Winter,Groups Round 5,5,Entropy#NA0,Ornn,2,1,14
+2026,Winter,Groups Round 5,5,Duckey#NA1,Viego,6,1,9
+2026,Winter,Groups Round 5,5,binkyb1inky#NA1,Smolder,5,3,13
+2026,Winter,Groups Round 5,5,GeorgeWShrub#010,Leona,2,3,17
+2026,Winter,Groups Round 5,5,HEHEHEHA,Shen,1,7,4
+2026,Winter,Groups Round 5,5,index#fngr,Ekko,7,5,3
+2026,Winter,Groups Round 5,5,LightBulb5942,Azir,0,3,4
+2026,Winter,Groups Round 5,5,linarite,Sivir,2,4,5
+2026,Winter,Groups Round 5,5,therandomdude,Blitzcrank,0,5,6
+2026,Winter,Groups Round 4,4,abrahampark#NA1,Aurelion Sol,7,5,11
+2026,Winter,Groups Round 4,4,Entropy#NA0,Cho'Gath,4,6,9
+2026,Winter,Groups Round 4,4,Duckey#NA1,Dr. Mundo,5,5,10
+2026,Winter,Groups Round 4,4,binkyb1inky#NA1,Sivir,7,4,9
+2026,Winter,Groups Round 4,4,GeorgeWShrub#010,Rell,1,6,16
+2026,Winter,Groups Round 4,4,Shouba#69420,Malphite,4,5,12
+2026,Winter,Groups Round 4,4,Inspiring#309,Lillia,10,3,13
+2026,Winter,Groups Round 4,4,Ene#TFT,Syndra,4,6,13
+2026,Winter,Groups Round 4,4,Taco1518#NA1,Jinx,8,6,12
+2026,Winter,Groups Round 4,4,Buzzzz#NA1,Zac,0,4,15
+2026,Winter,Groups Round 4,4,SK Telecom T1#Faker,Viktor,3,5,10
+2026,Winter,Groups Round 4,4,I LOVE YOUR AUNT#AUNT,Urgot,4,5,5
+2026,Winter,Groups Round 4,4,smile#dude,Diana,7,5,12
+2026,Winter,Groups Round 4,4,Zeteo#NA1,Miss Fortune,10,3,8
+2026,Winter,Groups Round 4,4,Good in Theory#BAD,Seraphine,0,3,14
+2026,Winter,Groups Round 4,4,MENTAL MOUNTAIN#KEN,Shen,3,3,7
+2026,Winter,Groups Round 4,4,KocLV#FREE,Ekko,5,3,7
+2026,Winter,Groups Round 4,4,一見鍾情#1314,Brand,8,5,6
+2026,Winter,Groups Round 4,4,Voidliss#NA1,Ashe,2,7,12
+2026,Winter,Groups Round 4,4,AngusMcRib#DLLM,Poppy,3,6,6
+2026,Winter,Groups Round 3,3,abrahampark#NA1,Twisted Fate,4,5,7
+2026,Winter,Groups Round 3,3,Entropy#NA0,Ornn,2,7,9
+2026,Winter,Groups Round 3,3,Duckey#NA1,Udyr,4,2,5
+2026,Winter,Groups Round 3,3,binkyb1inky#NA1,Sivir,2,4,9
+2026,Winter,Groups Round 3,3,GeorgeWShrub#010,Seraphine,1,3,11
+2026,Winter,Groups Round 3,3,I LOVE YOUR AUNT#AUNT,Camille,8,5,10
+2026,Winter,Groups Round 3,3,smile#dude,Cho'Gath,8,1,8
+2026,Winter,Groups Round 3,3,SK Telecom T1#Faker,Syndra,4,3,8
+2026,Winter,Groups Round 3,3,Zeteo#NA1,Miss Fortune,1,2,7
+2026,Winter,Groups Round 3,3,Good in Theory#BAD,Sona,0,2,12
+2026,Winter,Groups Round 3,3,Voidliss#NA1,Varus,10,6,14
+2026,Winter,Groups Round 3,3,MENTAL MOUNTAIN#KEN,Sion,6,1,9
+2026,Winter,Groups Round 3,3,KocLV#FREE,Diana,7,4,9
+2026,Winter,Groups Round 3,3,一見鍾情#1314,Syndra,7,2,11
+2026,Winter,Groups Round 3,3,AngusMcRib#DLLM,Nautilus,0,4,20
+2026,Winter,Groups Round 3,3,JLu TFT#NA1,Urgot,1,5,7
+2026,Winter,Groups Round 3,3,go outsideee,Ekko,5,5,7
+2026,Winter,Groups Round 3,3,LN2 Celsius#NA1,Naafiri,0,6,5
+2026,Winter,Groups Round 3,3,benbooee#BEN,Aphelios,9,6,6
+2026,Winter,Groups Round 3,3,Xemacs#LOR,Neeko,2,8,12
+2026,Winter,Groups Round 2,2,SK Telecom T1#Faker,Viktor,2,1,4
+2026,Winter,Groups Round 2,2,I LOVE YOUR AUNT#AUNT,Garen,6,3,2
+2026,Winter,Groups Round 2,2,smile#dude,Graves,3,1,4
+2026,Winter,Groups Round 2,2,Zeteo#NA1,Sivir,4,0,4
+2026,Winter,Groups Round 2,2,Good in Theory#BAD,Braum,0,0,8
+2026,Winter,Groups Round 2,2,HEHEHEHA,Camille,2,4,2
+2026,Winter,Groups Round 2,2,therandomdude,Ivern,1,2,4
+2026,Winter,Groups Round 2,2,index#fngr,Kassadin,2,2,1
+2026,Winter,Groups Round 2,2,linarite,Jhin,0,2,0
+2026,Winter,Groups Round 2,2,LightBulb5942,Gragas,0,5,1
+2026,Winter,Groups Round 2,2,Voidliss#NA1,Smolder,3,2,11
+2026,Winter,Groups Round 2,2,MENTAL MOUNTAIN#KEN,Urgot,5,7,6
+2026,Winter,Groups Round 2,2,KocLV#FREE,Dr. Mundo,2,3,9
+2026,Winter,Groups Round 2,2,一見鍾情#1314,Syndra,8,5,6
+2026,Winter,Groups Round 2,2,AngusMcRib#DLLM,Poppy,1,5,6
+2026,Winter,Groups Round 2,2,Shouba#69420,Gwen,11,5,7
+2026,Winter,Groups Round 2,2,Inspiring#309,Shen,0,4,12
+2026,Winter,Groups Round 2,2,Ene#TFT,Ahri,5,2,9
+2026,Winter,Groups Round 2,2,Taco1518#NA1,Jinx,6,3,6
+2026,Winter,Groups Round 2,2,Buzzzz#NA1,Braum,0,5,13
+2026,Winter,Groups Round 1,1,Voidliss#NA1,Sivir,9,0,10
+2026,Winter,Groups Round 1,1,MENTAL MOUNTAIN#KEN,Sion,2,2,9
+2026,Winter,Groups Round 1,1,KocLV#FREE,Diana,7,1,7
+2026,Winter,Groups Round 1,1,一見鍾情#1314,Ryze,2,1,8
+2026,Winter,Groups Round 1,1,AngusMcRib#DLLM,Nautilus,3,3,5
+2026,Winter,Groups Round 1,1,HEHEHEHA,Yone,2,5,1
+2026,Winter,Groups Round 1,1,index#fngr,Poppy,2,6,3
+2026,Winter,Groups Round 1,1,LightBulb5942,Orianna,1,3,0
+2026,Winter,Groups Round 1,1,linarite,Ashe,2,4,0
+2026,Winter,Groups Round 1,1,therandomdude,Leona,0,5,4
+2026,Winter,Groups Round 1,1,abrahampark#NA1,Anivia,4,4,3
+2026,Winter,Groups Round 1,1,Entropy#NA0,Ornn,2,5,3
+2026,Winter,Groups Round 1,1,Duckey#NA1,Ekko,4,5,6
+2026,Winter,Groups Round 1,1,binkyb1inky#NA1,Caitlyn,1,5,4
+2026,Winter,Groups Round 1,1,GeorgeWShrub#010,Alistar,2,5,4
+2026,Winter,Groups Round 1,1,JLu TFT#NA1,Fiora,2,6,6
+2026,Winter,Groups Round 1,1,go outsideee,Lillia,9,0,9
+2026,Winter,Groups Round 1,1,Xemacs#LOR,Morgana,3,2,12
+2026,Winter,Groups Round 1,1,benbooee#BEN,Aphelios,9,1,4
+2026,Winter,Groups Round 1,1,LN2 Celsius#NA1,Leona,1,4,14

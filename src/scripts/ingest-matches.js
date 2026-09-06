@@ -99,6 +99,11 @@ function main() {
     `INSERT INTO matches (year, tournament, team1, team2, result, csv_row_index, match_order, match_stage, match_key)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  const findByKey = db.prepare(
+    `SELECT csv_row_index, year, tournament, team1, team2, match_order, match_stage
+     FROM matches WHERE match_key = ?`,
+  );
+
   const insertMany = db.transaction((rows) => {
     rows.forEach((r, i) => {
       if (!r[idx.year]) return;
@@ -117,17 +122,41 @@ function main() {
         matchStage: matchStageIdx === -1 ? null : r[matchStageIdx] || null,
         matchOrder: matchOrderVal,
       };
-      insert.run(
-        values.year,
-        values.tournament,
-        values.team1,
-        values.team2,
-        values.result,
-        i, // csv_row_index -- position in file, top of file = 0
-        values.matchOrder,
-        values.matchStage,
-        buildMatchKey(values),
-      );
+      const matchKey = buildMatchKey(values);
+
+      try {
+        insert.run(
+          values.year,
+          values.tournament,
+          values.team1,
+          values.team2,
+          values.result,
+          i, // csv_row_index -- position in file, top of file = 0
+          values.matchOrder,
+          values.matchStage,
+          matchKey,
+        );
+      } catch (err) {
+        if (
+          err.code === "SQLITE_CONSTRAINT_UNIQUE" ||
+          /UNIQUE constraint failed.*match_key/.test(err.message)
+        ) {
+          const existing = findByKey.get(matchKey);
+          const existingDesc = existing
+            ? `csv row ${existing.csv_row_index + 2} (year=${existing.year}, tournament=${existing.tournament}, ` +
+              `team1=${existing.team1}, team2=${existing.team2}, match_order=${existing.match_order}, ` +
+              `match_stage=${existing.match_stage})`
+            : "an earlier row (details unavailable)";
+          throw new Error(
+            `Duplicate match_key "${matchKey}" at CSV row ${i + 2} ` +
+              `(year=${values.year}, tournament=${values.tournament}, team1=${values.team1}, ` +
+              `team2=${values.team2}, match_order=${values.matchOrder}, match_stage=${values.matchStage}). ` +
+              `Already inserted from ${existingDesc}.`,
+          );
+        }
+        // Not a uniqueness issue -- rethrow with row context so it's still traceable.
+        throw new Error(`Row ${i + 2} (match_key "${matchKey}") failed to insert: ${err.message}`);
+      }
     });
   });
   insertMany(rows);

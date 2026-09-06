@@ -278,7 +278,18 @@ set per-column via `filterType: 'checkbox'` in the column definition;
 regex is the default. Matchup Data's rows also expand to show both
 teams' full rosters for that match.
 
-### Draft Data / Matchup Data
+
+  ### Draft Data / Matchup Data
+  
+  **Data Ingestion Script: ingest-match-details.js**
+  This script is responsible for taking a detailed CSV file of match statistics and ingesting/normalizing the data into the `match_details` table in the local SQLite database. It links individual player match statistics (K/D/A, Champion, etc.) to a specific match context key using tournament, year, and match order information.
+  
+  **Usage:**
+  Execute the script via the command line, providing the path to the detailed CSV file:
+  \`\`\`bash
+  node summerlol-draft/src/scripts/ingest-match-details.js <path-to-details-csv>
+  \`\`\`
+  The script will update the `match_details` table, ensuring consistency with the `matches` table structure.
 
 Raw, per-row views of the `rows`/`matches` tables respectively —
 sortable, column show/hide, downloadable as CSV
