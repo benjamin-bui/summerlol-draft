@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Williams College Player Rankings</title>
-<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="/style.css" />
   <link rel="icon" type="image/png" href="/icons/favicon.png">
 </head>
 <body>
@@ -248,16 +248,17 @@ Xemacs#LOR
       </div>
     </section>
 
-  <div id="playerProfileModal" class="player-profile-modal" aria-hidden="true">
-    <div class="player-profile-backdrop" data-close="true"></div>
-    <div class="player-profile-panel" role="dialog" aria-modal="true" aria-labelledby="playerProfileTitle">
-      <button id="playerProfileClose" class="player-profile-close" aria-label="Close">×</button>
-      <h2 id="playerProfileTitle">Player profile</h2>
-      <div id="playerProfileContent">Loading…</div>
-    </div>
-  </div>
+      <!-- ================= PLAYER PROFILE PAGE ================= -->
+      <!-- Not a normal tab: there's no matching .tab-btn, so it's only ever
+           reached via a player link (which pushes /player/:key) or a direct
+           load of that URL -- see loadPlayerProfilePage() in player-profile.js. -->
+      <section class="tab-panel" id="tab-player">
+        <button id="playerProfileBack" class="player-profile-back">&larr; Back</button>
+        <h2 id="playerProfileTitle">Player profile</h2>
+        <div id="playerProfileContent">Loading…</div>
+      </section>
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 <footer>
   <a href="https://github.com/benjamin-bui/summerlol-draft" target="_blank" rel="noopener noreferrer">Source on GitHub</a>

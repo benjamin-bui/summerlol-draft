@@ -20,6 +20,21 @@ export function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
+// Same last-# split + hyphen-join op.gg uses for its own profile URLs
+// (server-side twin: slugFromDisplayName in src/lib/player-identity.js) --
+// used as the player-profile page's own URL segment so a profile link
+// reads like an op.gg URL. Falls back to the encoded raw name for legacy
+// aliases with no tag on record.
+export function buildPlayerSlug(fullName) {
+  if (!fullName) return null;
+  const idx = fullName.lastIndexOf("#");
+  if (idx === -1) return encodeURIComponent(fullName);
+  const gameName = fullName.slice(0, idx).trim();
+  const tagLine = fullName.slice(idx + 1).trim();
+  if (!gameName || !tagLine) return encodeURIComponent(fullName);
+  return `${encodeURIComponent(gameName)}-${encodeURIComponent(tagLine)}`;
+}
+
 export function renderNameWithTag(fullName) {
   const idx = fullName.lastIndexOf("#");
   if (idx === -1) {
@@ -45,7 +60,8 @@ export function renderPlayerCell(row) {
   const identityKey = row.identityKey || row._playerIdentityKey || null;
   const nameHtml = renderNameWithTag(fullName);
   if (identityKey) {
-    return `<a href="#" class="player-link" data-player-key="${escapeHtml(identityKey)}" title="View profile">${nameHtml}</a>`;
+    const slug = buildPlayerSlug(fullName) || encodeURIComponent(identityKey);
+    return `<a href="/player/${slug}" class="player-link" data-player-key="${escapeHtml(slug)}" title="View profile">${nameHtml}</a>`;
   }
   if (row.profileUrl) {
     return `<a href="${escapeHtml(row.profileUrl)}" target="_blank" rel="noopener noreferrer" class="player-link" title="View on op.gg">${nameHtml}</a>`;

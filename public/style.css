@@ -824,57 +824,266 @@ thead .sticky-col {
   color: var(--text);
 }
 
-/* ---- Player profile modal ---- */
-.player-profile-modal {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-}
-.player-profile-modal.open {
-  display: block;
-}
-.player-profile-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-}
-.player-profile-panel {
-  position: relative;
-  max-width: 1000px;
-  margin: 5vh auto;
+/* ---- Player profile page (formerly a modal -- now a discrete tab-panel,
+   toggled the same way every other tab is via .tab-panel.active) ---- */
+.player-profile-back {
+  display: inline-block;
+  margin-bottom: 16px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
   background: var(--panel);
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 24px;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: 0 8px 24px var(--shadow);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.player-profile-back:hover {
+  background: var(--accent-secondary);
+  color: #fff;
 }
 
-@media (max-width: 600px) {
-  .player-profile-panel {
-    margin: 0;
-    max-width: 100%;
-    width: 100%;
-    height: 100%;
-    max-height: 100%;
-    border-radius: 0;
-  }
+/* ---- Player profile page layout: header (identity + tier graph) above a
+   thin sidebar + wide main column, op.gg-style. Stacks to one column on
+   narrow viewports. ---- */
+#tab-player #playerProfileTitle {
+  margin: 0 0 4px;
 }
-.player-profile-close {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  border: none;
-  background: none;
-  font-size: 24px;
-  cursor: pointer;
+.profile-header {
+  margin-bottom: 24px;
+}
+.profile-header-chart {
+  margin-top: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.profile-chart-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.profile-chart-svg {
+  display: block;
+}
+.profile-layout {
+  display: grid;
+  grid-template-columns: 400px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.profile-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.profile-main {
+  min-width: 0;
+}
+#profileHistoryTableWrap {
+  overflow-x: auto;
+}
+.profile-block {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  min-width: 0;
+  /* Any overflow value other than "visible" also makes border-radius
+     actually clip its content -- without this, a table wider than the
+     sidebar (long tournament names, "N / M" pick columns) spills out past
+     the card's rounded corners instead of scrolling inside it. */
+  overflow-x: auto;
+}
+.profile-block h3 {
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
-.player-profile-close:hover {
+.profile-block table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.profile-block th,
+.profile-block td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.profile-block th {
+  color: var(--muted);
+  font-weight: 500;
+}
+.profile-block tr:last-child td {
+  border-bottom: none;
+}
+.profile-current-rank {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 0.95rem;
+  flex-wrap: wrap;
+}
+
+/* ---- Player profile: "played with / played against" search ---- */
+.profile-search {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.profile-search-mode {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
   color: var(--text);
+  font-family: var(--sans);
+  font-size: 0.88rem;
+  padding: 8px 10px;
+}
+.profile-search-box {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 200px;
+}
+.profile-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 0.88rem;
+  padding: 8px 34px 8px 10px;
+}
+.profile-search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+}
+.profile-search-clear:hover {
+  color: var(--text);
+}
+.profile-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px var(--shadow);
+  max-height: 260px;
+  overflow-y: auto;
+}
+.profile-search-suggestion {
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.profile-search-suggestion:hover {
+  background: var(--bg);
+}
+.profile-search-empty {
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.profile-search-summary-block {
+  margin-bottom: 16px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.col-toggle {
+  width: 1%;
+  white-space: nowrap;
+}
+/* Shared stacked-cell pattern -- a bold primary line with a smaller muted
+   line underneath, used the same way in every consolidated column (Match,
+   Matchup, Result, Avg Rating, TrueSkill) so desktop and mobile read
+   consistently instead of desktop spreading the same facts across many
+   separate flat columns. */
+.cell-primary {
+  display: block;
+  font-weight: 500;
+}
+.cell-secondary {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+/* "Extra stats" duplicates the .col-secondary columns for narrow screens
+   where those columns are hidden -- redundant on desktop, so hidden there
+   by default and only switched on inside the mobile breakpoint below. */
+.match-extra-stats {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .profile-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Match history, phone-width: only the toggle, Match (year + tournament +
+   stage), Champion, K/D/A, and Result stay as actual columns -- Matchup,
+   Avg Rating, and TrueSkill move into the "extra stats" grid inside the
+   expanded row instead of sitting in mostly-blank columns that force the
+   table wider than the screen. */
+@media (max-width: 520px) {
+  .profile-history-table {
+    font-size: 0.74rem;
+  }
+  .profile-history-table th,
+  .profile-history-table td {
+    padding: 6px 4px;
+  }
+  .profile-history-table .col-secondary {
+    display: none;
+  }
+  .match-extra-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 16px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+  }
+  .match-extra-stats div {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .match-extra-stats span {
+    color: var(--muted);
+  }
 }
 
 .profile-summary {
@@ -912,11 +1121,18 @@ thead .sticky-col {
   padding: 4px 8px;
   line-height: 1.2;
   border-bottom: 1px solid var(--border);
+  border-left: none;
   text-align: left;
 }
 .profile-history-table th {
   color: var(--muted);
   font-weight: 500;
+}
+.profile-history-table thead th {
+  padding-bottom: 8px;
+}
+.profile-history-table tr:last-child td {
+  border-bottom: none;
 }
 
 .outcome-win {
@@ -938,7 +1154,7 @@ thead .sticky-col {
 }
 .roster-detail-row td {
   background: var(--bg);
-  padding: 3px 8px;
+  padding: 4px 16px 4px 13px;
 }
 .roster-detail {
   display: flex;
@@ -992,11 +1208,6 @@ thead .sticky-col {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.match-stage {
-  color: var(--muted);
-  font-size: 0.85em;
-}
-
 /* ---- Draft Scatter Plot---- */
 .collapsible-toggle {
   width: 100%;
@@ -1134,16 +1345,6 @@ td:has(.pick-detail) {
   gap: 12px;
   padding: 2px 0;
 }
-.roster-detail-row td {
-  background: var(
-    --bg
-  ); /* back to your original neutral background, not the strong accent tint */
-  padding: 4px 16px 4px 13px;
-}
-
-/* Section headers ("Roster", "Matches") need breathing room from
-   whatever the dropdown's own top border/padding is, and from the
-   table that follows -- currently sitting flush against both. */
 .roster-detail-row h4,
 .roster-detail-row strong:first-child {
   display: block;
@@ -1230,19 +1431,4 @@ td:has(.pick-detail) {
 .mock-section-heading {
   margin: 24px 0 10px;
   font-size: 1rem;
-}
-
-/* The inner match/roster table was inheriting row-border styling from
-   .roster-detail-row's own tint, which is why every cell inside it also
-   picked up a heavy pink border in the screenshot -- scope borders back
-   to just the outer dropdown row, not every nested table cell. */
-.profile-history-table th,
-.profile-history-table td {
-  border-bottom: 1px solid var(--border);
-  border-left: none;
-}
-
-.profile-history-table thead th {
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 8px;
 }

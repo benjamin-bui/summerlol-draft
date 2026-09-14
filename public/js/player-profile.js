@@ -2,21 +2,103 @@ import {
   escapeHtml,
   renderNameWithTag,
   renderTrueSkillValue,
-  renderRankBadge,
+  renderSoloQueueRank,
   getRankTier,
   renderChampionIcon,
+  buildPlayerSlug,
+  round3,
+  seasonRankLocal,
 } from "./utils.js";
 
-const playerProfileModal = document.getElementById("playerProfileModal");
-const playerProfileCloseBtn = document.getElementById("playerProfileClose");
+const playerProfileBackBtn = document.getElementById("playerProfileBack");
 const playerProfileContent = document.getElementById("playerProfileContent");
 const playerProfileTitle = document.getElementById("playerProfileTitle");
 
-function closePlayerProfile() {
-  if (!playerProfileModal) return;
-  playerProfileModal.classList.remove("open");
-  playerProfileModal.setAttribute("aria-hidden", "true");
-  playerProfileContent.innerHTML = "Loading…";
+// Set once from app.js via initPlayerProfile({ activatePanel }) -- this is
+// the *same* setActiveTab() every normal tab click uses, just handed down
+// instead of duplicated here. See the README's "known recurring bug
+// pattern" note: two copies of panel-activation logic drifting apart is
+// exactly the shape of bug this avoids.
+let activatePanel = () => {};
+// Set once from app.js via initPlayerProfile({ ensureTiersReady }) -- lets
+// loadPlayerProfilePage guarantee rank-badge tier cutoffs exist before it
+// renders, without player-profile.js needing to know anything about how
+// or where that data comes from.
+let ensureTiersReady = async () => {};
+// Tracks which real tab (trueskill/draftiq/etc.) the profile page should
+// fall back to if the back button is used with no safe browser-history
+// entry to return to (e.g. someone opened a /player/... link directly).
+let lastKnownTab = "trueskill";
+
+// One session-wide fetch, reused across every profile page and every
+// search on that page -- a team's own placement (used for "their
+// placement" in the "played against" summary) doesn't change while the
+// tab is open, so there's no reason to refetch it per search or per
+// profile navigated to.
+let placementsCache = null;
+let placementsPromise = null;
+async function getPlacements() {
+  if (placementsCache) return placementsCache;
+  if (!placementsPromise) {
+    placementsPromise = fetch("/api/placements")
+      .then((res) => res.json())
+      .then((data) => {
+        placementsCache = data.placements || {};
+        return placementsCache;
+      })
+      .catch(() => ({}));
+  }
+  return placementsPromise;
+}
+
+// State for whichever profile page is currently on screen -- rebuilt each
+// time loadPlayerProfilePage renders a new one. Holds what the "played
+// with / played against" search needs on every keystroke and selection,
+// so those handlers don't have to re-derive it (or worse, read it back
+// out of already-rendered DOM).
+let profileSearch = null;
+
+const PLAYER_PATH_RE = /^\/player\/([^/]+)$/;
+const SIMPLE_PLAYER_PATH_RE = /^\/player\/simple\/([^/]+)$/;
+
+// Reads the player identifier straight out of the URL path -- left in its
+// still-percent-encoded form (not decoded here), since both consumers
+// below either use it as-is (loadPlayerProfilePage, where an identityKey
+// has no special characters and a slug is already a valid path segment)
+// or decode it themselves component-by-component after splitting
+// (unslugSimpleName). Used both on first load and from the popstate
+// handler -- there is exactly one function that knows how to parse this
+// URL shape, and exactly one function (loadPlayerProfilePage /
+// loadSimpleProfilePage) that knows how to act on it.
+export function parsePlayerRouteFromPath(pathname = window.location.pathname) {
+  const simpleMatch = pathname.match(SIMPLE_PLAYER_PATH_RE);
+  if (simpleMatch) {
+    return { kind: "simple", value: simpleMatch[1] };
+  }
+  const match = pathname.match(PLAYER_PATH_RE);
+  if (match) {
+    return { kind: "identity", value: match[1] };
+  }
+  return null;
+}
+
+// Called by app.js any time a real tab becomes active, so the back button
+// always has somewhere sane to land.
+export function notifyActiveTab(tabName) {
+  if (tabName && tabName !== "player") lastKnownTab = tabName;
+}
+
+function goBack() {
+  const cameFromThisSite =
+    document.referrer && document.referrer.startsWith(window.location.origin);
+  if (cameFromThisSite && window.history.length > 1) {
+    window.history.back();
+  } else {
+    // Direct/shared link with no in-app history to pop back to -- land on
+    // whichever tab we last knew about instead of leaving the site.
+    window.history.pushState(null, "", `/?tab=${encodeURIComponent(lastKnownTab)}`);
+    activatePanel(lastKnownTab);
+  }
 }
 
 function buildChartHtml(history) {
@@ -24,12 +106,20 @@ function buildChartHtml(history) {
     return '<p class="profile-chart-empty">No games recorded yet.</p>';
   }
 
-  const width = 900;
+  const xMax = history.length;
+  // Width grows with game count instead of stretching to fit the
+  // container -- a fixed px-per-game spacing keeps circles/text at a
+  // constant, undistorted size regardless of how many games there are;
+  // the chart scrolls horizontally instead of squeezing everything into
+  // whatever width happens to be available.
+  const pxPerGame = 26;
+  const minWidth = 900;
   const height = 260;
   const padL = 45;
   const padR = 15;
   const padT = 15;
   const padB = 30;
+  const width = Math.max(minWidth, padL + padR + pxPerGame * (xMax - 1));
   const plotW = width - padL - padR;
   const plotH = height - padT - padB;
 
@@ -44,7 +134,6 @@ function buildChartHtml(history) {
     tournament: h.tournament,
   }));
 
-  const xMax = points.length;
   const yMin = Math.min(...points.map((p) => p.trueskill));
   const yMax = Math.max(...points.map((p) => p.trueskill));
   const yPad = (yMax - yMin) * 0.05 || 1;
@@ -101,14 +190,16 @@ function buildChartHtml(history) {
   }).join("");
 
   return `
-    <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" class="draft-scatter-svg">
-      ${gridlines}
-      <path d="${trueskillPath}" fill="none" stroke="#2b6cb0" stroke-width="2" />
-      ${dots}
-      ${badges}
-      <text x="${padL}" y="${height - 6}" font-size="10" fill="#888">Game 1</text>
-      <text x="${width - padR}" y="${height - 6}" text-anchor="end" font-size="10" fill="#888">Game ${xMax}</text>
-    </svg>
+    <div class="profile-chart-scroll">
+      <svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" class="profile-chart-svg">
+        ${gridlines}
+        <path d="${trueskillPath}" fill="none" stroke="#2b6cb0" stroke-width="2" />
+        ${dots}
+        ${badges}
+        <text x="${padL}" y="${height - 6}" font-size="10" fill="#888">Game 1</text>
+        <text x="${width - padR}" y="${height - 6}" text-anchor="end" font-size="10" fill="#888">Game ${xMax}</text>
+      </svg>
+    </div>
     <div class="profile-chart-legend">
       <span><i style="background:#2b6cb0"></i> TrueSkill (skill estimate)</span>
       <span><i style="background:#2e7d32"></i> win</span>
@@ -116,44 +207,109 @@ function buildChartHtml(history) {
     </div>`;
 }
 
-function renderPlayerProfileContent(player) {
-  const title = player?.group || player?.identityKey || "Player";
-  const titleIdx = title.lastIndexOf("#");
-  const titleHtml =
-    titleIdx === -1
-      ? escapeHtml(title)
-      : `${escapeHtml(title.slice(0, titleIdx))}<br><span class="stat-formula">${escapeHtml(title.slice(titleIdx))}</span>`;
+// Shared "N of M" formatter for both the pick-order and entering-rank
+// sidebar rows -- same fallback rule (missing either half of the pair
+// means we show a dash, not a half-formed fraction).
+function ofTotal(n, total) {
+  return n != null && total != null ? `${n} / ${total}` : "–";
+}
 
-  const summaryRows = [
-    `<div class="profile-summary">`,
-    `<span><strong>${titleHtml}</strong></span>`,
-    `<span>${player?.identified ? "Identified" : "Unidentified"}</span>`,
-    player?.profileUrl
-      ? `<a href="${escapeHtml(player.profileUrl)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>`
-      : "",
-    `</div>`,
-  ]
-    .filter(Boolean)
+function renderTournamentsBlock(tournaments) {
+  if (!tournaments.length) {
+    return `<section class="profile-block"><h3>Tournaments</h3><p class="stat-formula">No draft history recorded.</p></section>`;
+  }
+  const rows = tournaments
+    .map((t) => {
+      const record = t.games ? `${t.wins}-${t.losses}` : "–";
+      const winRate =
+        t.games && t.winRate != null ? `${Math.round(t.winRate * 100)}%` : "–";
+      const placement = t.finalPlacement != null ? `#${t.finalPlacement}` : "–";
+      // "Captain" is a label, not a position -- don't format it as "N / M"
+      // the way an actual pick order gets formatted below.
+      const pick =
+        t.pickOrder === "Captain" ? "Captain" : ofTotal(t.pickOrder, t.totalPicks);
+      return `<tr>
+        <td>${escapeHtml(t.tournament)} ${escapeHtml(String(t.year))}</td>
+        <td>${winRate} <span class="stat-formula">(${record})</span></td>
+        <td>${placement}</td>
+        <td>${pick}</td>
+      </tr>`;
+    })
     .join("");
+  return `<section class="profile-block">
+    <h3>Tournaments</h3>
+    <table>
+      <thead><tr><th>Tournament</th><th>Win rate</th><th>Placement</th><th>Pick</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </section>`;
+}
 
-  const statsRows = [
-    `<div class="profile-summary">`,
-    `<span>Games: ${player?.games ?? "–"}</span>`,
-    `<span>Wins: ${player?.wins ?? "–"}</span>`,
-    `<span>Losses: ${player?.losses ?? "–"}</span>`,
-    `</div>`,
-  ].join("");
+function renderTrueSkillBlock(player, tournaments) {
+  const currentLine = `<div class="profile-current-rank">
+    ${renderTrueSkillValue(player.conservativeRating, player.mu)}
+    <span class="stat-formula">#${player.overallRank ?? "–"} of ${player.totalPlayers ?? "–"} overall</span>
+  </div>`;
+  const withEntry = tournaments.filter(
+    (t) => t.entryConservativeRating != null,
+  );
+  const rows = withEntry
+    .map(
+      (t) => `<tr>
+        <td>${escapeHtml(t.tournament)} ${escapeHtml(String(t.year))}</td>
+        <td>${ofTotal(t.entryRank ? `#${t.entryRank}` : null, t.totalInDraft)}</td>
+        <td>${renderTrueSkillValue(t.entryConservativeRating)}</td>
+      </tr>`,
+    )
+    .join("");
+  const table = withEntry.length
+    ? `<table>
+        <thead><tr><th>Tournament</th><th>Entering rank</th><th>Entering rating</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`
+    : `<p class="stat-formula">No entering-rank history yet (needs at least one prior tournament on record).</p>`;
+  return `<section class="profile-block">
+    <h3>TrueSkill</h3>
+    ${currentLine}
+    ${table}
+  </section>`;
+}
 
-  const ratingRows = [
-    `<div class="profile-summary">`,
-    `<span>TrueSkill: ${renderRankBadge(player.conservativeRating)} ${player?.conservativeRating ?? "–"} <span class="stat-formula">(μ ${player?.mu ?? "–"} − ${player?.conservativeK ?? 1}σ)</span></span>`,
-    `<span>μ: ${player?.mu ?? "–"}</span>`,
-    `<span>σ: ${player?.sigma ?? "–"}</span>`,
-    `</div>`,
-  ].join("");
+function renderChampionsBlock(championStats) {
+  if (!championStats.length) {
+    return `<section class="profile-block"><h3>Champions</h3><p class="stat-formula">No champion data recorded yet.</p></section>`;
+  }
+  const rows = championStats
+    .map((c) => {
+      const winRate = c.winRate != null ? `${Math.round(c.winRate * 100)}%` : "–";
+      const kda = c.kda == null ? "Perfect" : c.kda.toFixed(2);
+      return `<tr>
+        <td>${renderChampionIcon(c.champion)}</td>
+        <td>${c.games}</td>
+        <td>${winRate}</td>
+        <td>${kda}</td>
+      </tr>`;
+    })
+    .join("");
+  return `<section class="profile-block">
+    <h3>Champions</h3>
+    <table>
+      <thead><tr><th>Champion</th><th>Games</th><th>Win rate</th><th>KDA</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </section>`;
+}
 
-  const history = player?.history || [];
-  const historyRows = history
+// Builds the <table> markup for a set of history entries -- shared by the
+// full match history (all games) and the "played with / played against"
+// search (a filtered subset), so there is exactly one place that knows
+// how to render a match row rather than two copies that could drift.
+// Entries are rendered in the order given; callers control chronology.
+function buildHistoryTableHtml(historyEntries) {
+  if (!historyEntries.length) {
+    return "<p>No matching games.</p>";
+  }
+  const rows = historyEntries
     .map((entry, idx) => {
       const outcomeClass =
         entry.outcome === "win"
@@ -203,79 +359,486 @@ function renderPlayerProfileContent(player) {
         entry.ratingChange > 0
           ? `+${entry.ratingChange}`
           : `${entry.ratingChange}`;
+      const predWinPct = Math.round((entry.predictedWinProb ?? 0) * 100);
 
+      // Matchup and Rating stay hidden on narrow screens (see .col-secondary
+      // in style.css) and surface instead in the expanded roster detail's
+      // "extra stats" block, so nothing is actually lost on mobile -- it's
+      // one tap away instead of extra columns that are mostly blank space
+      // next to a two- or three-digit number. Pred. Win % isn't repeated
+      // here since it now lives inline under Result on every screen size.
+      const extraStatsHtml = `<div class="match-extra-stats">
+          <div><span>Captain</span><strong>${escapeHtml(entry.ownTeam?.name || "–")}</strong></div>
+          <div><span>Opponent</span><strong>${escapeHtml(entry.opponent || "–")}</strong></div>
+          <div><span>Your Team Avg</span><strong>${entry.ownTeam?.avgConservativeRating ?? "–"}</strong></div>
+          <div><span>Opp Avg</span><strong>${entry.opponentTeam?.avgConservativeRating ?? "–"}</strong></div>
+          <div><span>TrueSkill</span><strong>${renderTrueSkillValue(entry.conservativeRating)}</strong></div>
+          <div><span>Change</span><strong class="${changeClass}">${changeLabel}</strong></div>
+          <div><span>μ</span><strong>${entry.mu ?? "–"}</strong></div>
+          <div><span>σ</span><strong>${entry.sigma ?? "–"}</strong></div>
+        </div>`;
+
+      // Every cell below stacks a primary line with a smaller secondary
+      // line underneath rather than spreading related facts across
+      // separate columns -- the same pattern on every screen size, so
+      // desktop and mobile read the same way and only differ in how many
+      // of these stacked cells fit side by side.
       return `<tr>
-      <td><button class="roster-toggle" data-target="${rosterId}" aria-expanded="false">▶</button></td>
-      <td>${escapeHtml(entry.year ?? "–")}</td>
-      <td>${escapeHtml(entry.tournament || "–")}${entry.matchStage ? ` <span class="match-stage">(${escapeHtml(entry.matchStage)})</span>` : ""}</td>
-      <td>${escapeHtml(entry.ownTeam?.name || "–")}</td>
-      <td>${escapeHtml(entry.opponent || "–")}</td>
+      <td class="col-toggle"><button class="roster-toggle" data-target="${rosterId}" aria-expanded="false" aria-label="Show match details">▶</button></td>
+      <td class="col-match">
+        <span class="cell-primary">${escapeHtml(entry.year ?? "–")} ${escapeHtml(entry.tournament || "–")}</span>
+        ${entry.matchStage ? `<span class="cell-secondary">${escapeHtml(entry.matchStage)}</span>` : ""}
+      </td>
+      <td class="col-secondary col-matchup">
+        <span class="cell-primary">${escapeHtml(entry.ownTeam?.name || "–")}</span>
+        <span class="cell-secondary">vs ${escapeHtml(entry.opponent || "–")}</span>
+      </td>
       <td>${playerDetail ? renderChampionIcon(playerDetail.champion) : "–"}</td>
       <td>${playerDetail ? `${playerDetail.kills ?? "–"}/${playerDetail.deaths ?? "–"}/${playerDetail.assists ?? "–"}` : "–"}</td>
-      <td class="${outcomeClass}">${escapeHtml(entry.outcome || "–")}</td>
-      <td>${Math.round((entry.predictedWinProb ?? 0) * 100)}%</td>
-      <td>${entry.ownTeam?.avgConservativeRating ?? "–"}</td>
-      <td>${entry.opponentTeam?.avgConservativeRating ?? "–"}</td>
-      <td>${renderTrueSkillValue(entry.conservativeRating)}</td>
-      <td class="${changeClass}">${changeLabel}</td>
-      <td>${entry.mu ?? "–"}</td>
-      <td>${entry.sigma ?? "–"}</td>
+      <td class="col-result">
+        <span class="cell-primary ${outcomeClass}">${escapeHtml(entry.outcome || "–")}</span>
+        <span class="cell-secondary">${predWinPct}% pred.</span>
+      </td>
+      <td class="col-secondary col-ratings">
+        <span class="cell-primary">${entry.ownTeam?.avgConservativeRating ?? "–"}</span>
+        <span class="cell-secondary">vs ${entry.opponentTeam?.avgConservativeRating ?? "–"}</span>
+      </td>
+      <td class="col-secondary col-trueskill">
+        <span class="cell-primary">${renderTrueSkillValue(entry.conservativeRating)} <span class="${changeClass}">${changeLabel}</span></span>
+        <span class="cell-secondary">μ${entry.mu ?? "–"} σ${entry.sigma ?? "–"}</span>
+      </td>
     </tr>
     <tr id="${rosterId}" class="roster-detail-row" hidden>
-      <td colspan="15">
+      <td colspan="8">
         <div class="roster-detail">
           ${rosterTable(entry.ownTeam, entry.ownTeam?.name || "Your team")}
           ${rosterTable(entry.opponentTeam, entry.opponentName || "Opponent")}
         </div>
+        ${extraStatsHtml}
       </td>
     </tr>`;
     })
     .join("");
-
-  playerProfileTitle.textContent = title;
-  return [
-    summaryRows,
-    statsRows,
-    ratingRows,
-    buildChartHtml(history),
-    historyRows
-      ? `<table class="profile-history-table"><thead><tr><th>Match Details</th><th>Year</th><th>Tournament</th><th>Captain</th><th>Opponent</th><th>Champion</th><th>K/D/A</th><th>Result</th><th>Pred. Win %</th><th>Your Team Avg</th><th>Opp Avg</th><th>TrueSkill</th><th>Change</th><th>μ</th><th>σ</th></tr></thead><tbody>${historyRows}</tbody></table>`
-      : "<p>No match history available.</p>",
-  ].join("");
+  return `<table class="profile-history-table"><thead><tr><th class="col-toggle"><span class="sr-only">Expand</span></th><th class="col-match">Match</th><th class="col-secondary col-matchup">Matchup</th><th>Champion</th><th>K/D/A</th><th class="col-result">Result</th><th class="col-secondary col-ratings">Avg Rating</th><th class="col-secondary col-trueskill">TrueSkill</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-export async function openPlayerProfile(identityKey) {
-  if (!identityKey || !playerProfileModal) return;
-  playerProfileModal.classList.add("open");
-  playerProfileModal.setAttribute("aria-hidden", "false");
+// Every teammate/opponent this player's own match history has ever
+// touched, keyed by identityKey -- built once per profile load straight
+// from data the profile fetch already returned (each history entry's own
+// ownTeam/opponentTeam rosters), so the search autocomplete needs no
+// extra network round trip. selfKey is excluded from the teammates map
+// (a player is always their own teammate, which isn't a useful search
+// result); it's never present in the opponents map to begin with.
+function buildCoPlayMaps(history, selfKey) {
+  const teammates = new Map();
+  const opponents = new Map();
+  for (const entry of history) {
+    for (const m of entry.ownTeam?.roster || []) {
+      if (m.identityKey && m.identityKey !== selfKey) {
+        teammates.set(m.identityKey, m.displayName);
+      }
+    }
+    for (const m of entry.opponentTeam?.roster || []) {
+      if (m.identityKey) opponents.set(m.identityKey, m.displayName);
+    }
+  }
+  return { teammates, opponents };
+}
+
+function renderPlayerProfileContent(player) {
+  const title = player?.group || player?.identityKey || "Player";
+  const titleIdx = title.lastIndexOf("#");
+  const nameHtml = titleIdx === -1
+    ? escapeHtml(title)
+    : `${escapeHtml(title.slice(0, titleIdx))}<span class="player-tag">${escapeHtml(title.slice(titleIdx))}</span>`;
+
+  const headerMeta = [
+    `<span>${player?.identified ? "Identified" : "Unidentified"}</span>`,
+    player?.profileUrl
+      ? `<a href="${escapeHtml(player.profileUrl)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>`
+      : "",
+    `<span>Games: ${player?.games ?? "–"} &middot; ${player?.wins ?? 0}-${player?.losses ?? 0}</span>`,
+    player?.soloQueueRank ? renderSoloQueueRank(player.soloQueueRank) : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const tournaments = player?.tournamentSummaries || [];
+  const championStats = player?.championStats || [];
+  const history = player?.history || [];
+
+  const historyDescending = [...history].reverse();
+
+  playerProfileTitle.innerHTML = nameHtml;
+
+  // Reset per-page search state -- a fresh profile means a fresh
+  // teammate/opponent pool and no filter applied yet.
+  const { teammates, opponents } = buildCoPlayMaps(history, player?.identityKey);
+  profileSearch = {
+    selfKey: player?.identityKey,
+    history,
+    tournaments,
+    teammates,
+    opponents,
+    mode: "with",
+    selectedKey: null,
+  };
+
+  return `
+    <div class="profile-header">
+      <div class="profile-header-top">
+        <div class="profile-identity">
+          <div class="profile-summary">${headerMeta}</div>
+        </div>
+      </div>
+      <div class="profile-header-chart">${buildChartHtml(history)}</div>
+    </div>
+    <div class="profile-layout">
+      <aside class="profile-sidebar">
+        ${renderTournamentsBlock(tournaments)}
+        ${renderTrueSkillBlock(player, tournaments)}
+        ${renderChampionsBlock(championStats)}
+      </aside>
+      <main class="profile-main">
+        ${renderSearchBarHtml()}
+        <div id="profileSearchSummary" hidden></div>
+        <div id="profileHistoryTableWrap">${buildHistoryTableHtml(historyDescending)}</div>
+      </main>
+    </div>`;
+}
+
+// The search bar itself never needs to be rebuilt once a profile page is
+// showing -- only its dropdown, the summary panel, and the history table
+// underneath it change as someone types/selects/clears. Keeping this
+// static means the input never loses focus or its typed value mid-search.
+function renderSearchBarHtml() {
+  return `
+    <div class="profile-search">
+      <select id="profileSearchMode" class="profile-search-mode">
+        <option value="with" selected>Played with</option>
+        <option value="against">Played Against</option>
+      </select>
+      <div class="profile-search-box">
+        <input
+          id="profileSearchInput"
+          type="text"
+          class="profile-search-input"
+          placeholder="Search a teammate..."
+          autocomplete="off"
+        />
+        <button id="profileSearchClear" class="profile-search-clear" type="button" hidden aria-label="Clear search">×</button>
+        <div id="profileSearchDropdown" class="profile-search-dropdown" hidden></div>
+      </div>
+    </div>`;
+}
+
+function searchPool() {
+  if (!profileSearch) return new Map();
+  return profileSearch.mode === "against"
+    ? profileSearch.opponents
+    : profileSearch.teammates;
+}
+
+function updateSearchDropdown(query) {
+  const dropdown = document.getElementById("profileSearchDropdown");
+  if (!dropdown) return;
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    dropdown.hidden = true;
+    dropdown.innerHTML = "";
+    return;
+  }
+  const matches = [...searchPool().entries()]
+    .filter(([, name]) => name.toLowerCase().includes(q))
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .slice(0, 8);
+  dropdown.innerHTML = matches.length
+    ? matches
+        .map(
+          ([key, name]) =>
+            `<div class="profile-search-suggestion" data-key="${escapeHtml(key)}" data-name="${escapeHtml(name)}">${renderNameWithTag(name)}</div>`,
+        )
+        .join("")
+    : `<div class="profile-search-empty">No matches</div>`;
+  dropdown.hidden = false;
+}
+
+// Applies the current mode + selected player: filters the match history to
+// just games with them, and builds the "played with/against" summary
+// panel above it. The only async part is the shared placements lookup
+// (fetched once per session, see getPlacements) -- everything else is
+// already sitting in profileSearch from the initial profile fetch.
+async function applySearchFilter() {
+  if (!profileSearch?.selectedKey) return;
+  const { mode, selectedKey, history, tournaments } = profileSearch;
+  const otherName =
+    (mode === "against" ? profileSearch.opponents : profileSearch.teammates).get(
+      selectedKey,
+    ) || selectedKey;
+
+  const filtered = history.filter((entry) => {
+    const roster =
+      mode === "against" ? entry.opponentTeam?.roster : entry.ownTeam?.roster;
+    return (roster || []).some((m) => m.identityKey === selectedKey);
+  });
+
+  const wins = filtered.filter((e) => e.outcome === "win").length;
+  const losses = filtered.filter((e) => e.outcome === "loss").length;
+  const games = filtered.length;
+  const winRate = games ? round3(wins / games) : null;
+
+  const placements = await getPlacements();
+  // If the mode or selection changed again while that fetch was in
+  // flight, this result is stale -- bail rather than overwrite whatever
+  // the more recent selection already rendered.
+  if (profileSearch.selectedKey !== selectedKey || profileSearch.mode !== mode) {
+    return;
+  }
+
+  const byTournament = new Map();
+  for (const entry of filtered) {
+    const tKey = `${entry.year}::${entry.tournament}`;
+    if (!byTournament.has(tKey)) {
+      byTournament.set(tKey, {
+        year: entry.year,
+        tournament: entry.tournament,
+        wins: 0,
+        losses: 0,
+        games: 0,
+      });
+    }
+    const t = byTournament.get(tKey);
+    t.games += 1;
+    if (entry.outcome === "win") t.wins += 1;
+    else if (entry.outcome === "loss") t.losses += 1;
+  }
+  const tournamentRows = [...byTournament.values()]
+    .map((t) => {
+      const tKey = `${t.year}::${t.tournament}`;
+      const myPlacement =
+        tournaments.find((s) => `${s.year}::${s.tournament}` === tKey)
+          ?.finalPlacement ?? null;
+      const theirPlacement = placements[`${selectedKey}::${tKey}`] ?? null;
+      return { ...t, myPlacement, theirPlacement };
+    })
+    .sort(
+      (a, b) =>
+        b.year - a.year || seasonRankLocal(b.tournament) - seasonRankLocal(a.tournament),
+    );
+
+  const summaryEl = document.getElementById("profileSearchSummary");
+  if (summaryEl) {
+    const winRateLabel =
+      winRate != null ? `${Math.round(winRate * 100)}%` : "–";
+    const heading =
+      mode === "against" ? `Played against ${otherName}` : `Played with ${otherName}`;
+    const overallLabel =
+      mode === "against"
+        ? `${winRateLabel} win rate against them (${wins}-${losses})`
+        : `${winRateLabel} win rate together (${wins}-${losses})`;
+    const rows = tournamentRows
+      .map((t) => {
+        const record = `${t.wins}-${t.losses}`;
+        const mine = t.myPlacement != null ? `#${t.myPlacement}` : "–";
+        const theirs = t.theirPlacement != null ? `#${t.theirPlacement}` : "–";
+        return mode === "against"
+          ? `<tr><td>${escapeHtml(t.tournament)} ${escapeHtml(String(t.year))}</td><td>${record}</td><td>${mine}</td><td>${theirs}</td></tr>`
+          : `<tr><td>${escapeHtml(t.tournament)} ${escapeHtml(String(t.year))}</td><td>${record}</td><td>${mine}</td></tr>`;
+      })
+      .join("");
+    const headerRow =
+      mode === "against"
+        ? "<tr><th>Tournament</th><th>Record vs them</th><th>Your placement</th><th>Their placement</th></tr>"
+        : "<tr><th>Tournament</th><th>Record</th><th>Placement</th></tr>";
+    summaryEl.hidden = false;
+    summaryEl.innerHTML = `
+      <section class="profile-block profile-search-summary-block">
+        <h3>${escapeHtml(heading)}</h3>
+        <div class="profile-current-rank">${escapeHtml(overallLabel)} <span class="stat-formula">(${games} games)</span></div>
+        ${
+          tournamentRows.length
+            ? `<table><thead>${headerRow}</thead><tbody>${rows}</tbody></table>`
+            : '<p class="stat-formula">No shared tournaments recorded.</p>'
+        }
+      </section>`;
+  }
+
+  const tableWrap = document.getElementById("profileHistoryTableWrap");
+  if (tableWrap) {
+    tableWrap.innerHTML = buildHistoryTableHtml([...filtered].reverse());
+  }
+}
+
+function selectSearchPlayer(key, name) {
+  if (!profileSearch) return;
+  profileSearch.selectedKey = key;
+  const input = document.getElementById("profileSearchInput");
+  const dropdown = document.getElementById("profileSearchDropdown");
+  const clearBtn = document.getElementById("profileSearchClear");
+  if (input) input.value = name;
+  if (dropdown) {
+    dropdown.hidden = true;
+    dropdown.innerHTML = "";
+  }
+  if (clearBtn) clearBtn.hidden = false;
+  applySearchFilter();
+}
+
+function clearSearch() {
+  if (!profileSearch) return;
+  profileSearch.selectedKey = null;
+  const input = document.getElementById("profileSearchInput");
+  const dropdown = document.getElementById("profileSearchDropdown");
+  const clearBtn = document.getElementById("profileSearchClear");
+  const summaryEl = document.getElementById("profileSearchSummary");
+  if (input) input.value = "";
+  if (dropdown) {
+    dropdown.hidden = true;
+    dropdown.innerHTML = "";
+  }
+  if (clearBtn) clearBtn.hidden = true;
+  if (summaryEl) {
+    summaryEl.hidden = true;
+    summaryEl.innerHTML = "";
+  }
+  const tableWrap = document.getElementById("profileHistoryTableWrap");
+  if (tableWrap && profileSearch.history) {
+    tableWrap.innerHTML = buildHistoryTableHtml([...profileSearch.history].reverse());
+  }
+}
+
+// Loads and renders the identified-player page for a given identityKey,
+// and puts the browser at /player/:key. This is the single function
+// responsible for both showing the page AND fetching its data -- called
+// identically whether the navigation came from a click (push: true) or
+// from popstate/direct-load (push: false), so there is exactly one
+// "player page init" path rather than two that can drift apart (see the
+// README's note on that exact bug shape).
+export async function loadPlayerProfilePage(keyOrSlug, { push = true } = {}) {
+  if (!keyOrSlug) return;
+  // keyOrSlug is already a valid URL path segment -- every emitter builds
+  // it with buildPlayerSlug (component-wise encodeURIComponent) or passes
+  // a bare identityKey ("p18", no special chars). Re-encoding the whole
+  // thing here would double-encode any "%" a slug already contains.
+  if (push) {
+    window.history.pushState({ playerKey: keyOrSlug }, "", `/player/${keyOrSlug}`);
+  }
+  activatePanel("player");
+  playerProfileTitle.textContent = "Loading…";
   playerProfileContent.innerHTML = "Loading…";
 
   try {
-    const res = await fetch(`/api/player/${encodeURIComponent(identityKey)}`);
+    // The API accepts either the internal identityKey or the human-
+    // readable slug -- keyOrSlug is normally already a slug (every link
+    // that renders one builds it from the player's display name), but old
+    // bookmarks/links using a raw identityKey still resolve correctly.
+    // Fetched in parallel with the tier-cutoff dependency rank badges
+    // need (see ensureTiersReady above) rather than after it, so a direct
+    // page load doesn't pay for both round trips back to back.
+    const [res] = await Promise.all([
+      fetch(`/api/player/${keyOrSlug}`),
+      ensureTiersReady(),
+    ]);
     if (!res.ok) throw new Error("Player profile not found");
     const player = await res.json();
     playerProfileContent.innerHTML = renderPlayerProfileContent(player);
+    // Default the chart's scroll position to the far right (most recent
+    // game) rather than the far left (oldest game, game 1) -- what
+    // someone opening a profile actually wants to see first.
+    const chartScroll = playerProfileContent.querySelector(".profile-chart-scroll");
+    if (chartScroll) chartScroll.scrollLeft = chartScroll.scrollWidth;
+    // Normalize the address bar to the canonical slug once we know it --
+    // covers identityKey-based links and any drift between the slug a
+    // link was built from and what the server considers canonical.
+    // replaceState, not pushState: this is a correction, not a new page.
+    if (player.slug && player.slug !== keyOrSlug) {
+      window.history.replaceState({ playerKey: player.slug }, "", `/player/${player.slug}`);
+    }
   } catch (err) {
     playerProfileContent.innerHTML = `<p>${escapeHtml(err.message || "Unable to load player profile")}</p>`;
   }
 }
 
-export function initPlayerProfile() {
-  playerProfileCloseBtn?.addEventListener("click", closePlayerProfile);
-  playerProfileModal?.addEventListener("click", (event) => {
-    if (
-      event.target.classList.contains("player-profile-backdrop") ||
-      event.target.dataset.close === "true"
-    ) {
-      closePlayerProfile();
+// Same idea, for names with no real identity yet (Mock Draft manual
+// stubs, Upcoming Roster's unrated players) -- there's no backend record
+// to fetch, so this just renders the op.gg-link-only view directly.
+//
+// Accepts either the original full name (from a click, where we have it
+// verbatim) or an already-built slug (from a direct/shared URL, where the
+// slug is all we have). isSlug picks which. Both paths converge on the
+// same slug for the address bar, so a clicked link and a shared link for
+// the same name always end up at the same URL.
+export function loadSimpleProfilePage(nameOrSlug, { push = true, isSlug = false } = {}) {
+  if (!nameOrSlug) return;
+  const slug = isSlug ? nameOrSlug : buildPlayerSlug(nameOrSlug) || encodeURIComponent(nameOrSlug);
+  if (push) {
+    window.history.pushState({ simpleSlug: slug }, "", `/player/simple/${slug}`);
+  }
+  activatePanel("player");
+
+  // When we arrived from a click we already have the exact original name
+  // to display -- no need to reconstruct it. When we arrived from a URL
+  // (direct load/shared link), best-effort split the slug back into
+  // gameName#tagLine on its LAST hyphen, which matches how the slug was
+  // built (Riot tag lines are short alnum codes that don't contain one).
+  let displayName = nameOrSlug;
+  let gameName = null;
+  let tagLine = null;
+  if (isSlug) {
+    const idx = slug.lastIndexOf("-");
+    gameName = decodeURIComponent(idx === -1 ? slug : slug.slice(0, idx));
+    tagLine = idx === -1 ? null : decodeURIComponent(slug.slice(idx + 1));
+    displayName = tagLine ? `${gameName}#${tagLine}` : gameName;
+  } else {
+    const idx = nameOrSlug.lastIndexOf("#");
+    if (idx !== -1) {
+      gameName = nameOrSlug.slice(0, idx).trim();
+      tagLine = nameOrSlug.slice(idx + 1).trim();
     }
-  });
+  }
+  const link = gameName && tagLine
+    ? `https://op.gg/lol/summoners/na/${encodeURIComponent(gameName)}-${encodeURIComponent(tagLine)}`
+    : null;
+
+  playerProfileTitle.textContent = displayName;
+  playerProfileContent.innerHTML = `
+    <div class="profile-summary">
+      ${
+        link
+          ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>`
+          : '<span class="stat-formula">No # tag to build an op.gg link from.</span>'
+      }
+    </div>
+    <p class="stat-formula" style="margin-top:12px;">No TrueSkill history for this name yet.</p>
+  `;
+}
+
+export function initPlayerProfile({
+  activatePanel: activatePanelFn,
+  ensureTiersReady: ensureTiersReadyFn,
+} = {}) {
+  if (typeof activatePanelFn === "function") activatePanel = activatePanelFn;
+  if (typeof ensureTiersReadyFn === "function") ensureTiersReady = ensureTiersReadyFn;
+
+  playerProfileBackBtn?.addEventListener("click", goBack);
 
   document.addEventListener("click", (event) => {
+    // Let modified clicks (cmd/ctrl/shift/middle-click) behave like a
+    // normal link -- open in a new tab -- instead of hijacking navigation.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
     const link = event.target.closest(".player-link[data-player-key]");
-    if (!link) return;
-    event.preventDefault();
-    openPlayerProfile(link.dataset.playerKey);
+    if (link) {
+      event.preventDefault();
+      loadPlayerProfilePage(link.dataset.playerKey, { push: true });
+      return;
+    }
+    const simpleLink = event.target.closest(".simple-profile-link[data-fullname]");
+    if (simpleLink) {
+      event.preventDefault();
+      loadSimpleProfilePage(simpleLink.dataset.fullname, { push: true });
+    }
   });
 
   document.addEventListener("click", (e) => {
@@ -289,46 +852,71 @@ export function initPlayerProfile() {
     toggle.textContent = isOpen ? "▶" : "▼";
   });
 
-  document.addEventListener("keydown", (event) => {
-    if (
-      event.key === "Escape" &&
-      playerProfileModal?.classList.contains("open")
-    ) {
-      closePlayerProfile();
+  // ---- "Played with / Played against" search ----
+  document.addEventListener("input", (e) => {
+    if (e.target.id !== "profileSearchInput") return;
+    // Typing again after having selected someone starts a fresh search --
+    // the old selection no longer matches what's in the box.
+    if (profileSearch && profileSearch.selectedKey) {
+      profileSearch.selectedKey = null;
+      document.getElementById("profileSearchClear")?.setAttribute("hidden", "");
+    }
+    updateSearchDropdown(e.target.value);
+  });
+
+  document.addEventListener("change", (e) => {
+    if (e.target.id !== "profileSearchMode") return;
+    if (!profileSearch) return;
+    profileSearch.mode = e.target.value;
+    const input = document.getElementById("profileSearchInput");
+    if (input) {
+      input.placeholder =
+        profileSearch.mode === "against" ? "Search an opponent..." : "Search a teammate...";
+    }
+    // The teammate/opponent pools are different sets of people -- a
+    // selection made in one mode isn't meaningful in the other, so switching
+    // modes clears the search rather than trying to carry it over.
+    clearSearch();
+  });
+
+  document.addEventListener("click", (e) => {
+    const suggestion = e.target.closest(".profile-search-suggestion");
+    if (suggestion) {
+      selectSearchPlayer(suggestion.dataset.key, suggestion.dataset.name);
+      return;
+    }
+    if (e.target.id === "profileSearchClear") {
+      clearSearch();
+      return;
+    }
+    // Click anywhere outside the search box closes the dropdown without
+    // touching whatever's currently selected/filtered.
+    if (!e.target.closest(".profile-search-box")) {
+      const dropdown = document.getElementById("profileSearchDropdown");
+      if (dropdown) dropdown.hidden = true;
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.target.id !== "profileSearchInput") return;
+    const dropdown = document.getElementById("profileSearchDropdown");
+    if (e.key === "Escape") {
+      if (dropdown) dropdown.hidden = true;
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const first = dropdown?.querySelector(".profile-search-suggestion");
+      if (first) selectSearchPlayer(first.dataset.key, first.dataset.name);
     }
   });
 }
-// Client-side equivalent of the server's opggLink() for building a simple op.gg link from a full name string (e.g. "PlayerName#1234").
 
-function buildSimpleOpggLink(fullName) {
-  const idx = fullName.lastIndexOf("#");
-  if (idx === -1) return null; // no tag to split on -- can't build a valid op.gg link
-  const gameName = fullName.slice(0, idx).trim();
-  const tagLine = fullName.slice(idx + 1).trim();
-  if (!gameName || !tagLine) return null;
-  return `https://op.gg/lol/summoners/na/${encodeURIComponent(gameName)}-${encodeURIComponent(tagLine)}`;
-}
-
-function openSimpleProfile(fullName) {
-  const link = buildSimpleOpggLink(fullName);
-  playerProfileModal.classList.add("open");
-  playerProfileModal.setAttribute("aria-hidden", "false");
-  playerProfileTitle.textContent = fullName;
-  playerProfileContent.innerHTML = `
-    <div class="profile-summary">
-      <span><strong>${escapeHtml(fullName)}</strong></span>
-      ${
-        link
-          ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open op.gg</a>`
-          : '<span class="stat-formula">No # tag to build an op.gg link from.</span>'
-      }
-    </div>
-    <p class="stat-formula" style="margin-top:12px;">No TrueSkill history for this name yet.</p>
-  `;
-}
 // Used anywhere a name needs to be clickable but might not have a real
 // identityKey -- Mock Draft board cells, Mock Draft's Available/Selected
-// tables for manual entries, and Upcoming Roster's unrated players.
+// tables for manual entries, and Upcoming Roster's unrated players. Hrefs
+// point at the real page URL (not "#") so middle-click / cmd-click / right-
+// click-open-in-new-tab all work the same way a normal link would.
 export function renderClickableName(
   fullName,
   identityKey,
@@ -336,10 +924,12 @@ export function renderClickableName(
   profileUrl = null,
 ) {
   if (identityKey && identified) {
-    return `<a href="#" class="player-link" data-player-key="${escapeHtml(identityKey)}">${renderNameWithTag(fullName)}</a>`;
+    const slug = buildPlayerSlug(fullName) || identityKey;
+    return `<a href="/player/${slug}" class="player-link" data-player-key="${escapeHtml(slug)}">${renderNameWithTag(fullName)}</a>`;
   }
   if (profileUrl) {
     return `<a href="${escapeHtml(profileUrl)}" target="_blank" rel="noopener noreferrer" class="player-link" title="View on op.gg">${renderNameWithTag(fullName)}</a>`;
   }
-  return `<a href="#" class="simple-profile-link" data-fullname="${escapeHtml(fullName)}">${renderNameWithTag(fullName)}</a>`;
+  const simpleSlug = buildPlayerSlug(fullName) || encodeURIComponent(fullName);
+  return `<a href="/player/simple/${simpleSlug}" class="simple-profile-link" data-fullname="${escapeHtml(fullName)}">${renderNameWithTag(fullName)}</a>`;
 }

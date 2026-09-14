@@ -6,6 +6,7 @@ const {
   loadIdentityMap,
   identityTablesExist,
   opggLinkFromDisplayName,
+  slugFromDisplayName,
 } = require("./src/lib/player-identity");
 const { runFullSync } = require("./src/lib/riot-sync");
 const { startPeriodicSync } = require("./src/scripts/scheduler");
@@ -341,6 +342,17 @@ function round3(x) {
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json());
 
+// Discrete player-profile pages (formerly a modal) live at these client-side
+// routes. The client (public/app.js) reads the identity key straight out of
+// window.location.pathname, so all the server needs to do is make sure a
+// direct load or refresh at one of these URLs still gets the SPA shell
+// instead of a 404 -- same index.html express.static already serves at "/".
+// Must be registered before any other app.get("/player*") route, and must
+// NOT collide with the existing /api/player/:key data endpoint below.
+app.get(["/player/:key", "/player/simple/:fullname"], (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
 // Shared by /api/stats, /api/roi, /api/tiers — resolves identity for the
 // full dataset so each alternative methodology operates on the same
 // underlying appearances, just scored differently.
@@ -630,10 +642,64 @@ app.get("/api/draft-analysis", async (req, res) => {
   }
 });
 
+// Season ordering used everywhere else in the app (Winter before Summer
+// within a year) -- here inverted (Summer before Winter) since the player
+// page lists a player's tournaments most-recent-first, matching the match
+// history table below it.
+function seasonRankDesc(value) {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "summer") return 0;
+  if (v === "winter") return 1;
+  return -1;
+}
+
+// Every identity's own team's final placement for every tournament they
+// were part of, whether as a captain or a drafted pick -- one flat pass
+// over allRows, no TrueSkill computation needed. Used by the player
+// profile page's "played with / played against" search: when looking at
+// games against someone, their OWN team's placement isn't otherwise
+// available to that page (the profile owner's own tournamentSummaries
+// only covers the profile owner's team), so this is fetched once per
+// session and looked up client-side instead of round-tripping per search.
+app.get("/api/placements", (req, res) => {
+  try {
+    const identityMap = loadIdentityMap(db);
+    const allRows = resolveIdentities(getAllRows(), identityMap).map(
+      (row) => ({
+        ...row,
+        captainIdentityKey:
+          identityMap.get(row.captain)?.identityKey || row.captain,
+      }),
+    );
+    const placements = {};
+    for (const row of allRows) {
+      if (!Number.isFinite(row.year) || row.rank == null) continue;
+      const tKey = `${row.year}::${row.tournament}`;
+      placements[`${row.identityKey}::${tKey}`] = row.rank;
+      placements[`${row.captainIdentityKey}::${tKey}`] = row.rank;
+    }
+    res.json({ placements });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to load placements" });
+  }
+});
+
 app.get("/api/player/:key", async (req, res) => {
   try {
     const identityMap = loadIdentityMap(db);
-    const allRows = resolveIdentities(getAllRows(), identityMap);
+    // Same raw-alias -> identityKey resolution resolveIdentities() applies
+    // to the "Player" column, applied here to "Captain" too -- captains
+    // are stored as raw name strings in the rows table, not identityKeys,
+    // so without this a captain's own picks/placement data is invisible
+    // to their own profile page.
+    const allRows = resolveIdentities(getAllRows(), identityMap).map(
+      (row) => ({
+        ...row,
+        captainIdentityKey:
+          identityMap.get(row.captain)?.identityKey || row.captain,
+      }),
+    );
     const matches = getMatches();
     const result = await computeTrueSkillFromMatches(
       matches,
@@ -645,11 +711,195 @@ app.get("/api/player/:key", async (req, res) => {
     const key = decodeURIComponent(req.params.key);
 
     const rankMap = getRankMap(db);
-    const player = result.players.find((p) => p.identityKey === key);
+    // Accepts either the internal identityKey (e.g. "p18") or the
+    // human-readable "GameName-Tag" slug the profile page's own URL now
+    // uses (see slugFromDisplayName) -- old links/bookmarks using the raw
+    // identityKey keep working, new links read like an op.gg URL.
+    let playerIndex = result.players.findIndex((p) => p.identityKey === key);
+    if (playerIndex === -1) {
+      playerIndex = result.players.findIndex(
+        (p) => slugFromDisplayName(p.group) === key,
+      );
+    }
+    const player = result.players[playerIndex];
     if (!player) return res.status(404).json({ error: "Player not found" });
+    const identityKey = player.identityKey; // canonical key -- everything below must key off this, not the raw `key` param, since `key` may be a slug rather than the real identityKey
+
+    const { mu, sigma, conservativeK } = result.params;
+    const defaultConservativeRating =
+      Math.round((mu - conservativeK * sigma) * 1000) / 1000;
+
+    // ---- Per-tournament draft/placement context, captains included ----
+    // A captain set their own team's floor rather than being drafted onto
+    // it, but they're just as much a part of that tournament's draft class
+    // as anyone they picked -- leaving them out would make "N of M" and
+    // "entering rank" undercount every tournament they ever ran a team in.
+    // poolByTournament is every identity (picks + captains) in a given
+    // tournament; teamRankByTournamentCaptain is that captain's team's
+    // final placement, read off of any of their picks' shared Rank value.
+    const draftByTournament = new Map(); // tKey -> this player's own draft row, if they were drafted
+    const teamRankByTournamentCaptain = new Map(); // `${tKey}::${captainIdentityKey}` -> final placement
+    const poolByTournament = new Map(); // tKey -> Set(identityKey) of everyone in that tournament's draft class (picks + captains) -- feeds entering-rank
+    const pickCountByTournament = new Map(); // tKey -> count of actual draft picks only, captains excluded -- feeds the "pick order out of X" display, since a captain was never a pick to begin with
+    for (const row of allRows) {
+      if (!Number.isFinite(row.year)) continue;
+      const tKey = `${row.year}::${row.tournament}`;
+      if (!poolByTournament.has(tKey)) poolByTournament.set(tKey, new Set());
+      poolByTournament.get(tKey).add(row.identityKey);
+      poolByTournament.get(tKey).add(row.captainIdentityKey);
+      pickCountByTournament.set(tKey, (pickCountByTournament.get(tKey) || 0) + 1);
+      if (row.identityKey === identityKey) draftByTournament.set(tKey, row);
+      if (row.rank != null) {
+        teamRankByTournamentCaptain.set(
+          `${tKey}::${row.captainIdentityKey}`,
+          row.rank,
+        );
+      }
+    }
+
+    // Entering-rank ranking per tournament, computed over that same
+    // picks+captains pool. This intentionally uses a different pool than
+    // Draft IQ's own entryRank (which ranks drafted picks only, since
+    // Draft IQ measures pick *value* against the available player pool) --
+    // here we're answering "where did everyone entering this tournament,
+    // captains included, actually rank," which is a different question.
+    const entryRatingLookup = new Map(); // `${identityKey}::${year}::${tournament}` -> entry rating record
+    for (const r of result.tournamentEntryRatings) {
+      entryRatingLookup.set(`${r.identityKey}::${r.year}::${r.tournament}`, r);
+    }
+    const entryRankByTournament = new Map(); // tKey -> Map(identityKey -> {rank, conservativeRating})
+    for (const [tKey, pool] of poolByTournament.entries()) {
+      const [yearStr, tournament] = tKey.split("::");
+      const entries = [...pool]
+        .map((idKey) => {
+          const e = entryRatingLookup.get(`${idKey}::${yearStr}::${tournament}`);
+          return e
+            ? { identityKey: idKey, conservativeRating: e.conservativeRating }
+            : null;
+        })
+        .filter(Boolean);
+      if (!entries.length) continue;
+      const hasSignal = entries.some(
+        (e) => e.conservativeRating !== defaultConservativeRating,
+      );
+      if (!hasSignal) continue; // first-ever tournament: no prior rating to rank by, same convention Draft IQ uses
+      const ranked = [...entries].sort(
+        (a, b) => b.conservativeRating - a.conservativeRating,
+      );
+      const rankMapForTournament = new Map();
+      ranked.forEach((e, i) =>
+        rankMapForTournament.set(e.identityKey, {
+          rank: i + 1,
+          conservativeRating: e.conservativeRating,
+        }),
+      );
+      entryRankByTournament.set(tKey, rankMapForTournament);
+    }
+
+    const tournamentKeys = new Set([
+      ...player.history.map((h) => `${h.year}::${h.tournament}`),
+      ...draftByTournament.keys(),
+    ]);
+    const tournamentSummaries = [...tournamentKeys].map((tKey) => {
+      const [year, tournament] = tKey.split("::");
+      const games = player.history.filter(
+        (h) => `${h.year}::${h.tournament}` === tKey,
+      );
+      const wins = games.filter((g) => g.outcome === "win").length;
+      const losses = games.filter((g) => g.outcome === "loss").length;
+
+      const draftRow = draftByTournament.get(tKey);
+      const isCaptainThisTournament = teamRankByTournamentCaptain.has(
+        `${tKey}::${identityKey}`,
+      );
+      const finalPlacement =
+        draftRow?.rank ??
+        teamRankByTournamentCaptain.get(`${tKey}::${identityKey}`) ??
+        null;
+      // A captain's "pick order" isn't a position in a sequence -- they
+      // weren't picked at all -- so this is a label, not a number, and the
+      // client shouldn't try to format it as "N of M" the way an actual
+      // pick order gets formatted.
+      const pickOrder = draftRow
+        ? draftRow.pickOrder
+        : isCaptainThisTournament
+          ? "Captain"
+          : null;
+      const entryInfo = entryRankByTournament.get(tKey)?.get(identityKey);
+
+      return {
+        year: parseInt(year, 10),
+        tournament,
+        games: games.length,
+        wins,
+        losses,
+        winRate: games.length ? round3(wins / games.length) : null,
+        finalPlacement,
+        pickOrder,
+        // Pick order's own denominator is picks only (captains excluded) --
+        // a captain was never in the running to be picked at all, so
+        // counting them here would make "18 of 50" mean something
+        // different than the number 50 anyone actually drafted competed
+        // against. totalInDraft (picks + captains) stays separate below,
+        // used only for entering-rank, which legitimately does include
+        // captains in its pool.
+        totalPicks: pickCountByTournament.get(tKey) ?? null,
+        totalInDraft: poolByTournament.get(tKey)?.size ?? null,
+        entryRank: entryInfo?.rank ?? null,
+        entryConservativeRating: entryInfo?.conservativeRating ?? null,
+      };
+    });
+    tournamentSummaries.sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      return seasonRankDesc(a.tournament) - seasonRankDesc(b.tournament);
+    });
+
+    // Per-champion aggregate, built from whatever match_details rows exist
+    // for this player's own games (ingest-match-details.js). Games without
+
+    // details on file are simply not counted -- there's no "unknown
+    // champion" bucket to keep this from being misleading.
+    const championMap = new Map();
+    for (const entry of player.history) {
+      const detail = entry.playerDetails?.[0];
+      if (!detail || !detail.champion) continue;
+      if (!championMap.has(detail.champion)) {
+        championMap.set(detail.champion, {
+          champion: detail.champion,
+          games: 0,
+          wins: 0,
+          losses: 0,
+          kills: 0,
+          deaths: 0,
+          assists: 0,
+        });
+      }
+      const c = championMap.get(detail.champion);
+      c.games += 1;
+      if (entry.outcome === "win") c.wins += 1;
+      else if (entry.outcome === "loss") c.losses += 1;
+      c.kills += detail.kills ?? 0;
+      c.deaths += detail.deaths ?? 0;
+      c.assists += detail.assists ?? 0;
+    }
+    const championStats = [...championMap.values()]
+      .map((c) => ({
+        ...c,
+        winRate: c.games ? round3(c.wins / c.games) : null,
+        // Conventional "perfect KDA" convention: null (displayed as
+        // "Perfect") rather than Infinity when a champion has zero deaths.
+        kda: c.deaths > 0 ? round3((c.kills + c.assists) / c.deaths) : null,
+      }))
+      .sort((a, b) => b.games - a.games);
+
     res.json({
       ...player,
+      slug: slugFromDisplayName(player.group),
       soloQueueRank: rankMap.get(player.identityKey) || null,
+      overallRank: playerIndex + 1,
+      totalPlayers: result.players.length,
+      tournamentSummaries,
+      championStats,
     });
   } catch (error) {
     console.error(error);

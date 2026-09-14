@@ -13,8 +13,9 @@ import {
   parseNameList,
   seasonRankLocal,
   renderChampionIcon,
+  buildPlayerSlug,
 } from "./js/utils.js";
-import { initPlayerProfile, renderClickableName } from "./js/player-profile.js";
+import { initPlayerProfile, renderClickableName, parsePlayerRouteFromPath, loadPlayerProfilePage, loadSimpleProfilePage, notifyActiveTab } from "./js/player-profile.js";
 import { createTabTable, coerceNumericColumns } from "./js/table-utils.js";
 
 let groupColName = "Player";
@@ -129,6 +130,7 @@ function setActiveTab(tabName) {
   tabPanels.forEach((panel) =>
     panel.classList.toggle("active", panel.id === `tab-${tabName}`),
   );
+  notifyActiveTab(tabName);
 }
 
 tabButtons.forEach((btn) => {
@@ -1867,7 +1869,7 @@ function renderDraftBoard() {
       const pick = draftPicks.get(`${round}::${c}`);
       const pickNumberHtml =
         pick && pick.identityKey
-          ? `<a href="#" class="player-link mock-pick-number-link" data-player-key="${escapeHtml(pick.identityKey)}" title="View profile">#${slot.overall} <span class="mock-profile-icon">→</span></a>`
+          ? `<a href="/player/${buildPlayerSlug(pick.group) || encodeURIComponent(pick.identityKey)}" class="player-link mock-pick-number-link" data-player-key="${escapeHtml(buildPlayerSlug(pick.group) || pick.identityKey)}" title="View profile">#${slot.overall} <span class="mock-profile-icon">→</span></a>`
           : `<span class="mock-pick-number">#${slot.overall}</span>`;
       cells.push(`<td><div class="mock-pick-cell">
         ${pickNumberHtml}
@@ -2136,7 +2138,7 @@ function renderMockDraftIQResults(captainResults) {
       const rows = team.picks
         .map((p) => {
           const nameHtml = p.identityKey
-            ? `<a href="#" class="player-link" data-player-key="${escapeHtml(p.identityKey)}">${renderNameWithTag(p.displayName)}</a>`
+            ? `<a href="/player/${buildPlayerSlug(p.displayName) || encodeURIComponent(p.identityKey)}" class="player-link" data-player-key="${escapeHtml(buildPlayerSlug(p.displayName) || p.identityKey)}">${renderNameWithTag(p.displayName)}</a>`
             : renderNameWithTag(p.displayName);
           return `
         <tr>
@@ -2149,7 +2151,7 @@ function renderMockDraftIQResults(captainResults) {
         .join("");
 
       const captainNameHtml = team.captainIdentityKey
-        ? `<a href="#" class="player-link" data-player-key="${escapeHtml(team.captainIdentityKey)}">${escapeHtml(team.captainName)}</a>`
+        ? `<a href="/player/${buildPlayerSlug(team.captainName) || encodeURIComponent(team.captainIdentityKey)}" class="player-link" data-player-key="${escapeHtml(buildPlayerSlug(team.captainName) || team.captainIdentityKey)}">${escapeHtml(team.captainName)}</a>`
         : escapeHtml(team.captainName);
 
       return `
@@ -2517,7 +2519,14 @@ tabButtons.forEach((btn) => {
   }
 });
 
-// ==================== URL query param state ====================
+// ==================== URL routing ====================
+// Two independent mechanisms share window.location: normal tabs live at
+// "/" with a "?tab=" query param (query-string state, via replaceState so
+// tab switches don't pile up history entries); the player-profile page
+// lives at a real path ("/player/:key" or "/player/simple/:name") pushed
+// via pushState so back/forward actually move between profiles and the
+// tab you came from. They never collide since a query string and a path
+// segment can't both be true of the same URL at once.
 
 function readStateFromURL() {
   const params = new URLSearchParams(window.location.search);
@@ -2529,13 +2538,36 @@ function readStateFromURL() {
   if (tab === "mockdraft") initMockDraftTab();
 }
 
+// Reads whichever route the current URL represents and shows it -- used
+// on first load AND from popstate, so there's exactly one function that
+// knows how to turn "the current URL" into "the visible page," matching
+// the same one-function-does-setup-and-is-called-from-everywhere pattern
+// player-profile.js uses for its own routes.
+function renderCurrentRoute({ push } = { push: false }) {
+  const playerRoute = parsePlayerRouteFromPath();
+  if (playerRoute?.kind === "identity") {
+    loadPlayerProfilePage(playerRoute.value, { push });
+  } else if (playerRoute?.kind === "simple") {
+    loadSimpleProfilePage(playerRoute.value, { push });
+  } else {
+    readStateFromURL();
+  }
+}
+
+window.addEventListener("popstate", () => renderCurrentRoute({ push: false }));
+
 function writeStateToURL() {
   const params = new URLSearchParams();
   const activeTab =
     document.querySelector(".tab-btn.active")?.dataset.tab || "trueskill";
   params.set("tab", activeTab);
 
-  const newUrl = `${window.location.pathname}?${params.toString()}`;
+  // Always targets "/" rather than window.location.pathname -- tab state
+  // only ever lives at the root path. Without this, clicking a real tab
+  // while sitting on a /player/... URL would leave the path unchanged and
+  // bolt "?tab=..." onto the player URL instead of actually navigating
+  // back to the tab view.
+  const newUrl = `/?${params.toString()}`;
   window.history.replaceState(null, "", newUrl);
 }
 
@@ -2557,11 +2589,26 @@ async function loadMeta() {
 
 (async function init() {
   initTheme();
-  initPlayerProfile();
-  readStateFromURL();
+  initPlayerProfile({
+    activatePanel: setActiveTab,
+    // Rank badges on the profile page (renderTrueSkillValue -> getRankTier)
+    // need tier cutoffs that only exist after loadtrueskillData() has run
+    // and called setRankTiers(). On normal in-app navigation that's
+    // already happened by the time someone clicks a player link, but on a
+    // direct/reload load of /player/... nothing has fetched it yet -- so
+    // the profile page awaits this itself rather than assuming it's
+    // already there. loadtrueskillData is idempotent (trueskillLoaded
+    // flag), so this is a no-op once the main tables have loaded anyway.
+    ensureTiersReady: () => loadtrueskillData(false),
+  });
+  renderCurrentRoute({ push: false });
   await loadMeta();
   await fetchStats(RANKINGS_RISK, RANKINGS_HALF_LIFE);
   loadtrueskillData();
   loadUpcomingRoster();
-  writeStateToURL();
+  // Skip if a direct/shared /player/... link is what got us here -- that
+  // path is owned by player-profile.js's own pushState calls, and writing
+  // "?tab=..." over it here would immediately stomp the URL the person
+  // actually landed on.
+  if (!parsePlayerRouteFromPath()) writeStateToURL();
 })();

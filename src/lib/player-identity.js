@@ -27,6 +27,22 @@ function opggLinkFromDisplayName(fullName, region = OPGG_REGION) {
   return opggLink(gameName, tagLine, region);
 }
 
+// Same last-# split + hyphen-join op.gg itself uses for its own profile
+// URLs (see opggLink above) -- reused as the player-profile page's own
+// URL slug so a profile URL reads the same way an op.gg URL does. Falls
+// back to the raw name (still URL-encoded) for legacy aliases with no
+// tag on record, rather than returning null and forcing callers to
+// special-case "no slug."
+function slugFromDisplayName(fullName) {
+  if (!fullName || typeof fullName !== "string") return null;
+  const idx = fullName.lastIndexOf("#");
+  if (idx === -1) return encodeURIComponent(fullName);
+  const gameName = fullName.slice(0, idx).trim();
+  const tagLine = fullName.slice(idx + 1).trim();
+  if (!gameName || !tagLine) return encodeURIComponent(fullName);
+  return `${encodeURIComponent(gameName)}-${encodeURIComponent(tagLine)}`;
+}
+
 function identityTablesExist(db) {
   const row = db
     .prepare(
@@ -97,5 +113,6 @@ module.exports = {
   buildReverseIdentityLookup,
   opggLink,
   opggLinkFromDisplayName,
+  slugFromDisplayName,
   identityTablesExist,
 };
