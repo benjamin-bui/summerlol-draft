@@ -69,6 +69,31 @@ footer a:hover {
   padding: 48px 24px 64px;
 }
 
+/* 1700px leaves a lot of unused margin on a 2560px+ monitor -- text and
+   controls end up looking small relative to all that surrounding empty
+   space (the classic "looks better zoomed to 140%" complaint, since
+   zooming shrinks the effective viewport back down close to what this
+   was designed for while also scaling everything up together). Raising
+   the cap AND nudging the base font size up on very wide screens
+   approximates that same effect without relying on the person manually
+   zooming their browser. */
+@media (min-width: 1800px) {
+  .wrap {
+    max-width: 2100px;
+  }
+  html {
+    font-size: 17px;
+  }
+}
+@media (min-width: 2200px) {
+  .wrap {
+    max-width: 2400px;
+  }
+  html {
+    font-size: 18px;
+  }
+}
+
 header h1 {
   font-size: 1.5rem;
   font-weight: 600;
@@ -1051,6 +1076,16 @@ thead .sticky-col {
   }
 }
 
+/* The 400px sidebar was sized for the default 16px root font -- once the
+   wide-monitor rule above raises that root size, the same content needs
+   a bit more room or it just re-triggers the horizontal-scroll fallback
+   it was originally widened to avoid. */
+@media (min-width: 1800px) {
+  .profile-layout {
+    grid-template-columns: 440px minmax(0, 1fr);
+  }
+}
+
 /* Match history, phone-width: only the toggle, Match (year + tournament +
    stage), Champion, K/D/A, and Result stay as actual columns -- Matchup,
    Avg Rating, and TrueSkill move into the "extra stats" grid inside the
@@ -1111,7 +1146,15 @@ thead .sticky-col {
 }
 
 .profile-history-table {
-  width: 100%;
+  /* auto, not 100% -- a table forced to fill its container stretches its
+     cells into whatever blank space is left over (especially once mobile
+     hides several columns, or the page is wide enough that content no
+     longer fills #profileHistoryTableWrap), dragging each row's
+     border-bottom through that blank padding instead of stopping where
+     the actual content does. Sizing to content means the border only
+     ever runs as far as something is actually there; the wrap's own
+     overflow-x:auto still handles the case where content is too WIDE. */
+  width: auto;
   border-collapse: collapse;
   margin-top: 16px;
   font-size: 13px;

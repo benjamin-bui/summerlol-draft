@@ -109,17 +109,31 @@ function buildChartHtml(history) {
   const xMax = history.length;
   // Width grows with game count instead of stretching to fit the
   // container -- a fixed px-per-game spacing keeps circles/text at a
-  // constant, undistorted size regardless of how many games there are;
-  // the chart scrolls horizontally instead of squeezing everything into
-  // whatever width happens to be available.
-  const pxPerGame = 26;
-  const minWidth = 900;
+  // constant, undistorted size regardless of how many games there are.
+  // For a small game count, though, a fixed spacing would leave the
+  // chart far short of a reasonable width -- rather than padding that
+  // out with blank canvas past the last point (or, worse, pinning a
+  // single point to the left edge with nothing but empty space to its
+  // right), spacing widens to fill a modest target width instead, so
+  // there's always something drawn across the whole chart. Past
+  // roughly two dozen games this converges back to the base spacing and
+  // the chart just grows with the game count, scrolling horizontally as
+  // it already did.
+  const basePxPerGame = 26;
+  const targetFilledWidth = 600;
   const height = 260;
   const padL = 45;
   const padR = 15;
   const padT = 15;
   const padB = 30;
-  const width = Math.max(minWidth, padL + padR + pxPerGame * (xMax - 1));
+  const width =
+    xMax <= 1
+      ? 240
+      : (() => {
+          const spanCount = xMax - 1;
+          const pxPerGame = Math.max(basePxPerGame, targetFilledWidth / spanCount);
+          return padL + padR + pxPerGame * spanCount;
+        })();
   const plotW = width - padL - padR;
   const plotH = height - padT - padB;
 
@@ -138,7 +152,11 @@ function buildChartHtml(history) {
   const yMax = Math.max(...points.map((p) => p.trueskill));
   const yPad = (yMax - yMin) * 0.05 || 1;
 
-  const xScale = (x) => padL + ((x - 1) / Math.max(1, xMax - 1)) * plotW;
+  // A lone point has no second point to anchor against, so the usual
+  // "spread first-to-last across the full width" formula degenerates to
+  // pinning it at the left edge -- center it instead.
+  const xScale = (x) =>
+    xMax <= 1 ? padL + plotW / 2 : padL + ((x - 1) / (xMax - 1)) * plotW;
   const yScale = (y) =>
     padT +
     plotH -
@@ -196,8 +214,8 @@ function buildChartHtml(history) {
         <path d="${trueskillPath}" fill="none" stroke="#2b6cb0" stroke-width="2" />
         ${dots}
         ${badges}
-        <text x="${padL}" y="${height - 6}" font-size="10" fill="#888">Game 1</text>
-        <text x="${width - padR}" y="${height - 6}" text-anchor="end" font-size="10" fill="#888">Game ${xMax}</text>
+        <text x="${xMax <= 1 ? padL + plotW / 2 : padL}" y="${height - 6}" ${xMax <= 1 ? 'text-anchor="middle"' : ""} font-size="10" fill="#888">Game 1</text>
+        ${xMax > 1 ? `<text x="${width - padR}" y="${height - 6}" text-anchor="end" font-size="10" fill="#888">Game ${xMax}</text>` : ""}
       </svg>
     </div>
     <div class="profile-chart-legend">
@@ -247,7 +265,7 @@ function renderTournamentsBlock(tournaments) {
 
 function renderTrueSkillBlock(player, tournaments) {
   const currentLine = `<div class="profile-current-rank">
-    ${renderTrueSkillValue(player.conservativeRating, player.mu)}
+    ${renderTrueSkillValue(player.conservativeRating)}
     <span class="stat-formula">#${player.overallRank ?? "–"} of ${player.totalPlayers ?? "–"} overall</span>
   </div>`;
   const withEntry = tournaments.filter(
@@ -397,7 +415,7 @@ function buildHistoryTableHtml(historyEntries) {
       <td>${playerDetail ? `${playerDetail.kills ?? "–"}/${playerDetail.deaths ?? "–"}/${playerDetail.assists ?? "–"}` : "–"}</td>
       <td class="col-result">
         <span class="cell-primary ${outcomeClass}">${escapeHtml(entry.outcome || "–")}</span>
-        <span class="cell-secondary">${predWinPct}% pred.</span>
+        <span class="cell-secondary">${predWinPct}% Win Prob.</span>
       </td>
       <td class="col-secondary col-ratings">
         <span class="cell-primary">${entry.ownTeam?.avgConservativeRating ?? "–"}</span>
