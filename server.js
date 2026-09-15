@@ -717,9 +717,19 @@ app.get("/api/player/:key", async (req, res) => {
     // identityKey keep working, new links read like an op.gg URL.
     let playerIndex = result.players.findIndex((p) => p.identityKey === key);
     if (playerIndex === -1) {
-      playerIndex = result.players.findIndex(
-        (p) => slugFromDisplayName(p.group) === key,
-      );
+      // `key` is already fully decoded (Express decodes route params once;
+      // the decodeURIComponent above is a no-op past that point), but
+      // slugFromDisplayName() always re-encodes special characters (a
+      // space becomes %20, etc.) since it's normally embedded straight
+      // into a URL. Comparing the decoded key against that still-encoded
+      // slug only ever matched by accident, for names with nothing that
+      // needed encoding -- decode the slug too before comparing, or any
+      // name with a space (or other reserved character) 404s here even
+      // though the identity clearly exists.
+      playerIndex = result.players.findIndex((p) => {
+        const slug = slugFromDisplayName(p.group);
+        return slug != null && decodeURIComponent(slug) === key;
+      });
     }
     const player = result.players[playerIndex];
     if (!player) return res.status(404).json({ error: "Player not found" });
