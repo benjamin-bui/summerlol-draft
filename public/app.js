@@ -460,6 +460,12 @@ const trueskillTable = createTabTable({
   columnsPanelEl: document.getElementById("trueskillColumnsPanel"),
   ownerKey: "trueskill",
   defaultSortColumn: "conservativeRating",
+  pagination: {
+    pageSizeOptions: [40, 80, 120, "all"],
+    defaultPageSize: 40,
+    pageSizeEl: document.getElementById("trueskillPageSizeOptions"),
+    paginationEl: document.getElementById("trueskillPagination"),
+  },
 });
 
 async function loadtrueskillData(forceRefresh) {
@@ -475,6 +481,82 @@ async function loadtrueskillData(forceRefresh) {
     renderFunFactsHtml(funFacts);
   trueskillTable.setData(players);
   trueskillLoaded = true;
+}
+
+// ==================== TrueSkill tab: player search ====================
+// The primary way to find a specific player on this tab -- same
+// autocomplete pattern as the profile page's "played with/against"
+// search (same CSS, same interaction), but selecting a result navigates
+// straight to that player's profile instead of filtering rows in place.
+// Uses a distinct suggestion class name (.trueskill-search-suggestion,
+// not .profile-search-suggestion) so this doesn't also trigger
+// player-profile.js's own global click handler for its search.
+function trueskillSearchDropdown(query) {
+  const dropdown = document.getElementById("trueskillSearchDropdown");
+  if (!dropdown) return;
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    dropdown.hidden = true;
+    dropdown.innerHTML = "";
+    return;
+  }
+  const matches = (latestTrueskillPlayers || [])
+    .filter((p) => (p.group || "").toLowerCase().includes(q))
+    .sort((a, b) => (a.group || "").localeCompare(b.group || ""))
+    .slice(0, 8);
+  dropdown.innerHTML = matches.length
+    ? matches
+        .map((p) => {
+          const slug = buildPlayerSlug(p.group) || p.identityKey;
+          return `<div class="trueskill-search-suggestion" data-slug="${escapeHtml(slug)}">${renderNameWithTag(p.group)}</div>`;
+        })
+        .join("")
+    : `<div class="profile-search-empty">No matches</div>`;
+  dropdown.hidden = false;
+}
+
+function initTrueskillSearch() {
+  const input = document.getElementById("trueskillSearchInput");
+  const dropdown = document.getElementById("trueskillSearchDropdown");
+  const clearBtn = document.getElementById("trueskillSearchClear");
+  if (!input || !dropdown) return;
+
+  input.addEventListener("input", () => {
+    clearBtn.hidden = input.value.trim() === "";
+    trueskillSearchDropdown(input.value);
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      dropdown.hidden = true;
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const first = dropdown.querySelector(".trueskill-search-suggestion");
+      if (first) loadPlayerProfilePage(first.dataset.slug, { push: true });
+    }
+  });
+
+  clearBtn.addEventListener("click", () => {
+    input.value = "";
+    clearBtn.hidden = true;
+    dropdown.hidden = true;
+    dropdown.innerHTML = "";
+    input.focus();
+  });
+
+  dropdown.addEventListener("click", (e) => {
+    const suggestion = e.target.closest(".trueskill-search-suggestion");
+    if (!suggestion) return;
+    loadPlayerProfilePage(suggestion.dataset.slug, { push: true });
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#trueskillSearchInput") && !e.target.closest("#trueskillSearchDropdown")) {
+      dropdown.hidden = true;
+    }
+  });
 }
 
 document
@@ -2601,6 +2683,7 @@ async function loadMeta() {
     // flag), so this is a no-op once the main tables have loaded anyway.
     ensureTiersReady: () => loadtrueskillData(false),
   });
+  initTrueskillSearch();
   renderCurrentRoute({ push: false });
   await loadMeta();
   await fetchStats(RANKINGS_RISK, RANKINGS_HALF_LIFE);

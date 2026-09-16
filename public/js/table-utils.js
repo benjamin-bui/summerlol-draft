@@ -421,6 +421,7 @@ export function createTabTable({
   defaultSortDirection = "desc",
   emptyMessage = "No rows match the active filters",
   expandable,
+  pagination,
 }) {
   const allPopovers = [];
   const state = {
@@ -430,13 +431,13 @@ export function createTabTable({
     hiddenColumns: new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key)),
     filters: {},
     externalFilter: null,
+    pageSize: pagination?.defaultPageSize ?? null,
+    page: 1,
   };
 
   function closeAllPopovers() {
     allPopovers.forEach((p) => p.classList.add("hidden"));
-  }
-
-  function removePopoversOwnedBy(owner) {
+  }  function removePopoversOwnedBy(owner) {
     for (let i = allPopovers.length - 1; i >= 0; i--) {
       if (allPopovers[i].dataset.owner === owner) {
         allPopovers[i].remove();
@@ -506,6 +507,7 @@ export function createTabTable({
         state.sortDirection,
         state.filters,
         () => {
+          state.page = 1; // a changed column filter can shrink or reshuffle the result set -- staying on e.g. page 4 could now be past the end
           renderBody();
         },
         ownerKey,
@@ -529,20 +531,76 @@ export function createTabTable({
     refreshStickyColumns();
   }
 
+  function renderPaginationControls(total, pageSize, page, totalPages) {
+    if (pagination.pageSizeEl) {
+      pagination.pageSizeEl.innerHTML = pagination.pageSizeOptions
+        .map((opt) => {
+          const isAll = opt === "all";
+          const isActive = isAll ? state.pageSize === "all" : state.pageSize === opt;
+          return `<button type="button" class="page-size-btn ${isActive ? "active" : ""}" data-size="${escapeHtml(String(opt))}">${isAll ? "All" : opt}</button>`;
+        })
+        .join("");
+    }
+    if (pagination.paginationEl) {
+      const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+      const rangeEnd = Math.min(total, page * pageSize);
+      pagination.paginationEl.innerHTML = `
+        <button type="button" class="page-nav-btn" data-dir="prev" ${page <= 1 ? "disabled" : ""}>&lsaquo; Prev</button>
+        <span class="page-indicator">${rangeStart}&ndash;${rangeEnd} of ${total}</span>
+        <button type="button" class="page-nav-btn" data-dir="next" ${page >= totalPages ? "disabled" : ""}>Next &rsaquo;</button>`;
+    }
+  }
+
+  if (pagination?.pageSizeEl) {
+    pagination.pageSizeEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".page-size-btn");
+      if (!btn) return;
+      state.pageSize = btn.dataset.size === "all" ? "all" : parseInt(btn.dataset.size, 10);
+      state.page = 1;
+      renderBody();
+    });
+  }
+  if (pagination?.paginationEl) {
+    pagination.paginationEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".page-nav-btn");
+      if (!btn) return;
+      state.page += btn.dataset.dir === "prev" ? -1 : 1;
+      renderBody();
+    });
+  }
+
   function renderBody() {
     const cols = visibleColumns();
     const colspan = cols.length + (expandable ? 1 : 0);
     let filtered = applyColumnFilters(state.data, columns, state.filters);
     if (state.externalFilter) filtered = filtered.filter(state.externalFilter);
     const sorted = sortRows(filtered, columns, state.sortColumn, state.sortDirection);
+    const total = sorted.length;
 
-    if (sorted.length === 0) {
+    // Pagination is opt-in (see the `pagination` param) -- tables that
+    // don't request it keep rendering every row exactly as before, so
+    // this never changes behavior for the raw Draft Data/Matchup Data
+    // browsers or anything else already using createTabTable.
+    let pageRows = sorted;
+    let startIndex = 0;
+    if (pagination) {
+      const pageSize = state.pageSize === "all" || !state.pageSize ? total : state.pageSize;
+      const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+      if (state.page > totalPages) state.page = totalPages;
+      if (state.page < 1) state.page = 1;
+      startIndex = pageSize > 0 ? (state.page - 1) * pageSize : 0;
+      pageRows = pageSize >= total ? sorted : sorted.slice(startIndex, startIndex + pageSize);
+      renderPaginationControls(total, pageSize, state.page, totalPages);
+    }
+
+    if (total === 0) {
       bodyEl.innerHTML = `<tr><td colspan="${colspan}" class="empty">${escapeHtml(emptyMessage)}</td></tr>`;
       return;
     }
 
-    bodyEl.innerHTML = sorted
-      .map((row, i) => {
+    bodyEl.innerHTML = pageRows
+      .map((row, localI) => {
+        const i = startIndex + localI; // global rank/index across all pages, not just this page's slice
         const cells = cols
           .map((col) => {
             if (col.playerLink || col.key === "group") {
@@ -591,6 +649,7 @@ export function createTabTable({
     },
     setExternalFilter(predicateFn) {
       state.externalFilter = predicateFn;
+      state.page = 1; // a new search/filter can easily land outside whatever page was previously showing
       renderBody();
     },
   };

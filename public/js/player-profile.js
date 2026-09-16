@@ -232,11 +232,8 @@ function ofTotal(n, total) {
   return n != null && total != null ? `${n} / ${total}` : "–";
 }
 
-function renderTournamentsBlock(tournaments) {
-  if (!tournaments.length) {
-    return `<section class="profile-block"><h3>Tournaments</h3><p class="stat-formula">No draft history recorded.</p></section>`;
-  }
-  const rows = tournaments
+function renderTournamentRows(tournaments) {
+  return tournaments
     .map((t) => {
       const record = t.games ? `${t.wins}-${t.losses}` : "–";
       const winRate =
@@ -254,18 +251,38 @@ function renderTournamentsBlock(tournaments) {
       </tr>`;
     })
     .join("");
+}
+
+function renderTournamentsBlock(tournaments) {
+  if (!tournaments.length) {
+    return `<section class="profile-block"><h3>Tournaments</h3><p class="stat-formula">No draft history recorded.</p></section>`;
+  }
+  // Distinct tournament names this player has actually played in (usually
+  // just Winter/Summer), in the order they first appear -- an "All"
+  // option always comes first regardless of how many there are.
+  const names = [...new Set(tournaments.map((t) => t.tournament))];
+  const filterOptions =
+    names.length > 1
+      ? `<select id="tournamentFilterSelect" class="tournament-filter-select">
+          <option value="">All</option>
+          ${names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("")}
+        </select>`
+      : "";
   return `<section class="profile-block">
-    <h3>Tournaments</h3>
+    <div class="profile-block-header">
+      <h3>Tournaments</h3>
+      ${filterOptions}
+    </div>
     <table>
       <thead><tr><th>Tournament</th><th>Win rate</th><th>Placement</th><th>Pick</th></tr></thead>
-      <tbody>${rows}</tbody>
+      <tbody id="tournamentsTableBody">${renderTournamentRows(tournaments)}</tbody>
     </table>
   </section>`;
 }
 
 function renderTrueSkillBlock(player, tournaments) {
   const currentLine = `<div class="profile-current-rank">
-    ${renderTrueSkillValue(player.conservativeRating)}
+    ${renderTrueSkillValue(player.conservativeRating, player.mu)}
     <span class="stat-formula">#${player.overallRank ?? "–"} of ${player.totalPlayers ?? "–"} overall</span>
   </div>`;
   const withEntry = tournaments.filter(
@@ -895,6 +912,18 @@ export function initPlayerProfile({
     // selection made in one mode isn't meaningful in the other, so switching
     // modes clears the search rather than trying to carry it over.
     clearSearch();
+  });
+
+  document.addEventListener("change", (e) => {
+    if (e.target.id !== "tournamentFilterSelect") return;
+    if (!profileSearch) return;
+    const tbody = document.getElementById("tournamentsTableBody");
+    if (!tbody) return;
+    const selected = e.target.value;
+    const filtered = selected
+      ? profileSearch.tournaments.filter((t) => t.tournament === selected)
+      : profileSearch.tournaments;
+    tbody.innerHTML = renderTournamentRows(filtered);
   });
 
   document.addEventListener("click", (e) => {
