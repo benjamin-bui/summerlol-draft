@@ -242,16 +242,13 @@ function tournamentKey(t) {
 // like it only scopes the one block it happens to sit next to.
 function renderTournamentFilterBlock(tournaments) {
   if (!tournaments.length) return "";
-  // Each dropdown option is one tournament *instance* ("Winter 2026"), not
-  // just the tournament name -- a player with multiple Winters/Summers on
-  // record can filter down to exactly one of them, not just the season.
   const sorted = [...tournaments].sort(
     (a, b) => b.year - a.year || seasonRankLocal(b.tournament) - seasonRankLocal(a.tournament),
   );
   const options = sorted
     .map(
       (t) =>
-        `<option value="${escapeHtml(tournamentKey(t))}">${escapeHtml(t.tournament)} ${escapeHtml(String(t.year))}</option>`,
+        `<option value="${escapeHtml(tournamentKey(t))}">${escapeHtml(t.year)} ${escapeHtml(String(t.tournament))}</option>`,
     )
     .join("");
   return `<section class="profile-block profile-filter-block">
