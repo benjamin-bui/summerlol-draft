@@ -232,6 +232,39 @@ function ofTotal(n, total) {
   return n != null && total != null ? `${n} / ${total}` : "–";
 }
 
+function tournamentKey(t) {
+  return `${t.year}::${t.tournament}`;
+}
+
+// A separate block above Tournaments rather than folded into its header --
+// this filter also drives the match history table below, not just the
+// Tournaments block, so it reads as its own control rather than looking
+// like it only scopes the one block it happens to sit next to.
+function renderTournamentFilterBlock(tournaments) {
+  if (!tournaments.length) return "";
+  // Each dropdown option is one tournament *instance* ("Winter 2026"), not
+  // just the tournament name -- a player with multiple Winters/Summers on
+  // record can filter down to exactly one of them, not just the season.
+  const sorted = [...tournaments].sort(
+    (a, b) => b.year - a.year || seasonRankLocal(b.tournament) - seasonRankLocal(a.tournament),
+  );
+  const options = sorted
+    .map(
+      (t) =>
+        `<option value="${escapeHtml(tournamentKey(t))}">${escapeHtml(t.tournament)} ${escapeHtml(String(t.year))}</option>`,
+    )
+    .join("");
+  return `<section class="profile-block profile-filter-block">
+    <div class="profile-filter-row">
+      <span>Filtered for:</span>
+      <select id="tournamentFilterSelect" class="tournament-filter-select">
+        <option value="">All</option>
+        ${options}
+      </select>
+    </div>
+  </section>`;
+}
+
 function renderTournamentRows(tournaments) {
   return tournaments
     .map((t) => {
@@ -257,22 +290,8 @@ function renderTournamentsBlock(tournaments) {
   if (!tournaments.length) {
     return `<section class="profile-block"><h3>Tournaments</h3><p class="stat-formula">No draft history recorded.</p></section>`;
   }
-  // Distinct tournament names this player has actually played in (usually
-  // just Winter/Summer), in the order they first appear -- an "All"
-  // option always comes first regardless of how many there are.
-  const names = [...new Set(tournaments.map((t) => t.tournament))];
-  const filterOptions =
-    names.length > 1
-      ? `<select id="tournamentFilterSelect" class="tournament-filter-select">
-          <option value="">All</option>
-          ${names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("")}
-        </select>`
-      : "";
   return `<section class="profile-block">
-    <div class="profile-block-header">
-      <h3>Tournaments</h3>
-      ${filterOptions}
-    </div>
+    <h3>Tournaments</h3>
     <table>
       <thead><tr><th>Tournament</th><th>Win rate</th><th>Placement</th><th>Pick</th></tr></thead>
       <tbody id="tournamentsTableBody">${renderTournamentRows(tournaments)}</tbody>
@@ -517,6 +536,7 @@ function renderPlayerProfileContent(player) {
     opponents,
     mode: "with",
     selectedKey: null,
+    tournamentFilter: null,
   };
 
   return `
@@ -530,6 +550,7 @@ function renderPlayerProfileContent(player) {
     </div>
     <div class="profile-layout">
       <aside class="profile-sidebar">
+        ${renderTournamentFilterBlock(tournaments)}
         ${renderTournamentsBlock(tournaments)}
         ${renderTrueSkillBlock(player, tournaments)}
         ${renderChampionsBlock(championStats)}
@@ -598,6 +619,19 @@ function updateSearchDropdown(query) {
   dropdown.hidden = false;
 }
 
+// The match history "played with/against" filters on top of -- respects
+// whatever tournament is currently selected in the "Filtered for:" block,
+// so the two filters compose (e.g. "games with this teammate, in this one
+// tournament") instead of the tournament filter only affecting the
+// Tournaments sidebar block.
+function getBaseHistory() {
+  if (!profileSearch) return [];
+  if (!profileSearch.tournamentFilter) return profileSearch.history;
+  return profileSearch.history.filter(
+    (h) => tournamentKey(h) === profileSearch.tournamentFilter,
+  );
+}
+
 // Applies the current mode + selected player: filters the match history to
 // just games with them, and builds the "played with/against" summary
 // panel above it. The only async part is the shared placements lookup
@@ -605,7 +639,8 @@ function updateSearchDropdown(query) {
 // already sitting in profileSearch from the initial profile fetch.
 async function applySearchFilter() {
   if (!profileSearch?.selectedKey) return;
-  const { mode, selectedKey, history, tournaments } = profileSearch;
+  const { mode, selectedKey, tournaments, tournamentFilter } = profileSearch;
+  const history = getBaseHistory();
   const otherName =
     (mode === "against" ? profileSearch.opponents : profileSearch.teammates).get(
       selectedKey,
@@ -623,10 +658,14 @@ async function applySearchFilter() {
   const winRate = games ? round3(wins / games) : null;
 
   const placements = await getPlacements();
-  // If the mode or selection changed again while that fetch was in
-  // flight, this result is stale -- bail rather than overwrite whatever
-  // the more recent selection already rendered.
-  if (profileSearch.selectedKey !== selectedKey || profileSearch.mode !== mode) {
+  // If the mode, selection, or tournament filter changed again while that
+  // fetch was in flight, this result is stale -- bail rather than
+  // overwrite whatever the more recent selection already rendered.
+  if (
+    profileSearch.selectedKey !== selectedKey ||
+    profileSearch.mode !== mode ||
+    profileSearch.tournamentFilter !== tournamentFilter
+  ) {
     return;
   }
 
@@ -738,7 +777,7 @@ function clearSearch() {
   }
   const tableWrap = document.getElementById("profileHistoryTableWrap");
   if (tableWrap && profileSearch.history) {
-    tableWrap.innerHTML = buildHistoryTableHtml([...profileSearch.history].reverse());
+    tableWrap.innerHTML = buildHistoryTableHtml([...getBaseHistory()].reverse());
   }
 }
 
@@ -917,13 +956,31 @@ export function initPlayerProfile({
   document.addEventListener("change", (e) => {
     if (e.target.id !== "tournamentFilterSelect") return;
     if (!profileSearch) return;
+    profileSearch.tournamentFilter = e.target.value || null;
+
+    // Narrow the Tournaments block to just the selected instance (or back
+    // to everything for "All").
     const tbody = document.getElementById("tournamentsTableBody");
-    if (!tbody) return;
-    const selected = e.target.value;
-    const filtered = selected
-      ? profileSearch.tournaments.filter((t) => t.tournament === selected)
-      : profileSearch.tournaments;
-    tbody.innerHTML = renderTournamentRows(filtered);
+    if (tbody) {
+      const filteredT = profileSearch.tournamentFilter
+        ? profileSearch.tournaments.filter(
+            (t) => tournamentKey(t) === profileSearch.tournamentFilter,
+          )
+        : profileSearch.tournaments;
+      tbody.innerHTML = renderTournamentRows(filteredT);
+    }
+
+    // Re-apply whatever "played with/against" selection is active against
+    // the newly tournament-filtered base; with no selection, just show
+    // the tournament-filtered match history directly.
+    if (profileSearch.selectedKey) {
+      applySearchFilter();
+    } else {
+      const tableWrap = document.getElementById("profileHistoryTableWrap");
+      if (tableWrap) {
+        tableWrap.innerHTML = buildHistoryTableHtml([...getBaseHistory()].reverse());
+      }
+    }
   });
 
   document.addEventListener("click", (e) => {

@@ -1006,15 +1006,14 @@ thead .sticky-col {
   letter-spacing: 0.04em;
   color: var(--muted);
 }
-.profile-block-header {
+.profile-filter-block {
+  padding: 10px 16px;
+}
+.profile-filter-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-.profile-block-header h3 {
-  margin: 0;
+  gap: 10px;
+  font-size: 0.85rem;
 }
 .tournament-filter-select {
   background: var(--panel);
@@ -1022,9 +1021,11 @@ thead .sticky-col {
   border-radius: 6px;
   color: var(--text);
   font-family: var(--sans);
-  font-size: 0.78rem;
-  padding: 3px 6px;
+  font-size: 0.82rem;
+  padding: 4px 8px;
   cursor: pointer;
+  flex: 1;
+  min-width: 0;
 }
 .profile-block table {
   width: 100%;
