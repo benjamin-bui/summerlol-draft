@@ -242,13 +242,16 @@ function tournamentKey(t) {
 // like it only scopes the one block it happens to sit next to.
 function renderTournamentFilterBlock(tournaments) {
   if (!tournaments.length) return "";
+  // Each dropdown option is one tournament *instance* ("Winter 2026"), not
+  // just the tournament name -- a player with multiple Winters/Summers on
+  // record can filter down to exactly one of them, not just the season.
   const sorted = [...tournaments].sort(
     (a, b) => b.year - a.year || seasonRankLocal(b.tournament) - seasonRankLocal(a.tournament),
   );
   const options = sorted
     .map(
       (t) =>
-        `<option value="${escapeHtml(tournamentKey(t))}">${escapeHtml(t.year)} ${escapeHtml(String(t.tournament))}</option>`,
+        `<option value="${escapeHtml(tournamentKey(t))}">${escapeHtml(t.tournament)} ${escapeHtml(String(t.year))}</option>`,
     )
     .join("");
   return `<section class="profile-block profile-filter-block">
@@ -326,11 +329,11 @@ function renderTrueSkillBlock(player, tournaments) {
   </section>`;
 }
 
-function renderChampionsBlock(championStats) {
+function renderChampionRows(championStats) {
   if (!championStats.length) {
-    return `<section class="profile-block"><h3>Champions</h3><p class="stat-formula">No champion data recorded yet.</p></section>`;
+    return `<tr><td colspan="4" class="stat-formula">No champion data for this filter.</td></tr>`;
   }
-  const rows = championStats
+  return championStats
     .map((c) => {
       const winRate = c.winRate != null ? `${Math.round(c.winRate * 100)}%` : "–";
       const kda = c.kda == null ? "Perfect" : c.kda.toFixed(2);
@@ -342,13 +345,65 @@ function renderChampionsBlock(championStats) {
       </tr>`;
     })
     .join("");
+}
+
+function renderChampionsBlock(championStats) {
+  if (!championStats.length) {
+    return `<section class="profile-block"><h3>Champions</h3><p class="stat-formula">No champion data recorded yet.</p></section>`;
+  }
   return `<section class="profile-block">
     <h3>Champions</h3>
     <table>
       <thead><tr><th>Champion</th><th>Games</th><th>Win rate</th><th>KDA</th></tr></thead>
-      <tbody>${rows}</tbody>
+      <tbody id="championsTableBody">${renderChampionRows(championStats)}</tbody>
     </table>
   </section>`;
+}
+
+// Same aggregation the server does once, career-wide, in /api/player/:key
+// -- reimplemented here so the Champions block can be recomputed
+// client-side for whatever subset of games the tournament filter (and/or
+// played-with/against search) currently has selected, without a round
+// trip back to the server for every filter change.
+function computeChampionStats(historyEntries) {
+  const championMap = new Map();
+  for (const entry of historyEntries) {
+    const detail = entry.playerDetails?.[0];
+    if (!detail || !detail.champion) continue;
+    if (!championMap.has(detail.champion)) {
+      championMap.set(detail.champion, {
+        champion: detail.champion,
+        games: 0,
+        wins: 0,
+        losses: 0,
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+      });
+    }
+    const c = championMap.get(detail.champion);
+    c.games += 1;
+    if (entry.outcome === "win") c.wins += 1;
+    else if (entry.outcome === "loss") c.losses += 1;
+    c.kills += detail.kills ?? 0;
+    c.deaths += detail.deaths ?? 0;
+    c.assists += detail.assists ?? 0;
+  }
+  return [...championMap.values()]
+    .map((c) => ({
+      ...c,
+      winRate: c.games ? round3(c.wins / c.games) : null,
+      kda: c.deaths > 0 ? round3((c.kills + c.assists) / c.deaths) : null,
+    }))
+    .sort((a, b) => b.games - a.games);
+}
+
+// Updates just the Champions block's rows in place -- used by every
+// filter change (tournament filter, played-with/against search) rather
+// than each one re-deriving how to touch the DOM itself.
+function renderChampionsTable(championStats) {
+  const tbody = document.getElementById("championsTableBody");
+  if (tbody) tbody.innerHTML = renderChampionRows(championStats);
 }
 
 // Builds the <table> markup for a set of history entries -- shared by the
@@ -448,7 +503,7 @@ function buildHistoryTableHtml(historyEntries) {
       <td>${playerDetail ? `${playerDetail.kills ?? "–"}/${playerDetail.deaths ?? "–"}/${playerDetail.assists ?? "–"}` : "–"}</td>
       <td class="col-result">
         <span class="cell-primary ${outcomeClass}">${escapeHtml(entry.outcome || "–")}</span>
-        <span class="cell-secondary">${predWinPct}% Win Prob.</span>
+        <span class="cell-secondary">${predWinPct}% pred.</span>
       </td>
       <td class="col-secondary col-ratings">
         <span class="cell-primary">${entry.ownTeam?.avgConservativeRating ?? "–"}</span>
@@ -529,6 +584,7 @@ function renderPlayerProfileContent(player) {
     selfKey: player?.identityKey,
     history,
     tournaments,
+    championStats,
     teammates,
     opponents,
     mode: "with",
@@ -738,6 +794,7 @@ async function applySearchFilter() {
   if (tableWrap) {
     tableWrap.innerHTML = buildHistoryTableHtml([...filtered].reverse());
   }
+  renderChampionsTable(computeChampionStats(filtered));
 }
 
 function selectSearchPlayer(key, name) {
@@ -776,6 +833,16 @@ function clearSearch() {
   if (tableWrap && profileSearch.history) {
     tableWrap.innerHTML = buildHistoryTableHtml([...getBaseHistory()].reverse());
   }
+  // No played-with/against selection anymore, but the tournament filter
+  // (if any) still applies -- restore the exact server-computed
+  // career-wide stats when there's no filter at all, since that's
+  // guaranteed consistent with what the page loaded with; only fall back
+  // to a client-side recompute when a tournament filter narrows things.
+  renderChampionsTable(
+    profileSearch.tournamentFilter
+      ? computeChampionStats(getBaseHistory())
+      : profileSearch.championStats,
+  );
 }
 
 // Loads and renders the identified-player page for a given identityKey,
@@ -955,21 +1022,16 @@ export function initPlayerProfile({
     if (!profileSearch) return;
     profileSearch.tournamentFilter = e.target.value || null;
 
-    // Narrow the Tournaments block to just the selected instance (or back
-    // to everything for "All").
-    const tbody = document.getElementById("tournamentsTableBody");
-    if (tbody) {
-      const filteredT = profileSearch.tournamentFilter
-        ? profileSearch.tournaments.filter(
-            (t) => tournamentKey(t) === profileSearch.tournamentFilter,
-          )
-        : profileSearch.tournaments;
-      tbody.innerHTML = renderTournamentRows(filteredT);
-    }
+    // Tournaments and TrueSkill blocks intentionally stay unfiltered --
+    // they're each already scoped per-tournament in their own rows, so
+    // this selector filtering them too would just be hiding rows from a
+    // table whose whole point is showing every tournament at a glance.
+    // Match history and Champions are the two views that show a single
+    // pooled-together picture, which is what this filter actually narrows.
 
     // Re-apply whatever "played with/against" selection is active against
-    // the newly tournament-filtered base; with no selection, just show
-    // the tournament-filtered match history directly.
+    // the newly tournament-filtered base (this also updates Champions);
+    // with no selection, update match history and Champions directly.
     if (profileSearch.selectedKey) {
       applySearchFilter();
     } else {
@@ -977,6 +1039,11 @@ export function initPlayerProfile({
       if (tableWrap) {
         tableWrap.innerHTML = buildHistoryTableHtml([...getBaseHistory()].reverse());
       }
+      renderChampionsTable(
+        profileSearch.tournamentFilter
+          ? computeChampionStats(getBaseHistory())
+          : profileSearch.championStats,
+      );
     }
   });
 
