@@ -739,6 +739,7 @@ tbody td {
   border-bottom: 1px solid var(--border);
   font-family: var(--sans);
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 tbody tr:last-child td {
@@ -1038,6 +1039,7 @@ thead .sticky-col {
   border-bottom: 1px solid var(--border);
   text-align: left;
   white-space: nowrap;
+  vertical-align: middle;
 }
 .profile-block th {
   color: var(--muted);
@@ -1268,6 +1270,7 @@ thead .sticky-col {
   border-bottom: 1px solid var(--border);
   border-left: none;
   text-align: left;
+  vertical-align: middle;
 }
 .profile-history-table th {
   color: var(--muted);
@@ -1316,6 +1319,7 @@ thead .sticky-col {
 .match-details-table td {
   padding: 0 4px;
   text-align: left;
+  vertical-align: middle;
   border-bottom: 1px solid var(--border);
 }
 .champion-cell {
