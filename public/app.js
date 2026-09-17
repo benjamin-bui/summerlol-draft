@@ -461,8 +461,8 @@ const trueskillTable = createTabTable({
   ownerKey: "trueskill",
   defaultSortColumn: "conservativeRating",
   pagination: {
-    pageSizeOptions: [40, 80, 120, "all"],
-    defaultPageSize: 40,
+    pageSizeOptions: [20, 40, 80, 120, "all"],
+    defaultPageSize: 20,
     pageSizeEl: document.getElementById("trueskillPageSizeOptions"),
     paginationEl: document.getElementById("trueskillPagination"),
   },
