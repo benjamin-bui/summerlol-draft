@@ -207,21 +207,64 @@ function buildChartHtml(history) {
       <text x="${padL - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="#888">${val.toFixed(1)}</text>`;
   }).join("");
 
+  // Consecutive games sharing the same year+tournament, in order -- used
+  // both for the dashed tournament-boundary lines and the x-axis labels
+  // below, so a run of games always gets exactly one line marking where
+  // it starts and one label naming it, no matter how many tournaments a
+  // player has been through.
+  const segments = [];
+  points.forEach((p, i) => {
+    const last = segments[segments.length - 1];
+    if (last && last.year === p.year && last.tournament === p.tournament) {
+      last.endIndex = i;
+    } else {
+      segments.push({ year: p.year, tournament: p.tournament, startIndex: i, endIndex: i });
+    }
+  });
+
+  // Dashed line at the first game of every tournament after the first --
+  // nothing to mark a boundary against before the very first game, so
+  // that one's skipped.
+  const tournamentBoundaries = segments
+    .slice(1)
+    .map((seg) => {
+      const boundaryX = xScale(points[seg.startIndex].x);
+      return `<line x1="${boundaryX}" y1="${padT}" x2="${boundaryX}" y2="${padT + plotH}" stroke="#bbb" stroke-width="1" stroke-dasharray="4 3" />`;
+    })
+    .join("");
+
+  // One label per tournament, centered under its span of games, replacing
+  // the old generic "Game 1"/"Game N" endpoints. Skipped for a segment
+  // too narrow to fit "Tournament YYYY" without overlapping its
+  // neighbors -- the dashed boundary line still marks it either way, so
+  // nothing is silently dropped, just its label on very short stints.
+  const minLabelWidth = 50;
+  const xAxisLabels = segments
+    .map((seg) => {
+      const xStart = xScale(points[seg.startIndex].x);
+      const xEnd = xScale(points[seg.endIndex].x);
+      if (segments.length > 1 && xEnd - xStart < minLabelWidth) return "";
+      const midX = (xStart + xEnd) / 2;
+      return `<text x="${midX}" y="${height - 6}" text-anchor="middle" font-size="10" fill="#888">${escapeHtml(seg.tournament)} ${escapeHtml(String(seg.year))}</text>`;
+    })
+    .join("");
+
   return `
     <div class="profile-chart-scroll">
       <svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" class="profile-chart-svg">
         ${gridlines}
+        ${tournamentBoundaries}
         <path d="${trueskillPath}" fill="none" stroke="#2b6cb0" stroke-width="2" />
         ${dots}
         ${badges}
-        <text x="${xMax <= 1 ? padL + plotW / 2 : padL}" y="${height - 6}" ${xMax <= 1 ? 'text-anchor="middle"' : ""} font-size="10" fill="#888">Game 1</text>
-        ${xMax > 1 ? `<text x="${width - padR}" y="${height - 6}" text-anchor="end" font-size="10" fill="#888">Game ${xMax}</text>` : ""}
+        ${xAxisLabels}
       </svg>
     </div>
     <div class="profile-chart-legend">
       <span><i style="background:#2b6cb0"></i> TrueSkill (skill estimate)</span>
       <span><i style="background:#2e7d32"></i> win</span>
       <span><i style="background:#c62828"></i> loss</span>
+      <span><i style="background:transparent;border-top:2px dashed #bbb;width:12px;height:0;border-radius:0;"></i> new tournament</span>
     </div>`;
 }
 
