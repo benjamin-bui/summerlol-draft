@@ -222,13 +222,16 @@ function buildChartHtml(history) {
     }
   });
 
-  // Dashed line at the first game of every tournament after the first --
-  // nothing to mark a boundary against before the very first game, so
-  // that one's skipped.
+  // Dashed line in the gap between the last game of one tournament and
+  // the first game of the next -- nothing to mark a boundary against
+  // before the very first game, so that one's skipped.
   const tournamentBoundaries = segments
     .slice(1)
-    .map((seg) => {
-      const boundaryX = xScale(points[seg.startIndex].x);
+    .map((seg, idx) => {
+      const prevSeg = segments[idx]; // segments[idx] is the segment right before `seg`, since seg itself is segments[idx + 1] here
+      const prevX = xScale(points[prevSeg.endIndex].x);
+      const nextX = xScale(points[seg.startIndex].x);
+      const boundaryX = (prevX + nextX) / 2;
       return `<line x1="${boundaryX}" y1="${padT}" x2="${boundaryX}" y2="${padT + plotH}" stroke="#bbb" stroke-width="1" stroke-dasharray="4 3" />`;
     })
     .join("");
