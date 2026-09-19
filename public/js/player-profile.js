@@ -101,7 +101,7 @@ function goBack() {
   }
 }
 
-function buildChartHtml(history) {
+function buildChartHtml(history, containerWidth = 0) {
   if (!history.length) {
     return '<p class="profile-chart-empty">No games recorded yet.</p>';
   }
@@ -126,7 +126,7 @@ function buildChartHtml(history) {
   const padR = 15;
   const padT = 15;
   const padB = 30;
-  const width =
+  const naturalWidth =
     xMax <= 1
       ? 240
       : (() => {
@@ -134,6 +134,14 @@ function buildChartHtml(history) {
           const pxPerGame = Math.max(basePxPerGame, targetFilledWidth / spanCount);
           return padL + padR + pxPerGame * spanCount;
         })();
+  // On a wide display, the natural (game-count-driven) width is often
+  // narrower than the actual space available in the header panel,
+  // leaving a slab of blank canvas to the right -- growing to fill
+  // whatever room the container actually has (never shrinking below the
+  // natural width, so a player with enough games to need scrolling still
+  // scrolls) fixes that without touching the per-game spacing logic
+  // above at all.
+  const width = Math.max(naturalWidth, containerWidth || 0);
   const plotW = width - padL - padR;
   const plotH = height - padT - padB;
 
@@ -282,6 +290,146 @@ function tournamentKey(t) {
   return `${t.year}::${t.tournament}`;
 }
 
+// ---- Summary panel: percentiles, champion diversity, best/worst co-play ----
+
+// "Picked Nth of M" -> what fraction of the way through the draft you
+// were picked (lower = picked earlier = better). Captains have no pick
+// order at all (they were never in the pool of pickable players to
+// begin with), so they're excluded rather than assigned some
+// placeholder rank.
+function pickPercentile(t) {
+  if (typeof t.pickOrder !== "number" || !t.totalPicks) return null;
+  return (t.pickOrder / t.totalPicks) * 100;
+}
+
+// Same idea for final placement against the number of teams that
+// tournament actually had -- unlike pick order, every appearance
+// (captain or pick) has a placement, so this one always applies.
+function placementPercentile(t) {
+  if (t.finalPlacement == null || !t.totalTeams) return null;
+  return (t.finalPlacement / t.totalTeams) * 100;
+}
+
+function average(values) {
+  if (!values.length) return null;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+// Gini-Simpson diversity index over champion pick distribution: 1 minus
+// the probability that two of this player's games, picked at random,
+// were on the same champion. 0 = always the same champion, close to 1 =
+// evenly spread across many different ones.
+function computeChampionDiversity(championStats) {
+  const total = championStats.reduce((sum, c) => sum + c.games, 0);
+  if (!total) return null;
+  const sumSquares = championStats.reduce(
+    (sum, c) => sum + Math.pow(c.games / total, 2),
+    0,
+  );
+  return 1 - sumSquares;
+}
+
+// Every teammate/opponent's win rate playing with/against this player,
+// plus enough to break a tie the way the summary panel wants to: most
+// games first, then whether they ever captained the shared team, then
+// genuinely random. isCaptain is derived from the team name matching
+// their own display name (a captain's team is named after them), since
+// roster entries don't carry an explicit "is captain" flag.
+function computeCoPlayRecords(history, selfKey) {
+  const withMap = new Map();
+  const againstMap = new Map();
+  for (const entry of history) {
+    const isWin = entry.outcome === "win";
+    for (const m of entry.ownTeam?.roster || []) {
+      if (!m.identityKey || m.identityKey === selfKey) continue;
+      if (!withMap.has(m.identityKey)) {
+        withMap.set(m.identityKey, {
+          identityKey: m.identityKey,
+          name: m.displayName,
+          games: 0,
+          wins: 0,
+          captainGames: 0,
+        });
+      }
+      const rec = withMap.get(m.identityKey);
+      rec.games += 1;
+      if (isWin) rec.wins += 1;
+      if (m.displayName === entry.ownTeam?.name) rec.captainGames += 1;
+    }
+    for (const m of entry.opponentTeam?.roster || []) {
+      if (!m.identityKey) continue;
+      if (!againstMap.has(m.identityKey)) {
+        againstMap.set(m.identityKey, {
+          identityKey: m.identityKey,
+          name: m.displayName,
+          games: 0,
+          wins: 0,
+          captainGames: 0,
+        });
+      }
+      const rec = againstMap.get(m.identityKey);
+      rec.games += 1;
+      if (isWin) rec.wins += 1; // "win rate against them" is from this player's own perspective
+      if (m.displayName === entry.opponentTeam?.name) rec.captainGames += 1;
+    }
+  }
+  return { withMap, againstMap };
+}
+
+function pickExtreme(map, mode) {
+  const entries = [...map.values()].map((r) => ({
+    ...r,
+    winRate: r.games ? r.wins / r.games : 0,
+    isCaptain: r.captainGames > 0,
+  }));
+  if (!entries.length) return null;
+  entries.sort((a, b) => {
+    const winDiff = mode === "max" ? b.winRate - a.winRate : a.winRate - b.winRate;
+    if (winDiff !== 0) return winDiff;
+    if (b.games !== a.games) return b.games - a.games; // most games first
+    if (b.isCaptain !== a.isCaptain) return (b.isCaptain ? 1 : 0) - (a.isCaptain ? 1 : 0); // then favor a captain
+    return Math.random() - 0.5; // otherwise genuinely random
+  });
+  return entries[0];
+}
+
+function renderSummaryPlayerLink(rec) {
+  if (!rec) return '<span class="profile-summary-coplay-value stat-formula">–</span>';
+  const slug = buildPlayerSlug(rec.name) || rec.identityKey;
+  const pct = Math.round(rec.winRate * 100);
+  return `<span class="profile-summary-coplay-value"><a href="/player/${slug}" class="player-link" data-player-key="${escapeHtml(slug)}">${renderNameWithTag(rec.name)}</a> <span class="stat-formula">(${pct}%, ${rec.games}games)</span></span>`;
+}
+
+function renderSummaryPanelBlock(player, tournaments, championStats, history) {
+  const avgPick = average(tournaments.map(pickPercentile).filter((v) => v != null));
+  const avgPlacement = average(
+    tournaments.map(placementPercentile).filter((v) => v != null),
+  );
+  const diversity = computeChampionDiversity(championStats);
+  const { withMap, againstMap } = computeCoPlayRecords(history, player?.identityKey);
+  const bestWith = pickExtreme(withMap, "max");
+  const worstWith = pickExtreme(withMap, "min");
+  const bestAgainst = pickExtreme(againstMap, "max");
+  const worstAgainst = pickExtreme(againstMap, "min");
+
+  const fmtPct = (v) => (v != null ? `${Math.round(v)}%` : "–");
+
+  return `<section class="profile-block profile-summary-block">
+    <h3>Summary</h3>
+    <div class="profile-summary-stats">
+      <div><span>Average pick percentile</span><strong>${fmtPct(avgPick)}</strong></div>
+      <div><span>Average placement percentile</span><strong>${fmtPct(avgPlacement)}</strong></div>
+      <div><span title="Gini-Simpson index">Champion Diversity</span><strong>${diversity != null ? diversity.toFixed(2) : "–"}</strong></div>
+    </div>
+    <div class="profile-summary-coplay">
+      <div><span>Best win rate with</span>${renderSummaryPlayerLink(bestWith)}</div>
+      <div><span>Worst win rate with</span>${renderSummaryPlayerLink(worstWith)}</div>
+      <div><span>Best win rate against</span>${renderSummaryPlayerLink(bestAgainst)}</div>
+      <div><span>Worst win rate against</span>${renderSummaryPlayerLink(worstAgainst)}</div>
+    </div>
+  </section>`;
+}
+
 // A separate block above Tournaments rather than folded into its header --
 // this filter also drives the match history table below, not just the
 // Tournaments block, so it reads as its own control rather than looking
@@ -317,7 +465,10 @@ function renderTournamentRows(tournaments) {
       const record = t.games ? `${t.wins}-${t.losses}` : "–";
       const winRate =
         t.games && t.winRate != null ? `${Math.round(t.winRate * 100)}%` : "–";
-      const placement = t.finalPlacement != null ? `#${t.finalPlacement}` : "–";
+      const placement =
+        t.finalPlacement != null
+          ? `#${t.finalPlacement}${t.totalTeams ? `/${t.totalTeams}` : ""}`
+          : "–";
       // "Captain" is a label, not a position -- don't format it as "N / M"
       // the way an actual pick order gets formatted below.
       const pick =
@@ -488,7 +639,13 @@ function buildHistoryTableHtml(historyEntries) {
             const detail = detailsByPlayer.get(
               normalizePlayer(member.displayName),
             );
-            return `<tr><td>${escapeHtml(member.displayName)}</td><td>${renderTrueSkillValue(member.conservativeRating)}</td>${
+            const slug = member.identityKey
+              ? buildPlayerSlug(member.displayName) || member.identityKey
+              : null;
+            const nameCell = slug
+              ? `<a href="/player/${slug}" class="player-link" data-player-key="${escapeHtml(slug)}">${escapeHtml(member.displayName)}</a>`
+              : escapeHtml(member.displayName);
+            return `<tr><td>${nameCell}</td><td>${renderTrueSkillValue(member.conservativeRating)}</td>${
               hasDetails
                 ? `<td>${detail ? renderChampionIcon(detail.champion) : "–"}</td><td>${detail?.kills ?? "–"}</td><td>${detail?.deaths ?? "–"}</td><td>${detail?.assists ?? "–"}</td>`
                 : ""
@@ -597,7 +754,7 @@ function buildCoPlayMaps(history, selfKey) {
   return { teammates, opponents };
 }
 
-function renderPlayerProfileContent(player) {
+function renderPlayerProfileContent(player, containerWidth) {
   const title = player?.group || player?.identityKey || "Player";
   const titleIdx = title.lastIndexOf("#");
   const nameHtml = titleIdx === -1
@@ -645,16 +802,17 @@ function renderPlayerProfileContent(player) {
           <div class="profile-summary">${headerMeta}</div>
         </div>
       </div>
-      <div class="profile-header-chart">${buildChartHtml(history)}</div>
     </div>
     <div class="profile-layout">
       <aside class="profile-sidebar">
+        ${renderSummaryPanelBlock(player, tournaments, championStats, history)}
         ${renderTournamentFilterBlock(tournaments)}
         ${renderTournamentsBlock(tournaments)}
         ${renderTrueSkillBlock(player, tournaments)}
         ${renderChampionsBlock(championStats)}
       </aside>
       <main class="profile-main">
+        <div class="profile-header-chart">${buildChartHtml(history, containerWidth)}</div>
         ${renderSearchBarHtml()}
         <div id="profileSearchSummary" hidden></div>
         <div id="profileHistoryTableWrap">${buildHistoryTableHtml(historyDescending)}</div>
@@ -908,6 +1066,13 @@ export async function loadPlayerProfilePage(keyOrSlug, { push = true } = {}) {
     window.history.pushState({ playerKey: keyOrSlug }, "", `/player/${keyOrSlug}`);
   }
   activatePanel("player");
+  // A rough first-pass estimate, used only until the chart's real
+  // container exists in the DOM below -- the chart now lives in the
+  // narrower main column (beside the sidebar), not the full-width header,
+  // so this initial guess is corrected against the actual measurement
+  // once it's actually there. Good enough to avoid a visibly-wrong flash
+  // before that correction runs, not meant to be exact.
+  const roughChartWidth = Math.max(0, playerProfileContent.clientWidth - 32);
   playerProfileTitle.textContent = "Loading…";
   playerProfileContent.innerHTML = "Loading…";
 
@@ -925,10 +1090,24 @@ export async function loadPlayerProfilePage(keyOrSlug, { push = true } = {}) {
     ]);
     if (!res.ok) throw new Error("Player profile not found");
     const player = await res.json();
-    playerProfileContent.innerHTML = renderPlayerProfileContent(player);
+    playerProfileContent.innerHTML = renderPlayerProfileContent(player, roughChartWidth);
+    // Now that .profile-header-chart actually exists (inside the main
+    // column, whose real width the rough estimate above couldn't know --
+    // it depends on the sidebar's width and the responsive breakpoints,
+    // and collapses to full-width itself once the layout stacks on
+    // narrow screens), remeasure and rebuild the chart if that estimate
+    // was off by enough to matter.
+    const chartContainer = playerProfileContent.querySelector(".profile-header-chart");
+    if (chartContainer) {
+      const actualChartWidth = Math.max(0, chartContainer.clientWidth - 32);
+      if (Math.abs(actualChartWidth - roughChartWidth) > 20) {
+        chartContainer.innerHTML = buildChartHtml(player.history || [], actualChartWidth);
+      }
+    }
     // Default the chart's scroll position to the far right (most recent
     // game) rather than the far left (oldest game, game 1) -- what
-    // someone opening a profile actually wants to see first.
+    // someone opening a profile actually wants to see first. Done after
+    // the possible rebuild above, since replacing innerHTML resets scroll.
     const chartScroll = playerProfileContent.querySelector(".profile-chart-scroll");
     if (chartScroll) chartScroll.scrollLeft = chartScroll.scrollWidth;
     // Normalize the address bar to the canonical slug once we know it --

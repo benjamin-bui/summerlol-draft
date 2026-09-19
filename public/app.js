@@ -461,8 +461,8 @@ const trueskillTable = createTabTable({
   ownerKey: "trueskill",
   defaultSortColumn: "conservativeRating",
   pagination: {
-    pageSizeOptions: [20, 40, 80, 120, "all"],
-    defaultPageSize: 20,
+    pageSizeOptions: [40, 80, 120, "all"],
+    defaultPageSize: 40,
     pageSizeEl: document.getElementById("trueskillPageSizeOptions"),
     paginationEl: document.getElementById("trueskillPagination"),
   },
@@ -1618,7 +1618,7 @@ function renderTeamMatchList(row) {
 
   const matchesHtml = matches.length
     ? `<table class="profile-history-table">
-        <thead><tr><th>Opponent(s)</th><th>Result</th><th>Stage</th><th>Pred. Win %</th></tr></thead>
+        <thead><tr><th>Opponent(s)</th><th>Result</th><th>Stage</th><th>Win Prob. %</th></tr></thead>
         <tbody>${matches
           .map((m) => {
             const outcomeClass =

@@ -751,6 +751,7 @@ app.get("/api/player/:key", async (req, res) => {
     const teamRankByTournamentCaptain = new Map(); // `${tKey}::${captainIdentityKey}` -> final placement
     const poolByTournament = new Map(); // tKey -> Set(identityKey) of everyone in that tournament's draft class (picks + captains) -- feeds entering-rank
     const pickCountByTournament = new Map(); // tKey -> count of actual draft picks only, captains excluded -- feeds the "pick order out of X" display, since a captain was never a pick to begin with
+    const teamsByTournament = new Map(); // tKey -> Set(captainIdentityKey) -- distinct teams, for placement percentile ("placed N of M teams")
     for (const row of allRows) {
       if (!Number.isFinite(row.year)) continue;
       const tKey = `${row.year}::${row.tournament}`;
@@ -758,6 +759,8 @@ app.get("/api/player/:key", async (req, res) => {
       poolByTournament.get(tKey).add(row.identityKey);
       poolByTournament.get(tKey).add(row.captainIdentityKey);
       pickCountByTournament.set(tKey, (pickCountByTournament.get(tKey) || 0) + 1);
+      if (!teamsByTournament.has(tKey)) teamsByTournament.set(tKey, new Set());
+      teamsByTournament.get(tKey).add(row.captainIdentityKey);
       if (row.identityKey === identityKey) draftByTournament.set(tKey, row);
       if (row.rank != null) {
         teamRankByTournamentCaptain.set(
@@ -855,6 +858,7 @@ app.get("/api/player/:key", async (req, res) => {
         // captains in its pool.
         totalPicks: pickCountByTournament.get(tKey) ?? null,
         totalInDraft: poolByTournament.get(tKey)?.size ?? null,
+        totalTeams: teamsByTournament.get(tKey)?.size ?? null,
         entryRank: entryInfo?.rank ?? null,
         entryConservativeRating: entryInfo?.conservativeRating ?? null,
       };
