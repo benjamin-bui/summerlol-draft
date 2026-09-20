@@ -5,6 +5,9 @@ import {
   renderSoloQueueRank,
   getRankTier,
   renderChampionIcon,
+  renderBanList,
+  ROLES,
+  sortByRole,
   buildPlayerSlug,
   round3,
   seasonRankLocal,
@@ -404,6 +407,35 @@ function renderSummaryPlayerLink(rec) {
   return `<span class="profile-summary-coplay-value"><a href="/player/${slug}" class="player-link" data-player-key="${escapeHtml(slug)}">${renderNameWithTag(rec.name)}</a> <span class="stat-formula">(${pct}%, ${rec.games}games)</span></span>`;
 }
 
+// Share of this player's games spent in each role. Only games with a role
+// recorded count -- a game with no Role in the CSV isn't "no role", it's
+// unknown -- so the percentages always add to 100 over the games we know about.
+// Returns "" when no game has a role, so profiles without role data show nothing.
+function renderRoleBreakdown(history) {
+  const counts = new Map(ROLES.map((role) => [role, 0]));
+  let total = 0;
+  for (const entry of history) {
+    const role = entry.playerDetails?.[0]?.role;
+    if (!counts.has(role)) continue;
+    counts.set(role, counts.get(role) + 1);
+    total += 1;
+  }
+  if (!total) return "";
+  const rows = ROLES.map((role) => {
+    const games = counts.get(role);
+    const pct = Math.round((games / total) * 100);
+    return `<div class="role-row" title="${games} of ${total} games">
+        <span>${role}</span>
+        <span class="role-bar"><span style="width:${(games / total) * 100}%"></span></span>
+        <strong>${pct}%</strong>
+      </div>`;
+  }).join("");
+  return `<div class="profile-summary-roles">
+      <h4>Role breakdown <span class="stat-formula">(${total} ${total === 1 ? "game" : "games"} with a role)</span></h4>
+      ${rows}
+    </div>`;
+}
+
 function renderSummaryPanelBlock(player, tournaments, championStats, history) {
   const avgPick = average(tournaments.map(pickPercentile).filter((v) => v != null));
   const avgPlacement = average(
@@ -425,6 +457,7 @@ function renderSummaryPanelBlock(player, tournaments, championStats, history) {
       <div><span>Average placement percentile</span><strong>${fmtPct(avgPlacement)}</strong></div>
       <div><span title="Gini-Simpson index">Champion Diversity</span><strong>${diversity != null ? diversity.toFixed(2) : "–"}</strong></div>
     </div>
+    ${renderRoleBreakdown(history)}
     <div class="profile-summary-coplay">
       <div><span>Best win rate with</span>${renderSummaryPlayerLink(bestWith)}</div>
       <div><span>Worst win rate with</span>${renderSummaryPlayerLink(worstWith)}</div>
@@ -530,35 +563,64 @@ function renderTrueSkillBlock(player, tournaments) {
   </section>`;
 }
 
+// Extra columns a caller can append after the four standard ones. The player
+// profile adds "bannedAgainst"; the Tournaments tab adds "bans" and "contest".
+// A champion that was only ever banned (games = 0) was never played, so it has
+// no win rate or KDA -- shown as "–", not "Perfect".
+const CHAMPION_EXTRA_CELLS = {
+  bannedAgainst: (c) => (c.bannedAgainst == null ? "–" : String(c.bannedAgainst)),
+  bans: (c) => String(c.bans ?? 0),
+  // Contest rate = games the champion was picked or banned in / games with
+  // champion data; the caller supplies that game count as options.contestGames.
+  contest: (c, { contestGames }) =>
+    contestGames ? `${Math.round(((c.contested ?? c.games) / contestGames) * 100)}%` : "–",
+};
+
 // Exported so the Tournaments tab renders its champion table with the exact
 // same markup as this page's Champions block.
-export function renderChampionRows(championStats) {
+export function renderChampionRows(championStats, options = {}) {
+  const extras = options.extras || [];
   if (!championStats.length) {
-    return `<tr><td colspan="4" class="stat-formula">No champion data for this filter.</td></tr>`;
+    return `<tr><td colspan="${4 + extras.length}" class="stat-formula">No champion data for this filter.</td></tr>`;
   }
   return championStats
     .map((c) => {
-      const winRate = c.winRate != null ? `${Math.round(c.winRate * 100)}%` : "–";
-      const kda = c.kda == null ? "Perfect" : c.kda.toFixed(2);
+      const played = c.games > 0;
+      const winRate = played && c.winRate != null ? `${Math.round(c.winRate * 100)}%` : "–";
+      const kda = !played ? "–" : c.kda == null ? "Perfect" : c.kda.toFixed(2);
+      const extraCells = extras
+        .map((id) => `<td>${CHAMPION_EXTRA_CELLS[id](c, options)}</td>`)
+        .join("");
       return `<tr>
         <td>${renderChampionIcon(c.champion)}</td>
         <td>${c.games}</td>
         <td>${winRate}</td>
         <td>${kda}</td>
+        ${extraCells}
       </tr>`;
     })
     .join("");
 }
 
-function renderChampionsBlock(championStats) {
+// Whether any of these games have a ban recorded for either team.
+function historyHasBans(history) {
+  return history.some(
+    (e) => (e.bans?.own?.length || 0) + (e.bans?.opponent?.length || 0) > 0,
+  );
+}
+
+function renderChampionsBlock(championStats, extras = []) {
   if (!championStats.length) {
     return `<section class="profile-block"><h3>Champions</h3><p class="stat-formula">No champion data recorded yet.</p></section>`;
   }
+  const bannedAgainstHeader = extras.includes("bannedAgainst")
+    ? `<th class="col-banned-against" title="Games where an opposing team banned this champion. Bans are a team-level choice, so this isn't specific to this player. Champions banned against them but never played show 0 games.">Banned against</th>`
+    : "";
   return `<section class="profile-block">
     <h3>Champions</h3>
     <table>
-      <thead><tr><th>Champion</th><th>Games</th><th>Win rate</th><th>KDA</th></tr></thead>
-      <tbody id="championsTableBody">${renderChampionRows(championStats)}</tbody>
+      <thead><tr><th>Champion</th><th>Games</th><th>Win rate</th><th>KDA</th>${bannedAgainstHeader}</tr></thead>
+      <tbody id="championsTableBody">${renderChampionRows(championStats, { extras })}</tbody>
     </table>
   </section>`;
 }
@@ -569,6 +631,22 @@ function renderChampionsBlock(championStats) {
 // played-with/against search) currently has selected, without a round
 // trip back to the server for every filter change.
 function computeChampionStats(historyEntries) {
+  // Bans first: how many games an opposing team banned each champion in,
+  // counted once per game. `bannedAgainst` stays null (shown "–") when none
+  // of these games have any ban recorded, so "no data" never reads as 0.
+  const hasBanData = historyHasBans(historyEntries);
+  const bannedAgainstByKey = new Map();
+  const bannedNameByKey = new Map();
+  for (const entry of historyEntries) {
+    const seenThisGame = new Set();
+    for (const ban of entry.bans?.opponent || []) {
+      if (!ban.key || seenThisGame.has(ban.key)) continue;
+      seenThisGame.add(ban.key);
+      bannedAgainstByKey.set(ban.key, (bannedAgainstByKey.get(ban.key) || 0) + 1);
+      if (!bannedNameByKey.has(ban.key)) bannedNameByKey.set(ban.key, ban.champion);
+    }
+  }
+
   const championMap = new Map();
   for (const entry of historyEntries) {
     const detail = entry.playerDetails?.[0];
@@ -576,6 +654,7 @@ function computeChampionStats(historyEntries) {
     if (!championMap.has(detail.champion)) {
       championMap.set(detail.champion, {
         champion: detail.champion,
+        key: detail.championKey || null,
         games: 0,
         wins: 0,
         losses: 0,
@@ -592,13 +671,38 @@ function computeChampionStats(historyEntries) {
     c.deaths += detail.deaths ?? 0;
     c.assists += detail.assists ?? 0;
   }
+  // Champions banned against them but never played still get a row.
+  const playedKeys = new Set([...championMap.values()].map((c) => c.key));
+  for (const [key, name] of bannedNameByKey) {
+    if (playedKeys.has(key)) continue;
+    championMap.set(`ban-only::${key}`, {
+      champion: name,
+      key,
+      games: 0,
+      wins: 0,
+      losses: 0,
+      kills: 0,
+      deaths: 0,
+      assists: 0,
+    });
+  }
+  // Same ordering as /api/player/:key: played champions by games (ties keep
+  // first-played order), then ban-only rows, most-banned first.
   return [...championMap.values()]
     .map((c) => ({
       ...c,
       winRate: c.games ? round3(c.wins / c.games) : null,
       kda: c.deaths > 0 ? round3((c.kills + c.assists) / c.deaths) : null,
+      bannedAgainst: hasBanData ? bannedAgainstByKey.get(c.key) || 0 : null,
     }))
-    .sort((a, b) => b.games - a.games);
+    .sort(
+      (a, b) =>
+        b.games - a.games ||
+        (a.games === 0
+          ? (b.bannedAgainst ?? 0) - (a.bannedAgainst ?? 0) ||
+            a.champion.localeCompare(b.champion)
+          : 0),
+    );
 }
 
 // Updates just the Champions block's rows in place -- used by every
@@ -606,7 +710,11 @@ function computeChampionStats(historyEntries) {
 // than each one re-deriving how to touch the DOM itself.
 function renderChampionsTable(championStats) {
   const tbody = document.getElementById("championsTableBody");
-  if (tbody) tbody.innerHTML = renderChampionRows(championStats);
+  if (tbody) {
+    tbody.innerHTML = renderChampionRows(championStats, {
+      extras: profileSearch?.championExtras || [],
+    });
+  }
 }
 
 // Builds the <table> markup for a set of history entries -- shared by the
@@ -639,8 +747,16 @@ function buildHistoryTableHtml(historyEntries) {
         ]),
       );
       const hasDetails = (entry.details || []).length > 0;
-      const rosterTable = (team, name) => {
-        const rows = (team?.roster || [])
+      const gameHasBans =
+        (entry.bans?.own?.length || 0) + (entry.bans?.opponent?.length || 0) > 0;
+      const rosterTable = (team, name, bans) => {
+        // Top -> Supp when roles were recorded for this game.
+        const orderedRoster = sortByRole(
+          team?.roster || [],
+          (member) =>
+            detailsByPlayer.get(normalizePlayer(member.displayName))?.role,
+        );
+        const rows = orderedRoster
           .map((member) => {
             const detail = detailsByPlayer.get(
               normalizePlayer(member.displayName),
@@ -661,7 +777,7 @@ function buildHistoryTableHtml(historyEntries) {
         const detailHeaders = hasDetails
           ? "<th>Champion</th><th>K</th><th>D</th><th>A</th>"
           : "";
-        return `<div><strong>${escapeHtml(name)}</strong><table class="match-details-table"><thead><tr><th>Player</th><th>TrueSkill</th>${detailHeaders}</tr></thead><tbody>${rows}</tbody></table></div>`;
+        return `<div><strong>${escapeHtml(name)}</strong>${gameHasBans ? renderBanList(bans) : ""}<table class="match-details-table"><thead><tr><th>Player</th><th>TrueSkill</th>${detailHeaders}</tr></thead><tbody>${rows}</tbody></table></div>`;
       };
 
       const changeClass =
@@ -726,8 +842,8 @@ function buildHistoryTableHtml(historyEntries) {
     <tr id="${rosterId}" class="roster-detail-row" hidden>
       <td colspan="8">
         <div class="roster-detail">
-          ${rosterTable(entry.ownTeam, entry.ownTeam?.name || "Your team")}
-          ${rosterTable(entry.opponentTeam, entry.opponentName || "Opponent")}
+          ${rosterTable(entry.ownTeam, entry.ownTeam?.name || "Your team", entry.bans?.own)}
+          ${rosterTable(entry.opponentTeam, entry.opponentName || "Opponent", entry.bans?.opponent)}
         </div>
         ${extraStatsHtml}
       </td>
@@ -789,11 +905,15 @@ function renderPlayerProfileContent(player, containerWidth) {
   // Reset per-page search state -- a fresh profile means a fresh
   // teammate/opponent pool and no filter applied yet.
   const { teammates, opponents } = buildCoPlayMaps(history, player?.identityKey);
+  // "Banned against" only appears for players with at least one ban on record
+  // in their games; otherwise the Champions table is exactly what it was.
+  const championExtras = historyHasBans(history) ? ["bannedAgainst"] : [];
   profileSearch = {
     selfKey: player?.identityKey,
     history,
     tournaments,
     championStats,
+    championExtras,
     teammates,
     opponents,
     mode: "with",
@@ -815,7 +935,7 @@ function renderPlayerProfileContent(player, containerWidth) {
         ${renderTournamentFilterBlock(tournaments)}
         ${renderTournamentsBlock(tournaments)}
         ${renderTrueSkillBlock(player, tournaments)}
-        ${renderChampionsBlock(championStats)}
+        ${renderChampionsBlock(championStats, championExtras)}
       </aside>
       <main class="profile-main">
         <div class="profile-header-chart">${buildChartHtml(history, containerWidth)}</div>

@@ -13,6 +13,11 @@ const { startPeriodicSync } = require("./src/scripts/scheduler");
 const { computeTrueSkillFromMatches } = require("./src/lib/trueskill-matches");
 const { parseCsv } = require("./src/scripts/ingest-matches");
 const { buildMatchKey } = require("./src/lib/match-identity");
+const {
+  ensureMatchDetailsSchema,
+  tableColumns,
+} = require("./src/lib/match-details-schema");
+const { championKey } = require("./src/lib/champion-releases");
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -50,10 +55,14 @@ const existingDetails = db
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'match_details'",
   )
   .get();
+// `role` only exists on databases created after it was added -- select it
+// only if it's there, so an older app.db still starts (with role = NULL).
 const savedDetails = existingDetails
   ? db
       .prepare(
-        "SELECT match_key, player, champion, kills, deaths, assists FROM match_details",
+        `SELECT match_key, player, champion, kills, deaths, assists, ${
+          tableColumns(db, "match_details").includes("role") ? "role" : "NULL AS role"
+        } FROM match_details`,
       )
       .all()
   : [];
@@ -88,19 +97,9 @@ if (matchColumns.length) {
   migrateMatchKeys();
   db.exec("CREATE UNIQUE INDEX matches_match_key_unique ON matches(match_key)");
 }
-db.exec(`
-  CREATE TABLE IF NOT EXISTS match_details (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    match_key TEXT NOT NULL,
-    player TEXT NOT NULL,
-    champion TEXT,
-    kills INTEGER,
-    deaths INTEGER,
-    assists INTEGER
-  )
-`);
+ensureMatchDetailsSchema(db); // (re)creates match_details and creates match_bans if missing
 const restoreDetail = db.prepare(
-  "INSERT INTO match_details (match_key, player, champion, kills, deaths, assists) VALUES (?, ?, ?, ?, ?, ?)",
+  "INSERT INTO match_details (match_key, player, champion, kills, deaths, assists, role) VALUES (?, ?, ?, ?, ?, ?, ?)",
 );
 const restoreDetails = db.transaction(() => {
   for (const detail of savedDetails) {
@@ -111,6 +110,7 @@ const restoreDetails = db.transaction(() => {
       detail.kills,
       detail.deaths,
       detail.assists,
+      detail.role,
     );
   }
 });
@@ -380,6 +380,47 @@ app.get("/api/stats", (req, res) => {
   res.json({ riskAversion, halfLifeYears, stats });
 });
 
+// Every game's per-player rows and per-team bans, keyed by match_key. Shared
+// by getMatches() (feeds TrueSkill, the player profile and the Tournaments
+// tab) and getRawMatchRows() (the Match History tab) so both see the same data.
+//   details: match_key -> [{ player, champion, championKey, kills, deaths, assists, role }]
+//   bans:    match_key -> { team1: [{ champion, key }], team2: [{ champion, key }] }
+// `key` is the normalized champion id (see championKey), so a ban can be
+// matched against a pick no matter how either was capitalized or punctuated.
+// A game with no bans on record simply has empty arrays.
+function loadMatchDetailsAndBans() {
+  const detailsByKey = new Map();
+  const detailRows = db
+    .prepare(
+      "SELECT match_key AS matchKey, player, champion, kills, deaths, assists, role FROM match_details ORDER BY id",
+    )
+    .all();
+  for (const detail of detailRows) {
+    detail.championKey = detail.champion ? championKey(detail.champion) : null;
+    if (!detailsByKey.has(detail.matchKey)) detailsByKey.set(detail.matchKey, []);
+    detailsByKey.get(detail.matchKey).push(detail);
+  }
+  const bansByKey = new Map();
+  const banRows = db
+    .prepare(
+      "SELECT match_key AS matchKey, side, champion FROM match_bans ORDER BY id",
+    )
+    .all();
+  for (const ban of banRows) {
+    if (!bansByKey.has(ban.matchKey)) {
+      bansByKey.set(ban.matchKey, { team1: [], team2: [] });
+    }
+    bansByKey
+      .get(ban.matchKey)
+      [ban.side === 1 ? "team1" : "team2"].push({
+        champion: ban.champion,
+        key: championKey(ban.champion),
+      });
+  }
+  return { detailsByKey, bansByKey };
+}
+const noBans = () => ({ team1: [], team2: [] });
+
 // TrueSkill: rates players as a sequence of team games, one per year,
 function getMatches() {
   const matches = db
@@ -387,19 +428,11 @@ function getMatches() {
       "SELECT year, tournament, team1, team2, result, csv_row_index AS rowIndex, match_order AS matchOrder, match_stage AS matchStage, match_key AS matchKey FROM matches",
     )
     .all();
-  const details = db
-    .prepare(
-      "SELECT match_key AS matchKey, player, champion, kills, deaths, assists FROM match_details ORDER BY id",
-    )
-    .all();
-  const byKey = new Map();
-  for (const detail of details) {
-    if (!byKey.has(detail.matchKey)) byKey.set(detail.matchKey, []);
-    byKey.get(detail.matchKey).push(detail);
-  }
+  const { detailsByKey, bansByKey } = loadMatchDetailsAndBans();
   return matches.map((match) => ({
     ...match,
-    details: byKey.get(match.matchKey) || [],
+    details: detailsByKey.get(match.matchKey) || [],
+    bans: bansByKey.get(match.matchKey) || noBans(),
   }));
 }
 const RANK_TIER_ORDER = [
@@ -915,9 +948,35 @@ app.get("/api/player/:key", async (req, res) => {
 
     // Per-champion aggregate, built from whatever match_details rows exist
     // for this player's own games (ingest-match-details.js). Games without
-
     // details on file are simply not counted -- there's no "unknown
     // champion" bucket to keep this from being misleading.
+    //
+    // `bannedAgainst` is how many of this player's games an opposing team
+    // banned that champion in. Bans are a team-level act, so this says "the
+    // other team banned it in a game you were in", not "they banned it
+    // because of you" -- and since a banned champion can't be played, those
+    // games are never games this player played it in. Champions banned
+    // against them but never played appear as extra rows with games = 0. It is null (shown as
+    // "–") when none of the player's games have any ban recorded, so "no ban
+    // data" never masquerades as "never banned". The player profile page
+    // recomputes the same numbers client-side for filtered game sets
+    // (computeChampionStats in public/js/player-profile.js) -- keep the two
+    // in step.
+    const bannedAgainstByKey = new Map();
+    const bannedNameByKey = new Map(); // key -> champion as first recorded, for ban-only rows
+    let hasBanData = false;
+    for (const entry of player.history) {
+      if (entry.bans && (entry.bans.own.length || entry.bans.opponent.length)) {
+        hasBanData = true;
+      }
+      const seenThisGame = new Set();
+      for (const ban of entry.bans?.opponent || []) {
+        if (!ban.key || seenThisGame.has(ban.key)) continue;
+        seenThisGame.add(ban.key);
+        bannedAgainstByKey.set(ban.key, (bannedAgainstByKey.get(ban.key) || 0) + 1);
+        if (!bannedNameByKey.has(ban.key)) bannedNameByKey.set(ban.key, ban.champion);
+      }
+    }
     const championMap = new Map();
     for (const entry of player.history) {
       const detail = entry.playerDetails?.[0];
@@ -925,6 +984,7 @@ app.get("/api/player/:key", async (req, res) => {
       if (!championMap.has(detail.champion)) {
         championMap.set(detail.champion, {
           champion: detail.champion,
+          key: detail.championKey || null,
           games: 0,
           wins: 0,
           losses: 0,
@@ -941,15 +1001,44 @@ app.get("/api/player/:key", async (req, res) => {
       c.deaths += detail.deaths ?? 0;
       c.assists += detail.assists ?? 0;
     }
+    // Champions opponents banned against this player but that they never
+    // played get a row too (games: 0) -- a champion banned out every time
+    // is exactly the one that never shows up in a played list.
+    const playedKeys = new Set([...championMap.values()].map((c) => c.key));
+    for (const [key, name] of bannedNameByKey) {
+      if (playedKeys.has(key)) continue;
+      championMap.set(`ban-only::${key}`, {
+        champion: name,
+        key,
+        games: 0,
+        wins: 0,
+        losses: 0,
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+      });
+    }
     const championStats = [...championMap.values()]
       .map((c) => ({
         ...c,
         winRate: c.games ? round3(c.wins / c.games) : null,
         // Conventional "perfect KDA" convention: null (displayed as
         // "Perfect") rather than Infinity when a champion has zero deaths.
+        // A champion with zero games has no KDA either; the client tells
+        // the two apart by `games`.
         kda: c.deaths > 0 ? round3((c.kills + c.assists) / c.deaths) : null,
+        bannedAgainst: hasBanData ? bannedAgainstByKey.get(c.key) || 0 : null,
       }))
-      .sort((a, b) => b.games - a.games);
+      // Played champions: most games first, ties keep first-played order
+      // (as before). Ban-only rows (games = 0) trail, most-banned first.
+      .sort(
+        (a, b) =>
+          b.games - a.games ||
+          (a.games === 0
+            ? (b.bannedAgainst ?? 0) - (a.bannedAgainst ?? 0) ||
+              a.champion.localeCompare(b.champion)
+            : 0),
+      );
 
     res.json({
       ...player,
@@ -1273,18 +1362,10 @@ function getRawMatchRows() {
   const columns = getRawMatchColumns();
   const selectCols = columns.map(q).join(", ");
   const rows = db.prepare(`SELECT ${selectCols} FROM matches`).all();
-  const details = db
-    .prepare(
-      "SELECT match_key AS matchKey, player, champion, kills, deaths, assists FROM match_details ORDER BY id",
-    )
-    .all();
-  const byKey = new Map();
-  for (const detail of details) {
-    if (!byKey.has(detail.matchKey)) byKey.set(detail.matchKey, []);
-    byKey.get(detail.matchKey).push(detail);
-  }
+  const { detailsByKey, bansByKey } = loadMatchDetailsAndBans();
   rows.forEach((row) => {
-    row.match_details = byKey.get(row.match_key) || [];
+    row.match_details = detailsByKey.get(row.match_key) || [];
+    row.bans = bansByKey.get(row.match_key) || noBans();
   });
   return { columns, rows };
 }

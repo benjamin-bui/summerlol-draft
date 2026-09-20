@@ -173,6 +173,12 @@ async function computeTrueSkillFromMatches(
     };
     const team1Members = getRoster(m.team1, team1Key);
     const team2Members = getRoster(m.team2, team2Key);
+    // Champions each side banned this game ({ champion, key }) -- empty when
+    // no bans were recorded. Purely descriptive: bans never affect ratings.
+    const gameBans = {
+      team1: m.bans?.team1 || [],
+      team2: m.bans?.team2 || [],
+    };
 
     const team1Ratings = team1Members.map(
       (k) => ratings.get(k) || new Rating(mu, sigma),
@@ -236,6 +242,8 @@ async function computeTrueSkillFromMatches(
       predictedWinProb,
       ownTeam,
       opponentTeam,
+      ownBans,
+      opponentBans,
     ) => {
       return members.map((key, i) => {
         const pre = preRatings[i];
@@ -292,6 +300,8 @@ async function computeTrueSkillFromMatches(
           playerDetails: (m.details || []).filter(
             (detail) => resolve(detail.player) === key,
           ),
+          // Bans by this player's team and by the team they faced.
+          bans: { own: ownBans, opponent: opponentBans },
         };
         history.get(key).push(entry);
         return {
@@ -320,6 +330,8 @@ async function computeTrueSkillFromMatches(
         avg: team2Avg,
         avgMu: team2AvgMu,
       },
+      gameBans.team1,
+      gameBans.team2,
     );
     const team2Changes = record(
       team2Members,
@@ -340,6 +352,8 @@ async function computeTrueSkillFromMatches(
         avg: team1Avg,
         avgMu: team1AvgMu,
       },
+      gameBans.team2,
+      gameBans.team1,
     );
 
     const winner =
@@ -360,6 +374,7 @@ async function computeTrueSkillFromMatches(
         changes: team1Changes,
       },
       details: m.details || [],
+      bans: gameBans,
       team2: {
         key: team2Key,
         name: displayInfo(team2Key).displayName,

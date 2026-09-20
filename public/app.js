@@ -13,6 +13,8 @@ import {
   parseNameList,
   seasonRankLocal,
   renderChampionIcon,
+  renderBanList,
+  sortByRole,
   buildPlayerSlug,
 } from "./js/utils.js";
 import { initPlayerProfile, renderClickableName, parsePlayerRouteFromPath, loadPlayerProfilePage, loadSimpleProfilePage, notifyActiveTab } from "./js/player-profile.js";
@@ -2301,24 +2303,31 @@ function renderMatchRosterDetail(row) {
   const detailsByPlayer = new Map(
     (row.match_details || []).map((detail) => [normalizePlayer(detail.player), detail]),
   );
+  // Top -> Supp when roles were recorded for this game.
   const rosterList = (team) =>
-    (team?.roster || []).map((member) => {
+    sortByRole(
+      team?.roster || [],
+      (member) => detailsByPlayer.get(normalizePlayer(member.displayName))?.role,
+    ).map((member) => {
       const detail = detailsByPlayer.get(normalizePlayer(member.displayName));
       const detailCells = row.match_details?.length
         ? `<td>${detail ? renderChampionIcon(detail.champion) : "–"}</td><td>${detail?.kills ?? "–"}</td><td>${detail?.deaths ?? "–"}</td><td>${detail?.assists ?? "–"}</td>`
         : "";
       return `<tr><td>${escapeHtml(member.displayName)}</td><td>${renderTrueSkillValue(member.conservativeRating, member.mu)}</td>${detailCells}</tr>`;
     }).join("");
-  const teamTable = (team, name) => {
+  // Bans are shown for both teams as soon as either has any recorded, so a
+  // team with none reads "–" instead of just looking like data is missing.
+  const hasBans = (row.bans?.team1?.length || 0) + (row.bans?.team2?.length || 0) > 0;
+  const teamTable = (team, name, bans) => {
     const detailHeaders = row.match_details?.length
       ? "<th>Champion</th><th>K</th><th>D</th><th>A</th>"
       : "";
-    return `<div><strong>${escapeHtml(name)}</strong> - avg TrueSkill: ${renderTrueSkillValue(team?.avg, team?.avgMu)}<table class="match-details-table"><thead><tr><th>Player</th><th>TrueSkill</th>${detailHeaders}</tr></thead><tbody>${rosterList(team)}</tbody></table></div>`;
+    return `<div><strong>${escapeHtml(name)}</strong> - avg TrueSkill: ${renderTrueSkillValue(team?.avg, team?.avgMu)}${hasBans ? renderBanList(bans) : ""}<table class="match-details-table"><thead><tr><th>Player</th><th>TrueSkill</th>${detailHeaders}</tr></thead><tbody>${rosterList(team)}</tbody></table></div>`;
   };
   return `
     <div class="roster-detail">
-      ${teamTable(row._team1Roster, row._team1Roster?.name || row.team1)}
-      ${teamTable(row._team2Roster, row._team2Roster?.name || row.team2)}
+      ${teamTable(row._team1Roster, row._team1Roster?.name || row.team1, row.bans?.team1)}
+      ${teamTable(row._team2Roster, row._team2Roster?.name || row.team2, row.bans?.team2)}
     </div>`;
 }
 

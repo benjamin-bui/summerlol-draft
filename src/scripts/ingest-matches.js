@@ -79,6 +79,7 @@ function main() {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = OFF");
   db.exec("DROP TABLE IF EXISTS match_details");
+  db.exec("DROP TABLE IF EXISTS match_bans"); // keyed by match_key, same as match_details
   db.exec("DROP TABLE IF EXISTS matches");
   db.exec(`
     CREATE TABLE matches (

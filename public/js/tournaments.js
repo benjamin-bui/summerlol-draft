@@ -13,7 +13,9 @@ import {
   renderNameWithTag,
   buildPlayerSlug,
   renderChampionIcon,
+  renderBanList,
   renderTrueSkillValue,
+  sortByRole,
 } from "./utils.js";
 import { renderChampionRows } from "./player-profile.js";
 
@@ -87,6 +89,23 @@ function championValue(names, statHtml) {
   return `<span class="tournament-champion-value"><span class="tournament-champion-list">${cells}${more}</span><span class="stat-formula">${statHtml}</span></span>`;
 }
 
+// Whether this tournament has any ban recorded. Everything ban-related (the
+// Bans/Contest columns, the Most Banned / Most Contested rows) is hidden when
+// it doesn't, so tournaments without ban data look exactly as they always did.
+function hasBanData(t) {
+  return (t.championCoverage.gamesWithBans || 0) > 0;
+}
+
+// Options for the shared champion-row renderer (see renderChampionRows).
+function championRowOptions(t) {
+  return hasBanData(t)
+    ? {
+        extras: ["bans", "contest"],
+        contestGames: t.championCoverage.gamesWithChampionData,
+      }
+    : {};
+}
+
 // ------------------------------------------------------------ summary panel
 
 function summaryRow(label, valueHtml, { title } = {}) {
@@ -126,15 +145,45 @@ function renderSummaryBlock(t) {
 
   if (hasChampionData) {
     const mp = s.mostPicked;
-    rows.push(
-      summaryRow(
-        "Most picked champion",
-        championValue(
-          mp.champions,
-          `(${mp.games} games${mp.champions.length > 1 ? " each" : ""} · ${pct(mp.pickRate)} pick rate)`,
+    if (mp) {
+      rows.push(
+        summaryRow(
+          "Most picked champion",
+          championValue(
+            mp.champions,
+            `(${mp.games} games${mp.champions.length > 1 ? " each" : ""} · ${pct(mp.pickRate)} pick rate)`,
+          ),
         ),
-      ),
-    );
+      );
+    }
+    if (hasBanData(t)) {
+      const mb = s.mostBanned;
+      if (mb) {
+        rows.push(
+          summaryRow(
+            "Most banned champion",
+            championValue(
+              mb.champions,
+              `(${mb.bans} ${mb.bans === 1 ? "game" : "games"}${mb.champions.length > 1 ? " each" : ""} · ${pct(mb.banRate)} ban rate)`,
+            ),
+            { title: "Champion banned in the most games (ban rate is out of games with bans recorded)" },
+          ),
+        );
+      }
+      const mc = s.mostContested;
+      if (mc) {
+        rows.push(
+          summaryRow(
+            "Most contested champion",
+            championValue(
+              mc.champions,
+              `(${mc.contested} ${mc.contested === 1 ? "game" : "games"}${mc.champions.length > 1 ? " each" : ""} · ${pct(mc.contestRate)} contest rate)`,
+            ),
+            { title: "Contested = picked or banned in a game. Contest rate = contested games / games with champion data" },
+          ),
+        );
+      }
+    }
     const recordRow = (label, entry) =>
       summaryRow(
         label,
@@ -144,6 +193,7 @@ function renderSummaryBlock(t) {
               `(${pct(entry.winRate)} · ${entry.wins}-${entry.losses}${entry.champions.length > 1 ? " each" : ""})`,
             )
           : `<span class="stat-formula">None with ${min}+ games</span>`,
+        { title: `Highest/lowest win rate among champions with at least ${min} games` },
       );
     rows.push(recordRow(`Best champion (${min}+ games)`, s.winningest));
     rows.push(recordRow(`Worst champion (${min}+ games)`, s.losingest));
@@ -157,7 +207,9 @@ function renderSummaryBlock(t) {
           : `<span class="stat-formula">–</span>`,
         {
           title: d
-            ? `Champion diversity is 1 minus the Gini coefficient of pick rates across all ${d.poolSize} champions that could have been picked in ${t.year} (released that year or earlier; ${d.championsPicked} were picked, and champions nobody picked count as a 0% pick rate). 0 means every pick went to a single champion; 1 means every champion was picked equally often.`
+            ? d.championsBanned > 0
+              ? `Champion diversity is 1 minus the Gini coefficient of contest rates across all ${d.poolSize} champions that could have been picked or banned in ${t.year} (released that year or earlier). A champion's contest rate is the share of games it was picked or banned in; ${d.championsContested} were picked or banned, and champions nobody picked or banned count as a 0% contest rate. 0 means every pick and ban went to a single champion; 1 means every available champion was contested equally often. Higher = more diverse.`
+              : `Champion diversity is 1 minus the Gini coefficient of contest rates (share of games a champion was picked or banned in) across all ${d.poolSize} champions that could have been picked in ${t.year} (released that year or earlier). No bans are recorded for this tournament, so contest rate is just pick rate; ${d.championsPicked} champions were picked, and champions nobody picked count as a 0% rate. 0 means every pick went to a single champion; 1 means every available champion was picked equally often. Higher = more diverse.`
             : "Needs champion data for this tournament.",
         },
       ),
@@ -184,30 +236,41 @@ function renderChampionsBlock(t) {
   if (!t.championStats.length) {
     return `<section class="profile-block"><h3>Champions</h3><p class="stat-formula">No champion data recorded for this tournament.</p></section>`;
   }
-  const { gamesWithDetails, totalGames } = t.championCoverage;
+  const { gamesWithDetails, gamesWithBans, totalGames } = t.championCoverage;
+  const withBans = hasBanData(t);
   const notes = [];
   if (gamesWithDetails < totalGames) {
     notes.push(
       `Champion data covers ${gamesWithDetails} of ${totalGames} games.`,
     );
   }
+  if (withBans && gamesWithBans < totalGames) {
+    notes.push(`Ban data covers ${gamesWithBans} of ${totalGames} games.`);
+  }
+  const playedCount = t.championStats.filter((c) => c.games > 0).length;
+  const bannedOnlyCount = t.championStats.length - playedCount;
+  const countLabel = withBans
+    ? `${playedCount} played${bannedOnlyCount ? ` · ${bannedOnlyCount} only banned` : ""}`
+    : `${t.championStats.length} played`;
   if (t.unrecognizedChampions.length) {
     notes.push(
       `Not recognized as champions (check the match-details CSV for typos): ${t.unrecognizedChampions.map(escapeHtml).join(", ")}.`,
     );
   }
   return `<section class="profile-block tournament-champions-block">
-    <h3>Champions <span class="stat-formula">(${t.championStats.length} played · click to filter)</span></h3>
+    <h3>Champions <span class="stat-formula">(${countLabel} · click to filter)</span></h3>
     <div class="tournament-champions-body">
       <div class="tournament-champions-scroll">
-        <table class="tournament-champions-table">
+        <table class="tournament-champions-table${withBans ? " has-bans" : ""}">
           <thead><tr>
             <th class="not-sortable">Champion</th>
             ${sortHeader("games", "Games")}
             ${sortHeader("winRate", "Win rate")}
             ${sortHeader("kda", "KDA")}
+            ${withBans ? sortHeader("bans", "Bans") : ""}
+            ${withBans ? sortHeader("contested", "Contest", "Contest rate: share of games the champion was picked or banned in") : ""}
           </tr></thead>
-          <tbody>${renderChampionRows(sortedChampionStats(t))}</tbody>
+          <tbody>${renderChampionRows(sortedChampionStats(t), championRowOptions(t))}</tbody>
         </table>
       </div>
     </div>
@@ -222,7 +285,10 @@ function renderChampionsBlock(t) {
 const CHAMPION_SORT_VALUE = {
   games: (c) => c.games,
   winRate: (c) => c.winRate ?? -1,
-  kda: (c) => (c.kda === null ? Infinity : c.kda),
+  // A champion that was only banned has no KDA at all -- lowest, not "Perfect".
+  kda: (c) => (c.games === 0 ? -1 : c.kda === null ? Infinity : c.kda),
+  bans: (c) => c.bans ?? 0,
+  contested: (c) => c.contested ?? c.games,
 };
 // What breaks a tie on the sorted column: the other "how much" stat first,
 // then name -- so equal values stay in a stable, sensible order in both
@@ -231,6 +297,8 @@ const CHAMPION_SORT_TIEBREAK = {
   games: ["winRate"],
   winRate: ["games"],
   kda: ["games"],
+  bans: ["games"],
+  contested: ["games"],
 };
 
 function sortedChampionStats(t) {
@@ -262,9 +330,10 @@ function sortHeaderAttrs(column) {
   };
 }
 
-function sortHeader(column, label) {
+function sortHeader(column, label, hint = null) {
   const { cls, aria } = sortHeaderAttrs(column);
-  return `<th class="${cls}" data-champion-sort="${column}" tabindex="0" aria-sort="${aria}" title="Sort by ${label.toLowerCase()}">${label}</th>`;
+  const title = hint ? `${hint}. Click to sort` : `Sort by ${label.toLowerCase()}`;
+  return `<th class="${cls}" data-champion-sort="${column}" tabindex="0" aria-sort="${aria}" title="${escapeHtml(title)}">${label}</th>`;
 }
 
 function toggleChampionSort(column) {
@@ -279,7 +348,10 @@ function toggleChampionSort(column) {
   if (!table) return;
   // Re-render only the rows and header state (not the block), so the block
   // keeps its size; then jump to the top of the newly ordered list.
-  table.querySelector("tbody").innerHTML = renderChampionRows(sortedChampionStats(t));
+  table.querySelector("tbody").innerHTML = renderChampionRows(
+    sortedChampionStats(t),
+    championRowOptions(t),
+  );
   table.querySelectorAll("th[data-champion-sort]").forEach((th) => {
     const { cls, aria } = sortHeaderAttrs(th.dataset.championSort);
     th.classList.remove("sorted-asc", "sorted-desc");
@@ -345,8 +417,9 @@ function renderTeamsBlock(t) {
 
 // ----------------------------------------------------------------- matches
 
-function renderMatchRosterTable(side, won, hasDetails) {
-  const rows = side.roster
+function renderMatchRosterTable(side, won, hasDetails, showBans) {
+  // Top -> Supp when roles were recorded for this game.
+  const rows = sortByRole(side.roster, (p) => p.role)
     .map(
       (p) => `<tr${championFilterKey && p.championKey === championFilterKey ? ' class="tournament-picked"' : ""}>
       <td>${playerLink(p.displayName, p.identityKey)}</td>
@@ -370,14 +443,20 @@ function renderMatchRosterTable(side, won, hasDetails) {
         : ' <span class="outcome-loss">Loss</span>';
   return `<div>
     <strong>${escapeHtml(side.name)}</strong>${result} <span class="stat-formula">avg TrueSkill ${renderTrueSkillValue(side.avg, side.avgMu)}</span>
+    ${showBans ? renderBanList(side.bans, { highlightKey: championFilterKey }) : ""}
     <table class="match-details-table"><thead><tr><th>Player</th><th>TrueSkill</th>${detailHeaders}</tr></thead><tbody>${rows}</tbody></table>
   </div>`;
 }
 
+// "Has the champion" means it was picked OR banned in the game -- the champion
+// list includes champions that were only ever banned, so filtering on one of
+// those has to find its games too.
 function matchHasChampion(m, key) {
   return (
     m.team1.roster.some((p) => p.championKey === key) ||
-    m.team2.roster.some((p) => p.championKey === key)
+    m.team2.roster.some((p) => p.championKey === key) ||
+    m.team1.bans.some((b) => b.championKey === key) ||
+    m.team2.bans.some((b) => b.championKey === key)
   );
 }
 
@@ -397,7 +476,7 @@ function renderMatchesBlock(t) {
     : null;
   const filterBar = filterChampion
     ? `<div class="tournament-filter-bar">
-        <span>Matches with ${renderChampionIcon(filterChampion.champion)}</span>
+        <span>Matches with ${renderChampionIcon(filterChampion.champion)}${hasBanData(t) ? ' <span class="stat-formula">(picked or banned)</span>' : ""}</span>
         <button type="button" class="tournament-clear-filter">Clear filter</button>
       </div>`
     : "";
@@ -426,8 +505,8 @@ function renderMatchesBlock(t) {
     <tr id="${detailId}" class="roster-detail-row" hidden>
       <td colspan="7">
         <div class="roster-detail">
-          ${renderMatchRosterTable(m.team1, m.winner === "draw" ? null : t1Won, m.hasDetails)}
-          ${renderMatchRosterTable(m.team2, m.winner === "draw" ? null : t2Won, m.hasDetails)}
+          ${renderMatchRosterTable(m.team1, m.winner === "draw" ? null : t1Won, m.hasDetails, m.hasBans)}
+          ${renderMatchRosterTable(m.team2, m.winner === "draw" ? null : t2Won, m.hasDetails, m.hasBans)}
         </div>
       </td>
     </tr>`;
@@ -468,7 +547,7 @@ function renderTournament(t) {
     meta.textContent = `${t.gamesPlayed} games · ${t.teamCount} teams`;
   }
   contentEl().innerHTML = `
-    <div class="profile-layout tournament-layout">
+    <div class="profile-layout tournament-layout${hasBanData(t) ? " has-bans" : ""}">
       <aside class="profile-sidebar">
         ${renderSummaryBlock(t)}
         ${renderChampionsBlock(t)}

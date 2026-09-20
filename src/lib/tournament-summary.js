@@ -1,9 +1,9 @@
 // Builds everything the Tournaments tab shows, one entry per tournament
 // (year + season) that has at least one recorded game:
 //   - team rosters (pick order + entering rank per player, team placement)
-//   - per-champion games / win rate / KDA
-//   - summary facts (most picked, best/worst win rate, champion diversity,
-//     biggest upset)
+//   - per-champion games / win rate / KDA / bans
+//   - summary facts (most picked, most banned, most contested, best/worst
+//     win rate, champion diversity, biggest upset)
 //   - the tournament's full match list, in play order
 //
 // Pure functions only -- no DB, no Express -- so it can be unit tested with
@@ -81,16 +81,76 @@ function summarizeChampionStat(c) {
   };
 }
 
-// Aggregates every champion pick in a tournament's games. A pick is
-// attributed to a side by finding the picking player on team1's or team2's
-// roster, which is what makes a win/loss knowable per pick.
+// Aggregates every champion pick AND ban in a tournament's games.
+//
+// A pick is attributed to a side by finding the picking player on team1's or
+// team2's roster, which is what makes a win/loss knowable per pick.
+//
+// A ban is counted once per game per champion, no matter which team(s) banned
+// it or how many CSV rows repeated it -- League doesn't let a champion be
+// banned twice in a game, so "games banned" and "times banned" are the same
+// number and a ban rate can never top 100%.
+//
+// Per champion, `games` is how many times it was picked (the name predates
+// bans), `bans` how many games it was banned in, and `contested` is how many
+// games it was picked OR banned in: each game counts once, however the
+// champion got into the draft. (A champion can't be both picked and banned in
+// one game, so this is the same as picks + bans on clean data -- but it can
+// never exceed the number of games, whatever the data says.)
+//
+// Coverage counters, all in games:
+//   gamesWithDetails       -- have per-player rows (picks)
+//   gamesWithBans          -- have at least one recorded ban
+//   gamesWithChampionData  -- have either; the denominator for contest rate
 function buildChampionStats(tournamentGames, resolve) {
   const byKey = new Map();
   let gamesWithDetails = 0;
+  let gamesWithBans = 0;
+  let gamesWithChampionData = 0;
+
+  const entryFor = (key, name) => {
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        key,
+        champion: String(name).trim(),
+        games: 0,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        bans: 0,
+        contested: 0,
+      });
+    }
+    return byKey.get(key);
+  };
 
   for (const game of tournamentGames) {
-    if (!game.details || game.details.length === 0) continue;
-    gamesWithDetails += 1;
+    const hasDetails = !!game.details && game.details.length > 0;
+
+    const bannedThisGame = new Map(); // championKey -> champion as recorded
+    for (const ban of [...(game.bans?.team1 || []), ...(game.bans?.team2 || [])]) {
+      const key = ban.key || championKey(ban.champion);
+      if (key && !bannedThisGame.has(key)) bannedThisGame.set(key, ban.champion);
+    }
+    const hasBans = bannedThisGame.size > 0;
+
+    if (hasDetails) gamesWithDetails += 1;
+    if (hasBans) gamesWithBans += 1;
+    if (hasDetails || hasBans) gamesWithChampionData += 1;
+    for (const [key, name] of bannedThisGame) entryFor(key, name).bans += 1;
+
+    // Every champion picked or banned this game, each once.
+    const contestedThisGame = new Set(bannedThisGame.keys());
+    const finishGame = () => {
+      for (const key of contestedThisGame) byKey.get(key).contested += 1;
+    };
+    if (!hasDetails) {
+      finishGame();
+      continue;
+    }
 
     const sideOf = new Map();
     for (const m of game.team1.roster) sideOf.set(m.identityKey, "team1");
@@ -100,20 +160,8 @@ function buildChampionStats(tournamentGames, resolve) {
       if (!detail.champion) continue;
       const key = championKey(detail.champion);
       if (!key) continue;
-      if (!byKey.has(key)) {
-        byKey.set(key, {
-          key,
-          champion: String(detail.champion).trim(),
-          games: 0,
-          wins: 0,
-          losses: 0,
-          draws: 0,
-          kills: 0,
-          deaths: 0,
-          assists: 0,
-        });
-      }
-      const c = byKey.get(key);
+      const c = entryFor(key, detail.champion);
+      contestedThisGame.add(key);
       c.games += 1;
       c.kills += detail.kills ?? 0;
       c.deaths += detail.deaths ?? 0;
@@ -129,6 +177,7 @@ function buildChampionStats(tournamentGames, resolve) {
         c.losses += 1;
       }
     }
+    finishGame();
   }
 
   const stats = [...byKey.values()].map((c) => {
@@ -137,7 +186,9 @@ function buildChampionStats(tournamentGames, resolve) {
       ...c,
       winRate: decided ? round3(c.wins / decided) : null,
       // Same "perfect KDA" convention as the player profile: null (shown as
-      // "Perfect") instead of Infinity when a champion never died.
+      // "Perfect") instead of Infinity when a champion never died. A
+      // champion that was only ever banned has no KDA at all -- also null,
+      // which the UI tells apart from "Perfect" by its zero games.
       kda: c.deaths > 0 ? round3((c.kills + c.assists) / c.deaths) : null,
     };
   });
@@ -145,42 +196,57 @@ function buildChampionStats(tournamentGames, resolve) {
     (a, b) =>
       b.games - a.games ||
       (b.winRate ?? -1) - (a.winRate ?? -1) ||
+      b.bans - a.bans ||
       a.champion.localeCompare(b.champion),
   );
-  return { stats, gamesWithDetails };
+  return { stats, gamesWithDetails, gamesWithBans, gamesWithChampionData };
 }
 
-// Champion diversity for one tournament: the Gini coefficient of pick rates
-// across EVERY champion that could have been picked (released in that year
-// or earlier) -- champions nobody picked count as a 0, which is the whole
-// point: a tournament where 8 champions get all the picks is far less
-// diverse than one spread over 60, even if the "picked" lists look similar.
+// Champion diversity for one tournament: the Gini coefficient of CONTEST rates
+// across EVERY champion that could have been contested (released in that year
+// or earlier). A champion's contest rate is the share of games it was picked
+// or banned in -- contested games / games -- so a champion that is banned out every game counts
+// as heavily in demand even though it never shows up in a pick list, which is
+// exactly what a pick-rate-only measure misses. Champions nobody picked or
+// banned count as a 0, which is the whole point: a tournament where 8
+// champions get all the attention is far less diverse than one spread over
+// 60, even if the "picked" lists look similar. With no bans recorded, contest
+// rate is just the share of games a champion was picked in, so tournaments
+// without ban data score as before.
 //
 // Returns both the raw Gini (lower = more diverse) and `diversity` =
 // 1 - Gini (higher = more diverse), which is what the UI displays.
 // Champions that appear in the data but aren't in the
 // release table (a brand-new champion, or a typo in the CSV) are added to
-// the pool rather than dropped, so every recorded pick is accounted for.
-function computeChampionDiversity(stats, gamesWithDetails, year) {
-  if (!gamesWithDetails || stats.length === 0) return null;
+// the pool rather than dropped, so every recorded pick and ban is accounted for.
+//
+// (Dividing every rate by the same game count can't change a Gini
+// coefficient, so the denominator only matters for the rates we report.)
+function computeChampionDiversity(stats, gamesWithChampionData, year) {
+  if (!gamesWithChampionData || stats.length === 0) return null;
   const pool = new Set(championKeysAvailableIn(year));
   for (const c of stats) pool.add(c.key);
-  const gamesByKey = new Map(stats.map((c) => [c.key, c.games]));
-  // pick rate = games the champion was picked in / games with champion data
-  const pickRates = [...pool].map(
-    (key) => (gamesByKey.get(key) || 0) / gamesWithDetails,
+  const contestedByKey = new Map(
+    stats.map((c) => [c.key, c.contested ?? c.games]),
   );
-  const gini = giniCoefficient(pickRates);
+  // contest rate = games the champion was picked or banned in / games with champion data
+  const contestRates = [...pool].map(
+    (key) => (contestedByKey.get(key) || 0) / gamesWithChampionData,
+  );
+  const gini = giniCoefficient(contestRates);
   if (gini === null) return null;
   return {
     gini: round3(gini),
     // What the UI shows: 1 - Gini, so higher = more diverse (0 = every pick
-    // on one champion, 1 = every available champion picked equally).
-    // Computed from the unrounded Gini so it never drifts by a rounding step.
+    // and ban on one champion, 1 = every available champion contested
+    // equally). Computed from the unrounded Gini so it never drifts by a
+    // rounding step.
     diversity: round3(1 - gini),
     poolSize: pool.size,
-    championsPicked: stats.length,
-    gamesWithData: gamesWithDetails,
+    championsPicked: stats.filter((c) => c.games > 0).length,
+    championsBanned: stats.filter((c) => (c.bans ?? 0) > 0).length,
+    championsContested: stats.filter((c) => (c.contested ?? c.games) > 0).length,
+    gamesWithData: gamesWithChampionData,
   };
 }
 
@@ -398,6 +464,7 @@ function buildMatches(tournamentGames, matchOrderByKey, resolve) {
           displayName: m.displayName,
           conservativeRating: m.conservativeRating,
           mu: m.mu,
+          role: d?.role ?? null,
           champion: d?.champion ?? null,
           championKey: d?.champion ? championKey(d.champion) : null,
           kills: d?.kills ?? null,
@@ -406,6 +473,14 @@ function buildMatches(tournamentGames, matchOrderByKey, resolve) {
         };
       });
 
+    const sideBans = (bans) =>
+      (bans || []).map((b) => ({
+        champion: b.champion,
+        championKey: b.key || championKey(b.champion),
+      }));
+    const bans1 = sideBans(g.bans?.team1);
+    const bans2 = sideBans(g.bans?.team2);
+
     return {
       matchKey: g.matchKey,
       order: matchOrderByKey.get(g.matchKey) ?? null,
@@ -413,12 +488,14 @@ function buildMatches(tournamentGames, matchOrderByKey, resolve) {
       winner: g.winner,
       predictedWinProbTeam1: g.predictedWinProbTeam1,
       hasDetails: (g.details || []).length > 0,
+      hasBans: bans1.length + bans2.length > 0,
       team1: {
         key: g.team1.key,
         name: g.team1.name,
         avg: g.team1.avg,
         avgMu: g.team1.avgMu,
         roster: sideRoster(g.team1),
+        bans: bans1,
       },
       team2: {
         key: g.team2.key,
@@ -426,6 +503,7 @@ function buildMatches(tournamentGames, matchOrderByKey, resolve) {
         avg: g.team2.avg,
         avgMu: g.team2.avgMu,
         roster: sideRoster(g.team2),
+        bans: bans2,
       },
     };
   });
@@ -481,14 +559,17 @@ function buildTournamentSummaries({
     const tournamentRows = rowsByTournament.get(tKey) || [];
     const entryInfo = entryRanks.get(tKey) || null;
 
-    const { stats, gamesWithDetails } = buildChampionStats(
-      tournamentGames,
-      resolve,
-    );
+    const { stats, gamesWithDetails, gamesWithBans, gamesWithChampionData } =
+      buildChampionStats(tournamentGames, resolve);
     const qualifying = stats.filter(
       (c) => c.games >= MIN_GAMES_FOR_WIN_RATE_CALLOUTS && c.winRate !== null,
     );
-    const mostPickedTied = topTied(stats, (a, b) => b.games - a.games);
+    // A champion that was only ever banned is in `stats` (it belongs in the
+    // champion table) but was never picked, so it can't be "most picked".
+    const mostPickedTied = topTied(
+      stats.filter((c) => c.games > 0),
+      (a, b) => b.games - a.games,
+    );
     const winningestTied = topTied(
       qualifying,
       (a, b) => b.winRate - a.winRate || b.games - a.games,
@@ -497,6 +578,18 @@ function buildTournamentSummaries({
       qualifying,
       (a, b) => a.winRate - b.winRate || b.games - a.games,
     );
+    // Ban-based callouts only mean something once bans were recorded. Without
+    // them "most contested" would just repeat "most picked".
+    const mostBannedTied = topTied(
+      stats.filter((c) => c.bans > 0),
+      (a, b) => b.bans - a.bans,
+    );
+    const mostContestedTied = gamesWithBans
+      ? topTied(
+          stats.filter((c) => c.contested > 0),
+          (a, b) => b.contested - a.contested,
+        )
+      : [];
 
     // Names that aren't in the release table -- surfaced so a typo in the
     // match-details CSV is visible instead of silently becoming its own champion.
@@ -528,9 +621,13 @@ function buildTournamentSummaries({
         losses: c.losses,
         winRate: c.winRate,
         kda: c.kda,
+        bans: c.bans,
+        contested: c.contested,
       })),
       championCoverage: {
         gamesWithDetails,
+        gamesWithBans,
+        gamesWithChampionData,
         totalGames: tournamentGames.length,
       },
       unrecognizedChampions,
@@ -541,6 +638,24 @@ function buildTournamentSummaries({
               champions: mostPickedTied.map((c) => c.champion),
               games: mostPickedTied[0].games,
               pickRate: round3(mostPickedTied[0].games / gamesWithDetails),
+            }
+          : null,
+        // Ban rate is over games that have any ban recorded; contest rate
+        // (games picked or banned in) over games with either on record.
+        mostBanned: mostBannedTied.length
+          ? {
+              champions: mostBannedTied.map((c) => c.champion),
+              bans: mostBannedTied[0].bans,
+              banRate: round3(mostBannedTied[0].bans / gamesWithBans),
+            }
+          : null,
+        mostContested: mostContestedTied.length
+          ? {
+              champions: mostContestedTied.map((c) => c.champion),
+              contested: mostContestedTied[0].contested,
+              contestRate: round3(
+                mostContestedTied[0].contested / gamesWithChampionData,
+              ),
             }
           : null,
         winningest: winningestTied.length
@@ -555,7 +670,7 @@ function buildTournamentSummaries({
               ...summarizeChampionStat(losingestTied[0]),
             }
           : null,
-        diversity: computeChampionDiversity(stats, gamesWithDetails, year),
+        diversity: computeChampionDiversity(stats, gamesWithChampionData, year),
         biggestUpset: findBiggestUpset(tournamentGames, matchOrderByKey),
       },
       matches: buildMatches(tournamentGames, matchOrderByKey, resolve),
