@@ -1807,9 +1807,10 @@ td:has(.pick-detail) {
   font-weight: 600;
 }
 
-/* Sits in the right-hand column directly under the rosters. */
+/* Sits in the right-hand column directly under the rosters (spacing comes
+   from .tournament-layout .profile-main's gap). */
 .tournament-matches {
-  margin-top: 16px;
+  min-width: 0;
 }
 .tournament-matches-scroll {
   overflow-x: auto;
@@ -1923,4 +1924,92 @@ td:has(.pick-detail) {
 /* Breathing room above the match list when a champion click scrolls to it. */
 #tournamentMatches {
   scroll-margin-top: 16px;
+}
+
+/* ---- Equal-height columns with a scrolling champion list ----
+   The champion list can be ~100 rows, so it scrolls -- but rather than a
+   fixed height, it takes whatever height the RIGHT column needs, so both
+   columns end level and stay level as matches are filtered/expanded or the
+   window is resized. How: the grid row is as tall as its tallest column;
+   the scroll area is absolutely positioned inside a flexible box, so it
+   adds nothing to the left column's natural height (the right column is
+   what sets it), and the flexible box then grows to fill the stretched
+   left column. min-height keeps the list usable if the right column is
+   ever unusually short. */
+.tournament-layout {
+  align-items: stretch;
+}
+.tournament-layout .profile-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.tournament-layout .profile-main > .profile-block {
+  flex: 0 0 auto;
+}
+/* Matches soak up any leftover height so its bottom edge meets the
+   sidebar's even in the (rare) case the sidebar is the taller one. */
+.tournament-layout .profile-main > .tournament-matches {
+  flex: 1 1 auto;
+}
+.tournament-champions-block {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  overflow: hidden; /* .profile-block's overflow-x:auto would add a second scrollbar */
+}
+.tournament-champions-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 260px;
+}
+.tournament-champions-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+.tournament-champions-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  /* border-bottom doesn't travel with a sticky cell in a collapsed table */
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+/* Phone / narrow: columns stack, so there is no other column to match --
+   give the list a fixed, comfortable height instead. */
+@media (max-width: 900px) {
+  .tournament-champions-block {
+    flex: 0 0 auto;
+  }
+  .tournament-champions-body {
+    min-height: 0;
+    height: 420px;
+  }
+}
+
+/* Sortable champion headers. The app-wide thead rules already provide the
+   pointer cursor and hover color; the arrow slot is always reserved (hidden
+   until active) so the columns don't shift width when a sort is applied. */
+.tournament-champions-table th[data-champion-sort]::after {
+  content: "▼";
+  margin-left: 6px;
+  font-size: 0.7rem;
+  color: var(--accent);
+  visibility: hidden;
+}
+.tournament-champions-table th[data-champion-sort].sorted-desc::after {
+  content: "▼";
+  visibility: visible;
+}
+.tournament-champions-table th[data-champion-sort].sorted-asc::after {
+  content: "▲";
+  visibility: visible;
+}
+.tournament-champions-table th.not-sortable {
+  cursor: default;
+}
+.tournament-champions-table th[data-champion-sort]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }

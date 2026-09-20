@@ -23,6 +23,11 @@ let selectedId = null;
 // champion the match list is filtered to, or null for no filter. Reset
 // whenever the tournament changes.
 let championFilterKey = null;
+// Champion table sort. `column` is null until a header is clicked (the table
+// then shows the server's default order: most games first). Clicking a column
+// starts it descending; clicking the active column flips the direction. Kept
+// across tournament switches.
+let championSort = { column: null, dir: "desc" };
 let loadPromise = null;
 
 // Set once from app.js via initTournamentsTab().
@@ -192,14 +197,98 @@ function renderChampionsBlock(t) {
       `Not recognized as champions (check the match-details CSV for typos): ${t.unrecognizedChampions.map(escapeHtml).join(", ")}.`,
     );
   }
-  return `<section class="profile-block">
+  return `<section class="profile-block tournament-champions-block">
     <h3>Champions <span class="stat-formula">(${t.championStats.length} played · click to filter)</span></h3>
-    <table class="tournament-champions-table">
-      <thead><tr><th>Champion</th><th>Games</th><th>Win rate</th><th>KDA</th></tr></thead>
-      <tbody>${renderChampionRows(t.championStats)}</tbody>
-    </table>
+    <div class="tournament-champions-body">
+      <div class="tournament-champions-scroll">
+        <table class="tournament-champions-table">
+          <thead><tr>
+            <th class="not-sortable">Champion</th>
+            ${sortHeader("games", "Games")}
+            ${sortHeader("winRate", "Win rate")}
+            ${sortHeader("kda", "KDA")}
+          </tr></thead>
+          <tbody>${renderChampionRows(sortedChampionStats(t))}</tbody>
+        </table>
+      </div>
+    </div>
     ${notes.map((n) => `<p class="stat-formula tournament-note">${n}</p>`).join("")}
   </section>`;
+}
+
+// ---- champion table sorting
+
+// "Perfect" KDA (zero deaths, sent as null) counts as the best possible KDA;
+// a champion with no decided games has no win rate and sorts as the lowest.
+const CHAMPION_SORT_VALUE = {
+  games: (c) => c.games,
+  winRate: (c) => c.winRate ?? -1,
+  kda: (c) => (c.kda === null ? Infinity : c.kda),
+};
+// What breaks a tie on the sorted column: the other "how much" stat first,
+// then name -- so equal values stay in a stable, sensible order in both
+// directions (only the primary comparison flips).
+const CHAMPION_SORT_TIEBREAK = {
+  games: ["winRate"],
+  winRate: ["games"],
+  kda: ["games"],
+};
+
+function sortedChampionStats(t) {
+  const list = [...t.championStats]; // server order = the default order
+  const { column, dir } = championSort;
+  if (!column) return list;
+  const cmp = (x, y) => (x === y ? 0 : x < y ? -1 : 1);
+  const sign = dir === "asc" ? 1 : -1;
+  return list.sort((a, b) => {
+    const primary = cmp(
+      CHAMPION_SORT_VALUE[column](a),
+      CHAMPION_SORT_VALUE[column](b),
+    );
+    if (primary) return sign * primary;
+    for (const key of CHAMPION_SORT_TIEBREAK[column]) {
+      const tie = cmp(CHAMPION_SORT_VALUE[key](b), CHAMPION_SORT_VALUE[key](a));
+      if (tie) return tie;
+    }
+    return a.champion.localeCompare(b.champion);
+  });
+}
+
+function sortHeaderAttrs(column) {
+  const active = championSort.column === column;
+  const asc = championSort.dir === "asc";
+  return {
+    cls: active ? (asc ? "sorted-asc" : "sorted-desc") : "",
+    aria: active ? (asc ? "ascending" : "descending") : "none",
+  };
+}
+
+function sortHeader(column, label) {
+  const { cls, aria } = sortHeaderAttrs(column);
+  return `<th class="${cls}" data-champion-sort="${column}" tabindex="0" aria-sort="${aria}" title="Sort by ${label.toLowerCase()}">${label}</th>`;
+}
+
+function toggleChampionSort(column) {
+  if (championSort.column === column) {
+    championSort.dir = championSort.dir === "desc" ? "asc" : "desc";
+  } else {
+    championSort = { column, dir: "desc" };
+  }
+  const t = tournaments.find((x) => x.id === selectedId);
+  if (!t) return;
+  const table = contentEl().querySelector(".tournament-champions-table");
+  if (!table) return;
+  // Re-render only the rows and header state (not the block), so the block
+  // keeps its size; then jump to the top of the newly ordered list.
+  table.querySelector("tbody").innerHTML = renderChampionRows(sortedChampionStats(t));
+  table.querySelectorAll("th[data-champion-sort]").forEach((th) => {
+    const { cls, aria } = sortHeaderAttrs(th.dataset.championSort);
+    th.classList.remove("sorted-asc", "sorted-desc");
+    if (cls) th.classList.add(cls);
+    th.setAttribute("aria-sort", aria);
+  });
+  syncChampionRows(t);
+  table.closest(".tournament-champions-scroll").scrollTop = 0;
 }
 
 // ------------------------------------------------------------ team rosters
@@ -395,11 +484,12 @@ function renderTournament(t) {
 
 // The champion table's rows come from the profile page's shared renderer,
 // which knows nothing about filtering -- so mark them up here. Rows are in
-// the same order as t.championStats.
+// the same order as sortedChampionStats(t) (the order currently displayed).
 function syncChampionRows(t) {
   const rows = contentEl().querySelectorAll(".tournament-champions-table tbody tr");
+  const displayed = sortedChampionStats(t);
   rows.forEach((row, i) => {
-    const c = t.championStats[i];
+    const c = displayed[i];
     if (!c) return;
     row.classList.add("tournament-champion-row");
     row.dataset.championKey = c.key;
@@ -422,10 +512,12 @@ function applyChampionFilter(key, { scroll = false } = {}) {
   syncChampionRows(t);
   // The champion list is long, so the match list can be well off-screen
   // when a champion is clicked -- bring it into view so the click visibly
-  // does something. Skipped when it's already on screen.
+  // does something. A block that only just peeks in along the bottom edge
+  // (its top in the lowest ~40% of the window) counts as off-screen; one
+  // that's already comfortably on screen is left alone.
   if (scroll) {
     const rect = document.getElementById("tournamentMatches")?.getBoundingClientRect();
-    if (rect && (rect.bottom < 0 || rect.top > window.innerHeight - 120)) {
+    if (rect && (rect.bottom < 0 || rect.top > window.innerHeight * 0.6)) {
       document
         .getElementById("tournamentMatches")
         .scrollIntoView({ behavior: "smooth", block: "start" });
@@ -529,16 +621,20 @@ export function initTournamentsTab({
     });
   };
   contentEl()?.addEventListener("click", (e) => {
+    const sortTh = e.target.closest("th[data-champion-sort]");
+    if (sortTh) return toggleChampionSort(sortTh.dataset.championSort);
     const row = e.target.closest(".tournament-champion-row");
     if (row) return toggleChampion(row);
     if (e.target.closest(".tournament-clear-filter")) applyChampionFilter(null);
   });
   contentEl()?.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
+    const sortTh = e.target.closest("th[data-champion-sort]");
     const row = e.target.closest(".tournament-champion-row");
-    if (!row) return;
+    if (!sortTh && !row) return;
     e.preventDefault(); // Space would otherwise scroll the page
-    toggleChampion(row);
+    if (sortTh) toggleChampionSort(sortTh.dataset.championSort);
+    else toggleChampion(row);
   });
 
   // "View match ↓" in the summary's biggest-upset entry: open that match's
