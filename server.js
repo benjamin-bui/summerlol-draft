@@ -17,6 +17,7 @@ const {
   ensureMatchDetailsSchema,
   tableColumns,
 } = require("./src/lib/match-details-schema");
+const { ensureRowsIdColumn } = require("./src/lib/rows-schema");
 const { championKey } = require("./src/lib/champion-releases");
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -50,6 +51,9 @@ if (fs.existsSync(identitySchemaPath)) {
   const schemaSql = fs.readFileSync(identitySchemaPath, "utf8");
   db.exec(schemaSql);
 }
+// The draft-picks table always carries an integer `id` (the key CSV re-ingest
+// and the draft data download use). Add it to a database built without one.
+ensureRowsIdColumn(db, "rows");
 const existingDetails = db
   .prepare(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'match_details'",
@@ -1115,19 +1119,22 @@ app.get("/api/presets/:id", (req, res) => {
   res.json({ id: match.id, label: match.label, names, captains });
 });
 // Column list is read from the actual table schema (not hardcoded) so
-// this works regardless of what columns your CSV happens to have — the
-// only column deliberately excluded is "id", since it's an internal key
-// with no meaning to someone looking at the raw draft data.
-function getRawColumns() {
+// this works regardless of what columns your CSV happens to have. "id" (the
+// key csv-to-sqlite.js upserts and delete-syncs on, present only if the
+// source CSV had an id column) is left out of the on-screen view, where it
+// means nothing to someone reading the draft data, but kept in the CSV
+// download (includeId) so an edited download can be re-ingested and still
+// line up with the rows already in the DB.
+function getRawColumns({ includeId = false } = {}) {
   return db
     .prepare(`PRAGMA table_info(${q(TABLE)})`)
     .all()
     .map((c) => c.name)
-    .filter((name) => name !== "id");
+    .filter((name) => includeId || name !== "id");
 }
 
-function getRawRows() {
-  const columns = getRawColumns();
+function getRawRows({ includeId = false } = {}) {
+  const columns = getRawColumns({ includeId });
   const selectCols = columns.map(q).join(", ");
   const rows = db.prepare(`SELECT ${selectCols} FROM ${q(TABLE)}`).all();
   return { columns, rows };
@@ -1441,7 +1448,7 @@ function csvEscape(value) {
 }
 
 app.get("/api/raw.csv", (req, res) => {
-  const { columns, rows } = getRawRows();
+  const { columns, rows } = getRawRows({ includeId: true });
   const lines = [columns.map(csvEscape).join(",")];
   for (const row of rows) {
     lines.push(columns.map((c) => csvEscape(row[c])).join(","));

@@ -17,6 +17,7 @@ const fs = require("fs");
 const path = require("path");
 const { parse } = require("csv-parse/sync");
 const Database = require("better-sqlite3");
+const { ensureRowsIdColumn } = require("../lib/rows-schema");
 
 const DB_PATH = path.join(__dirname, "..", "..", "data", "app.db");
 const TABLE = "rows";
@@ -25,7 +26,7 @@ const TABLE = "rows";
 // names like "group" (reserved) or "Pick Value" (has a space) work.
 const q = (id) => `"${id}"`;
 
-function ingestCsv(csvPath, { fresh = false } = {}) {
+function ingestCsv(csvPath, { fresh = false, dbPath = DB_PATH } = {}) {
   const csvRaw = fs.readFileSync(csvPath, "utf-8");
   const records = parse(csvRaw, {
     columns: true,
@@ -37,7 +38,7 @@ function ingestCsv(csvPath, { fresh = false } = {}) {
     throw new Error("No rows found in CSV.");
   }
 
-  const db = new Database(DB_PATH);
+  const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
 
   const columns = Object.keys(records[0]);
@@ -46,12 +47,18 @@ function ingestCsv(csvPath, { fresh = false } = {}) {
     db.exec(`DROP TABLE IF EXISTS ${q(TABLE)}`);
   }
 
+  // Does the CSV itself carry ids? The table always has an `id` column
+  // regardless -- when the CSV has none, SQLite assigns them.
   const hasIdCol = columns.includes("id");
-  const colDefs = columns
-    .map((c) => (c === "id" ? `${q(c)} INTEGER PRIMARY KEY` : `${q(c)} TEXT`))
-    .join(", ");
+  const colDefs = [
+    `${q("id")} INTEGER PRIMARY KEY`,
+    ...columns.filter((c) => c !== "id").map((c) => `${q(c)} TEXT`),
+  ].join(", ");
 
   db.exec(`CREATE TABLE IF NOT EXISTS ${q(TABLE)} (${colDefs})`);
+  // A table left over from a CSV with no id column (or an older version of
+  // the app) gets one added, keeping its rows.
+  ensureRowsIdColumn(db, TABLE);
 
   const placeholders = columns.map(() => "?").join(", ");
   const upsertCols = columns
@@ -74,7 +81,7 @@ function ingestCsv(csvPath, { fresh = false } = {}) {
   // removes the stale row from the DB -- it just accumulates forever,
   // which is exactly the bug that motivated this change.
   const syncDeletes = db.transaction((incomingIds) => {
-    if (!hasIdCol) return 0; // no stable key to diff against -- see note below
+    if (!hasIdCol) return 0; // no ids in the CSV to diff against -- see insertMany
     const existingIds = db
       .prepare(`SELECT id FROM ${q(TABLE)}`)
       .all()
@@ -87,20 +94,41 @@ function ingestCsv(csvPath, { fresh = false } = {}) {
     return staleIds.length;
   });
 
+  // Returns the ids SQLite assigned to rows whose id cell was blank (a row
+  // added to the sheet without an id yet). Those ids aren't in the CSV, so
+  // without this the sync below would take each brand-new row for a stale
+  // one and delete it the moment it was inserted.
   const insertMany = db.transaction((rows) => {
+    // With no id column in the CSV there is nothing to tell which existing row
+    // is which, so the table is replaced outright (ids restart at 1, in file
+    // order). Appending instead would duplicate every row on each re-ingest.
+    if (!hasIdCol) db.exec(`DELETE FROM ${q(TABLE)}`);
+    const assignedIds = [];
     for (const row of rows) {
       const values = columns.map((c) => (row[c] === "" ? null : row[c]));
-      insert.run(values);
+      const info = insert.run(values);
+      if (hasIdCol && (row.id === "" || row.id == null)) {
+        assignedIds.push(Number(info.lastInsertRowid));
+      }
     }
+    return assignedIds;
   });
 
-  insertMany(records);
-  const deletedCount = hasIdCol ? syncDeletes(records.map((r) => r.id)) : 0;
+  const assignedIds = insertMany(records);
+  const deletedCount = hasIdCol
+    ? syncDeletes([...records.map((r) => r.id), ...assignedIds])
+    : 0;
 
   const count = db.prepare(`SELECT COUNT(*) AS n FROM ${q(TABLE)}`).get().n;
   db.close();
 
-  return { imported: records.length, deleted: deletedCount, totalRows: count };
+  return {
+    imported: records.length,
+    deleted: deletedCount,
+    totalRows: count,
+    // True when the CSV had no id column, so the table was replaced wholesale.
+    replaced: !hasIdCol,
+  };
 }
 
 if (require.main === module) {
@@ -111,9 +139,13 @@ if (require.main === module) {
     process.exit(1);
   }
   try {
-    const { imported, deleted, totalRows } = ingestCsv(csvPath, { fresh });
+    const { imported, deleted, totalRows, replaced } = ingestCsv(csvPath, {
+      fresh,
+    });
     console.log(
-      `Imported ${imported} rows. Removed ${deleted} stale row(s) no longer in the CSV. Table "rows" now has ${totalRows} rows total.`,
+      replaced
+        ? `Imported ${imported} rows, replacing the table's contents (the CSV has no id column, so ids were assigned 1..${totalRows} in file order). Table "rows" now has ${totalRows} rows total.`
+        : `Imported ${imported} rows. Removed ${deleted} stale row(s) no longer in the CSV. Table "rows" now has ${totalRows} rows total.`,
     );
     console.log(`Database file: ${DB_PATH}`);
   } catch (err) {
