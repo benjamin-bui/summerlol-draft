@@ -144,7 +144,6 @@ function renderSummaryBlock(t) {
               `(${pct(entry.winRate)} · ${entry.wins}-${entry.losses}${entry.champions.length > 1 ? " each" : ""})`,
             )
           : `<span class="stat-formula">None with ${min}+ games</span>`,
-        { title: `Highest/lowest win rate among champions with at least ${min} games` },
       );
     rows.push(recordRow(`Best champion (${min}+ games)`, s.winningest));
     rows.push(recordRow(`Worst champion (${min}+ games)`, s.losingest));
@@ -158,7 +157,7 @@ function renderSummaryBlock(t) {
           : `<span class="stat-formula">–</span>`,
         {
           title: d
-            ? `Champion diversity is 1 minus the Gini coefficient of pick rates across all ${d.poolSize} champions that could have been picked in ${t.year} (released that year or earlier; ${d.championsPicked} were picked, and champions nobody picked count as a 0% pick rate). 0 means every pick went to a single champion; 1 means every available champion was picked equally often. Higher = more diverse.`
+            ? `Champion diversity is 1 minus the Gini coefficient of pick rates across all ${d.poolSize} champions that could have been picked in ${t.year} (released that year or earlier; ${d.championsPicked} were picked, and champions nobody picked count as a 0% pick rate). 0 means every pick went to a single champion; 1 means every champion was picked equally often.`
             : "Needs champion data for this tournament.",
         },
       ),
