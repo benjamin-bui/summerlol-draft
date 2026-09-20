@@ -685,6 +685,51 @@ app.get("/api/placements", (req, res) => {
   }
 });
 
+// Tournaments tab: one summary per year+season that has recorded games --
+// team rosters (pick order + entering rank), per-champion stats, summary
+// facts (most picked / best / worst champion, champion diversity,
+// biggest upset) and the full ordered match list. See
+// src/lib/tournament-summary.js for the definitions. Everything for every
+// tournament comes back in one response so switching tournaments in the UI
+// needs no further round trips.
+const { buildTournamentSummaries } = require("./src/lib/tournament-summary");
+
+app.get("/api/tournaments", async (req, res) => {
+  try {
+    const identityMap = loadIdentityMap(db);
+    // Same captain-identity resolution /api/player/:key applies, so entering
+    // ranks computed here line up with the ones shown on a player's profile.
+    const allRows = resolveIdentities(getAllRows(), identityMap).map((row) => ({
+      ...row,
+      captainIdentityKey:
+        identityMap.get(row.captain)?.identityKey || row.captain,
+    }));
+    const matches = getMatches();
+    const result = await computeTrueSkillFromMatches(
+      matches,
+      allRows,
+      identityMap,
+      {},
+    );
+    const { mu, sigma, conservativeK } = result.params;
+    const defaultConservativeRating =
+      Math.round((mu - conservativeK * sigma) * 1000) / 1000;
+
+    const tournaments = buildTournamentSummaries({
+      games: result.games,
+      matches,
+      draftRows: allRows,
+      identityMap,
+      tournamentEntryRatings: result.tournamentEntryRatings,
+      defaultConservativeRating,
+    });
+    res.json({ tournaments });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to compute tournament summaries" });
+  }
+});
+
 app.get("/api/player/:key", async (req, res) => {
   try {
     const identityMap = loadIdentityMap(db);

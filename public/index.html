@@ -24,7 +24,7 @@
 
     <nav class="tabs">
       <button class="tab-btn active" data-tab="trueskill">TrueSkill</button>
-      <button class="tab-btn" data-tab="rankings">Comparing Pick Order and Results</button>
+      <button class="tab-btn" data-tab="tournaments">Tournaments</button>
       <button class="tab-btn" data-tab="draftiq">Draft vs. TrueSkill</button>
       <button class="tab-btn" data-tab="teambalance">Team Balance</button>
       <button class="tab-btn" data-tab="mockdraft">Mock Draft</button>
@@ -34,38 +34,22 @@
       <button class="tab-btn" data-tab="matchdata">Match History</button>
     </nav>
 
-      <!-- ================= RANKINGS TAB ================= -->
-      <section class="tab-panel" id="tab-rankings">
-        <section class="control-panel">
-          <div>
-            <p><strong>Adjusted Pick Value: </strong> Weighted difference between average pick percentile and rank percentile.</p>
-            <p><strong>n:</strong> Number of tournaments of data.</p>
-            <p><strong>Avg. Pick%: </strong>Average percentage of draft picked before this player is picked.</p>
-            <p><strong>Est. Pick Order: </strong>Based on Total N players in the draft, where in the pick order this person is picked on average.</p>
-            <p><strong>Avg. Rank%: </strong>Average placement as a percentile; 1st place is 0% and last place is 100%</p>
-            <p><strong>Est. Rank Order: </strong>Based on Total N players in the draft, what placement does this player have on average (assuming teams of 5).</p>
-          </div>
-          <label for="totalN" class="second-control">Total N (for estimated pick/rank order columns)</label>
-          <div class="slider-row">
-            <input type="number" id="totalN" min="2" max="1000" step="1" value="40" class="total-n-input" />
-          </div>
-        </section>
-
-        <section class="table-controls">
-          <button id="columnsBtn" class="columns-btn">Columns &#9662;</button>
-          <div id="columnsPanel" class="columns-panel hidden"></div>
-        </section>
-
-      <section class="table-section">
-        <table id="statsTable">
-          <thead>
-            <tr id="statsHeaderRow"></tr>
-          </thead>
-          <tbody id="statsBody">
-            <!-- populated by app.js -->
-          </tbody>
-        </table>
+    <!-- ================= TOURNAMENTS TAB ================= -->
+    <!-- Filled in by public/js/tournaments.js once /api/tournaments has loaded.
+         Same two-column layout as the player profile page (.profile-layout):
+         summary + champions down the left; team rosters with the match list
+         underneath them on the right. -->
+    <section class="tab-panel" id="tab-tournaments">
+      <section class="profile-block profile-filter-block tournament-picker">
+        <div class="profile-filter-row">
+          <label for="tournamentSelect">Tournament:</label>
+          <select id="tournamentSelect" class="tournament-filter-select" disabled>
+            <option>Loading…</option>
+          </select>
+          <span id="tournamentPickerMeta" class="stat-formula"></span>
+        </div>
       </section>
+      <div id="tournamentsContent">Loading…</div>
     </section>
 
     <!-- ================= TRUESKILL TAB ================= -->

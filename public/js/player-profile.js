@@ -25,6 +25,10 @@ let activatePanel = () => {};
 // renders, without player-profile.js needing to know anything about how
 // or where that data comes from.
 let ensureTiersReady = async () => {};
+// URL for a given tab. app.js overrides this so tabs that keep extra state in
+// the URL (Tournaments remembers the selected tournament) get it back when
+// the Back button rebuilds the URL itself.
+let getTabUrl = (tab) => `/?tab=${encodeURIComponent(tab)}`;
 // Tracks which real tab (trueskill/draftiq/etc.) the profile page should
 // fall back to if the back button is used with no safe browser-history
 // entry to return to (e.g. someone opened a /player/... link directly).
@@ -96,7 +100,7 @@ function goBack() {
   } else {
     // Direct/shared link with no in-app history to pop back to -- land on
     // whichever tab we last knew about instead of leaving the site.
-    window.history.pushState(null, "", `/?tab=${encodeURIComponent(lastKnownTab)}`);
+    window.history.pushState(null, "", getTabUrl(lastKnownTab));
     activatePanel(lastKnownTab);
   }
 }
@@ -526,7 +530,9 @@ function renderTrueSkillBlock(player, tournaments) {
   </section>`;
 }
 
-function renderChampionRows(championStats) {
+// Exported so the Tournaments tab renders its champion table with the exact
+// same markup as this page's Champions block.
+export function renderChampionRows(championStats) {
   if (!championStats.length) {
     return `<tr><td colspan="4" class="stat-formula">No champion data for this filter.</td></tr>`;
   }
@@ -1179,7 +1185,9 @@ export function loadSimpleProfilePage(nameOrSlug, { push = true, isSlug = false 
 export function initPlayerProfile({
   activatePanel: activatePanelFn,
   ensureTiersReady: ensureTiersReadyFn,
+  getTabUrl: getTabUrlFn,
 } = {}) {
+  if (typeof getTabUrlFn === "function") getTabUrl = getTabUrlFn;
   if (typeof activatePanelFn === "function") activatePanel = activatePanelFn;
   if (typeof ensureTiersReadyFn === "function") ensureTiersReady = ensureTiersReadyFn;
 

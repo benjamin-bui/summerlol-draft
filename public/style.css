@@ -1649,3 +1649,240 @@ td:has(.pick-detail) {
   margin: 24px 0 10px;
   font-size: 1rem;
 }
+
+/* ---- Tournaments tab ----
+   Reuses the player profile page's layout (.profile-layout / .profile-block)
+   for the summary + champions sidebar; everything below is either scoped to
+   #tab-tournaments or namespaced .tournament-*, so it can't leak into other
+   pages. .stat-formula has no base style elsewhere, so it's given its muted
+   look here only. */
+#tab-tournaments .stat-formula {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+/* Names sit inline ("Name #tag") in these compact tables instead of the
+   default stacked name-over-tag block. */
+#tab-tournaments a.player-link {
+  border-bottom: none;
+}
+#tab-tournaments .player-name,
+#tab-tournaments .player-tag {
+  display: inline;
+}
+#tab-tournaments .player-tag {
+  margin-left: 1px;
+}
+
+.tournament-picker {
+  margin-bottom: 16px;
+}
+.tournament-picker label {
+  font-weight: 500;
+}
+.tournament-picker .tournament-filter-select {
+  flex: 0 1 220px;
+}
+
+#tab-tournaments .profile-summary-coplay > div > span[title] {
+  cursor: help;
+  border-bottom: 1px dotted var(--muted);
+}
+.tournament-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.tournament-stack > span {
+  color: var(--muted);
+}
+.tournament-upset-line {
+  font-weight: 500;
+}
+.tournament-note {
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+.tournament-jump {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: 4px;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.tournament-jump:hover {
+  text-decoration: underline;
+}
+
+.tournament-teams {
+  display: grid;
+  /* min() so a phone narrower than 320px of content still gets one full-width column */
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+  gap: 12px;
+}
+.tournament-team-card {
+  min-width: 0;
+  overflow-x: auto; /* a very long name scrolls inside its card instead of spilling out */
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.tournament-team-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.tournament-team-name {
+  font-weight: 600;
+}
+.tournament-team-place {
+  padding: 1px 8px;
+  border: 1px solid var(--accent-dim);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.tournament-team-card table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.tournament-team-card th,
+.tournament-team-card td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.tournament-team-card th {
+  color: var(--muted);
+  font-weight: 500;
+}
+.tournament-team-card tr:last-child td {
+  border-bottom: none;
+}
+.roster-captain-row td:first-child {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Sits in the right-hand column directly under the rosters. */
+.tournament-matches {
+  margin-top: 16px;
+}
+.tournament-matches-scroll {
+  overflow-x: auto;
+}
+.profile-block .tournament-matches-table {
+  font-size: 0.85rem;
+}
+.profile-block .tournament-matches-table > thead > tr > th,
+.profile-block .tournament-matches-table > tbody > tr > td {
+  padding: 8px 10px;
+}
+/* Winner cell: color the link and bold the name only. (The generic
+   .outcome-win on a <td> can't reach the name/tag spans, which set their
+   own weight and color, so only the tag ended up bold.) */
+.tournament-matches-table td.tournament-winner a.player-link {
+  color: var(--accent);
+}
+.tournament-matches-table td.tournament-winner .player-name {
+  font-weight: 700;
+}
+/* Short fixed-content columns hug their content instead of stretching. */
+.tournament-matches-table .col-narrow {
+  width: 1%;
+  white-space: nowrap;
+}
+@keyframes tournament-row-flash {
+  from {
+    background: var(--accent);
+  }
+  to {
+    background: transparent;
+  }
+}
+.tournament-row-flash > td {
+  animation: tournament-row-flash 1.6s ease-out;
+}
+
+/* Phone width: the summary's label/value rows are too wide side by side (the
+   profile page's .stat-formula nowrap rule would clip them), so stack each
+   label above its value and let the values wrap. */
+@media (max-width: 520px) {
+  #tab-tournaments .profile-summary-coplay > div {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  #tab-tournaments .profile-summary-coplay-value {
+    text-align: left;
+  }
+  #tab-tournaments .profile-summary-coplay-value .stat-formula {
+    white-space: normal;
+  }
+}
+
+/* Clickable champion rows (filter the match list) */
+.tournament-champion-row {
+  cursor: pointer;
+}
+.tournament-champion-row:hover > td {
+  background: var(--accent-glow);
+}
+.tournament-champion-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tournament-champion-row.is-selected > td {
+  background: var(--accent-glow);
+  font-weight: 600;
+}
+.tournament-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--accent-dim);
+  border-radius: 6px;
+  background: var(--accent-glow);
+  font-size: 0.85rem;
+}
+.tournament-clear-filter {
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.tournament-clear-filter:hover {
+  background: var(--accent-secondary);
+  color: #fff;
+}
+/* The filtered champion's own pick, inside an expanded match. */
+.tournament-picked > td {
+  background: var(--accent-glow);
+  font-weight: 600;
+}
+/* Breathing room above the match list when a champion click scrolls to it. */
+#tournamentMatches {
+  scroll-margin-top: 16px;
+}

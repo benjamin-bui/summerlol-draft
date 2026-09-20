@@ -17,9 +17,13 @@ import {
 } from "./js/utils.js";
 import { initPlayerProfile, renderClickableName, parsePlayerRouteFromPath, loadPlayerProfilePage, loadSimpleProfilePage, notifyActiveTab } from "./js/player-profile.js";
 import { createTabTable, coerceNumericColumns } from "./js/table-utils.js";
+import {
+  initTournamentsTab,
+  showTournamentsTab,
+  getSelectedTournamentId,
+} from "./js/tournaments.js";
 
 let groupColName = "Player";
-let latestStats = [];
 let trueskillLoaded = false;
 let latestTrueskillPlayers = [];
 let draftScatterBuilt = false;
@@ -583,163 +587,6 @@ document
 
 buildAdminPresetOptions(document.getElementById("adminPresetsOptgroup"));
 
-// ==================== Naive Pick Order vs Results ====================
-
-let totalN = 40;
-const totalNInput = document.getElementById("totalN");
-
-totalNInput.addEventListener("input", () => {
-  const val = parseInt(totalNInput.value, 10);
-  if (!Number.isFinite(val) || val < 2) return;
-  totalN = val;
-  applyTotalN();
-  rankingsTable.setData(latestStats);
-});
-const RANKINGS_COLUMNS = [
-  {
-    key: "rank",
-    label: "#",
-    sortable: false,
-    hideable: false,
-    filterable: false,
-  },
-  {
-    key: "group",
-    label: "Player",
-    sortable: true,
-    hideable: false,
-    filterable: true,
-    className: "group-name",
-    type: "string",
-    sticky: "true",
-  },
-  {
-    key: "adjAvg",
-    label: "Adjusted Pick Value",
-    sortable: true,
-    hideable: true,
-    filterable: true,
-    type: "number",
-    decimals: 2,
-    className: "adj-avg",
-  },
-  {
-    key: "n",
-    label: "n",
-    sortable: true,
-    hideable: true,
-    filterable: true,
-    type: "number",
-    decimals: 0,
-  },
-  {
-    key: "mean",
-    label: "Unadjusted Pick Value",
-    sortable: true,
-    hideable: true,
-    filterable: true,
-    type: "number",
-    decimals: 2,
-    defaultHidden: true,
-  },
-  {
-    key: "sd",
-    label: "Std. Dev.",
-    sortable: true,
-    hideable: true,
-    filterable: true,
-    type: "number",
-    decimals: 2,
-    defaultHidden: true,
-  },
-  {
-    key: "avgPickPercentile",
-    label: "Avg. Pick %",
-    sortable: true,
-    hideable: true,
-    filterable: true,
-    type: "number",
-    decimals: 0,
-    percentage: true,
-  },
-  {
-    key: "estPickOrder",
-    label: "Est. Pick Order",
-    sortable: true,
-    hideable: true,
-    filterable: true,
-    type: "number",
-    decimals: 1,
-  },
-  {
-    key: "avgRankPercentile",
-    label: "Avg. Rank %",
-    sortable: true,
-    hideable: true,
-    filterable: true,
-    type: "number",
-    decimals: 0,
-    percentage: true,
-  },
-  {
-    key: "estRankOrder",
-    label: "Est. Rank Order",
-    sortable: true,
-    hideable: true,
-    filterable: true,
-    type: "number",
-    decimals: 1,
-  },
-];
-
-const rankingsTable = createTabTable({
-  columns: RANKINGS_COLUMNS,
-  headerRowEl: statsHeaderRow,
-  bodyEl: statsBody,
-  columnsBtnEl: columnsBtn,
-  columnsPanelEl: columnsPanel,
-  ownerKey: "rankings",
-  defaultSortColumn: "adjAvg",
-  emptyMessage: "No players match the active filters",
-});
-
-const RANKINGS_RISK = 0.25;
-const RANKINGS_HALF_LIFE = 2;
-async function fetchStats(risk, halfLife) {
-  const res = await fetch(`/api/stats?risk=${risk}&halfLife=${halfLife}`);
-  if (!res.ok) {
-    statsBody.innerHTML = `<tr><td colspan="8">Error loading stats</td></tr>`;
-    return;
-  }
-  const data = await res.json();
-  latestStats = data.stats;
-  applyTotalN();
-  rankingsTable.setData(latestStats);
-}
-
-// Translates each row's percentile columns into an estimated ordinal
-// position on a scale of `totalN` — e.g. "if this were a league of N
-// picks/captains, what pick/rank number does this percentile correspond
-// to". Purely a client-side transform of already-fetched percentiles, so
-// changing N just re-renders, no server round-trip needed.
-function applyTotalN() {
-  // Est. Pick Order scales against N (total picks). Est. Rank Order
-  // scales against N/4 instead — N/4 is the actual number of teams,
-  // since each team gets 4 picks in this draft format, and Rank
-  // Percentile was always normalized against the team count, not the
-  // pick count (see server.js's per-year normalization).
-  const numTeams = totalN / 4;
-  latestStats.forEach((row) => {
-    row.estPickOrder =
-      row.avgPickPercentile === null
-        ? null
-        : row.avgPickPercentile * (totalN - 1) + 1;
-    row.estRankOrder =
-      row.avgRankPercentile === null
-        ? null
-        : row.avgRankPercentile * (numTeams - 1) + 1;
-  });
-}
 // ==================== Draft IQ tab ====================
 
 const DRAFT_IQ_COLUMNS = [
@@ -2590,6 +2437,11 @@ tabButtons.forEach((btn) => {
   if (btn.dataset.tab === "trueskill") {
     btn.addEventListener("click", () => loadtrueskillData(false));
   }
+  if (btn.dataset.tab === "tournaments") {
+    btn.addEventListener("click", () =>
+      showTournamentsTab(getSelectedTournamentId()),
+    );
+  }
   if (btn.dataset.tab === "matchdata") {
     btn.addEventListener("click", () => loadMatchData(false));
   }
@@ -2612,12 +2464,20 @@ tabButtons.forEach((btn) => {
 
 function readStateFromURL() {
   const params = new URLSearchParams(window.location.search);
-  const tab = params.get("tab") || "trueskill";
+  let tab = params.get("tab") || "trueskill";
+  // The old "Comparing Pick Order and Results" tab (?tab=rankings) was
+  // replaced by Tournaments -- send stale bookmarks there. Any other
+  // unknown tab name falls back to the default rather than activating
+  // nothing and leaving a blank page.
+  if (tab === "rankings") tab = "tournaments";
+  const knownTabs = new Set([...tabButtons].map((btn) => btn.dataset.tab));
+  if (!knownTabs.has(tab)) tab = "trueskill";
   setActiveTab(tab);
   if (tab === "draftdata") loadDraftData();
   if (tab === "matchdata") loadMatchData();
   if (tab === "draftiq" || tab === "teambalance") loadDraftAnalysis();
   if (tab === "mockdraft") initMockDraftTab();
+  if (tab === "tournaments") showTournamentsTab(params.get("tournament"));
 }
 
 // Reads whichever route the current URL represents and shows it -- used
@@ -2638,19 +2498,27 @@ function renderCurrentRoute({ push } = { push: false }) {
 
 window.addEventListener("popstate", () => renderCurrentRoute({ push: false }));
 
-function writeStateToURL() {
+// The URL that represents a given tab. Always targets "/" rather than
+// window.location.pathname -- tab state only ever lives at the root path.
+// Without this, clicking a real tab while sitting on a /player/... URL would
+// leave the path unchanged and bolt "?tab=..." onto the player URL instead of
+// actually navigating back to the tab view.
+function buildTabUrl(tab) {
   const params = new URLSearchParams();
+  params.set("tab", tab);
+  // The Tournaments tab also remembers which tournament is showing, so a
+  // shared/bookmarked link (and Back from a player profile) lands on it.
+  const selectedTournament = getSelectedTournamentId();
+  if (tab === "tournaments" && selectedTournament) {
+    params.set("tournament", selectedTournament);
+  }
+  return `/?${params.toString()}`;
+}
+
+function writeStateToURL() {
   const activeTab =
     document.querySelector(".tab-btn.active")?.dataset.tab || "trueskill";
-  params.set("tab", activeTab);
-
-  // Always targets "/" rather than window.location.pathname -- tab state
-  // only ever lives at the root path. Without this, clicking a real tab
-  // while sitting on a /player/... URL would leave the path unchanged and
-  // bolt "?tab=..." onto the player URL instead of actually navigating
-  // back to the tab view.
-  const newUrl = `/?${params.toString()}`;
-  window.history.replaceState(null, "", newUrl);
+  window.history.replaceState(null, "", buildTabUrl(activeTab));
 }
 
 let fetchDebounceTimer = null;
@@ -2673,6 +2541,7 @@ async function loadMeta() {
   initTheme();
   initPlayerProfile({
     activatePanel: setActiveTab,
+    getTabUrl: buildTabUrl,
     // Rank badges on the profile page (renderTrueSkillValue -> getRankTier)
     // need tier cutoffs that only exist after loadtrueskillData() has run
     // and called setRankTiers(). On normal in-app navigation that's
@@ -2683,10 +2552,15 @@ async function loadMeta() {
     // flag), so this is a no-op once the main tables have loaded anyway.
     ensureTiersReady: () => loadtrueskillData(false),
   });
+  initTournamentsTab({
+    // Same reason as initPlayerProfile's ensureTiersReady above: rank badges
+    // in the match rosters need tier cutoffs from loadtrueskillData().
+    ensureTiersReady: () => loadtrueskillData(false),
+    onSelectionChange: () => scheduleUrlUpdate(),
+  });
   initTrueskillSearch();
   renderCurrentRoute({ push: false });
   await loadMeta();
-  await fetchStats(RANKINGS_RISK, RANKINGS_HALF_LIFE);
   loadtrueskillData();
   loadUpcomingRoster();
   // Skip if a direct/shared /player/... link is what got us here -- that
