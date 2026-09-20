@@ -609,18 +609,121 @@ function historyHasBans(history) {
   );
 }
 
+// ---- champion table sorting
+//
+// Click a header to sort by it; click again to flip the direction. Two rules
+// hold no matter which column or direction is active:
+//   1. Champions this player actually played always come before champions that
+//      were only ever banned against them (games = 0) -- even when sorting by
+//      Games ascending, where the zero-game rows would otherwise lead.
+//   2. Ties on the sorted column are broken by number of games, highest first
+//      (only the primary comparison flips with the direction), then by the
+//      table's default order so equal rows never shuffle.
+// A fresh profile has no sort applied and shows the default order (most games
+// first).
+const compareNumbers = (x, y) => (x === y ? 0 : x < y ? -1 : 1);
+const CHAMPION_SORTS = {
+  champion: {
+    label: "Champion",
+    firstDir: "asc", // names read A -> Z first; numbers highest first
+    compare: (a, b) => a.champion.localeCompare(b.champion, undefined, { sensitivity: "base" }),
+  },
+  games: { label: "Games", firstDir: "desc", compare: (a, b) => compareNumbers(a.games, b.games) },
+  winRate: {
+    label: "Win rate",
+    firstDir: "desc",
+    compare: (a, b) => compareNumbers(a.winRate ?? -1, b.winRate ?? -1),
+  },
+  kda: {
+    label: "KDA",
+    firstDir: "desc",
+    // Zero deaths ("Perfect", sent as null) is the best KDA there is.
+    compare: (a, b) =>
+      compareNumbers(a.kda === null ? Infinity : a.kda, b.kda === null ? Infinity : b.kda),
+  },
+  bannedAgainst: {
+    label: "Banned against",
+    firstDir: "desc",
+    // null = no ban data at all for these games, so every row ties.
+    compare: (a, b) => compareNumbers(a.bannedAgainst ?? -1, b.bannedAgainst ?? -1),
+  },
+};
+
+// `stats` is in default order; returns a new, sorted array.
+function sortChampionStats(stats, sort) {
+  const column = sort?.column;
+  if (!column) return [...stats];
+  const sign = sort.dir === "asc" ? 1 : -1;
+  const { compare } = CHAMPION_SORTS[column];
+  return stats
+    .map((champion, index) => ({ champion, index }))
+    .sort((x, y) => {
+      const a = x.champion;
+      const b = y.champion;
+      const playedFirst = (b.games > 0) - (a.games > 0);
+      if (playedFirst) return playedFirst;
+      const primary = compare(a, b);
+      if (primary) return sign * primary;
+      return b.games - a.games || x.index - y.index;
+    })
+    .map((entry) => entry.champion);
+}
+
+function championSortAttrs(column) {
+  const sort = profileSearch?.championSort;
+  const active = sort?.column === column;
+  const asc = sort?.dir === "asc";
+  return {
+    cls: active ? (asc ? "sorted-asc" : "sorted-desc") : "",
+    aria: active ? (asc ? "ascending" : "descending") : "none",
+  };
+}
+
+function championSortHeader(column, hint = null, extraClass = "") {
+  const { cls, aria } = championSortAttrs(column);
+  const label = CHAMPION_SORTS[column].label;
+  const title = hint ? `${hint} Click to sort.` : `Sort by ${label.toLowerCase()}`;
+  const classes = [extraClass, cls].filter(Boolean).join(" ");
+  return `<th${classes ? ` class="${classes}"` : ""} data-champion-sort="${column}" tabindex="0" aria-sort="${aria}" title="${escapeHtml(title)}">${label}</th>`;
+}
+
+function toggleChampionSort(column) {
+  if (!profileSearch || !CHAMPION_SORTS[column]) return;
+  const current = profileSearch.championSort;
+  profileSearch.championSort =
+    current.column === column
+      ? { column, dir: current.dir === "asc" ? "desc" : "asc" }
+      : { column, dir: CHAMPION_SORTS[column].firstDir };
+  renderChampionsTable(
+    profileSearch.displayedChampionStats || profileSearch.championStats,
+  );
+  document
+    .querySelectorAll("#profileChampionsTable th[data-champion-sort]")
+    .forEach((th) => {
+      const { cls, aria } = championSortAttrs(th.dataset.championSort);
+      th.classList.remove("sorted-asc", "sorted-desc");
+      if (cls) th.classList.add(cls);
+      th.setAttribute("aria-sort", aria);
+    });
+}
+
 function renderChampionsBlock(championStats, extras = []) {
   if (!championStats.length) {
     return `<section class="profile-block"><h3>Champions</h3><p class="stat-formula">No champion data recorded yet.</p></section>`;
   }
   const bannedAgainstHeader = extras.includes("bannedAgainst")
-    ? `<th class="col-banned-against" title="Games where an opposing team banned this champion. Bans are a team-level choice, so this isn't specific to this player. Champions banned against them but never played show 0 games.">Banned against</th>`
+    ? championSortHeader(
+        "bannedAgainst",
+        "Games where an opposing team banned this champion. Bans are a team-level choice, so this isn't specific to this player. Champions banned against them but never played show 0 games.",
+        "col-banned-against",
+      )
     : "";
+  const sorted = sortChampionStats(championStats, profileSearch?.championSort);
   return `<section class="profile-block">
     <h3>Champions</h3>
-    <table>
-      <thead><tr><th>Champion</th><th>Games</th><th>Win rate</th><th>KDA</th>${bannedAgainstHeader}</tr></thead>
-      <tbody id="championsTableBody">${renderChampionRows(championStats, { extras })}</tbody>
+    <table id="profileChampionsTable" class="profile-champions-table">
+      <thead><tr>${championSortHeader("champion")}${championSortHeader("games")}${championSortHeader("winRate")}${championSortHeader("kda")}${bannedAgainstHeader}</tr></thead>
+      <tbody id="championsTableBody">${renderChampionRows(sorted, { extras })}</tbody>
     </table>
   </section>`;
 }
@@ -708,12 +811,16 @@ function computeChampionStats(historyEntries) {
 // Updates just the Champions block's rows in place -- used by every
 // filter change (tournament filter, played-with/against search) rather
 // than each one re-deriving how to touch the DOM itself.
+// `championStats` is in default order (whatever the filter in effect produced);
+// the active header sort, if any, is applied here so it survives filter changes.
 function renderChampionsTable(championStats) {
   const tbody = document.getElementById("championsTableBody");
+  if (profileSearch) profileSearch.displayedChampionStats = championStats;
   if (tbody) {
-    tbody.innerHTML = renderChampionRows(championStats, {
-      extras: profileSearch?.championExtras || [],
-    });
+    tbody.innerHTML = renderChampionRows(
+      sortChampionStats(championStats, profileSearch?.championSort),
+      { extras: profileSearch?.championExtras || [] },
+    );
   }
 }
 
@@ -836,7 +943,6 @@ function buildHistoryTableHtml(historyEntries) {
       </td>
       <td class="col-secondary col-trueskill">
         <span class="cell-primary">${renderTrueSkillValue(entry.conservativeRating)} <span class="${changeClass}">${changeLabel}</span></span>
-        <span class="cell-secondary">μ${entry.mu ?? "–"} σ${entry.sigma ?? "–"}</span>
       </td>
     </tr>
     <tr id="${rosterId}" class="roster-detail-row" hidden>
@@ -914,6 +1020,8 @@ function renderPlayerProfileContent(player, containerWidth) {
     tournaments,
     championStats,
     championExtras,
+    championSort: { column: null, dir: "desc" },
+    displayedChampionStats: championStats,
     teammates,
     opponents,
     mode: "with",
@@ -1111,7 +1219,7 @@ async function applySearchFilter() {
     summaryEl.innerHTML = `
       <section class="profile-block profile-search-summary-block">
         <h3>${escapeHtml(heading)}</h3>
-        <div class="profile-current-rank">${escapeHtml(overallLabel)} <span class="stat-formula">(${games} games)</span></div>
+        <div class="profile-current-rank">${escapeHtml(overallLabel)} <span class="stat-formula">(${games} g)</span></div>
         ${
           tournamentRows.length
             ? `<table><thead>${headerRow}</thead><tbody>${rows}</tbody></table>`
@@ -1398,6 +1506,18 @@ export function initPlayerProfile({
           : profileSearch.championStats,
       );
     }
+  });
+
+  document.addEventListener("click", (e) => {
+    const sortTh = e.target.closest("#profileChampionsTable th[data-champion-sort]");
+    if (sortTh) toggleChampionSort(sortTh.dataset.championSort);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const sortTh = e.target.closest?.("#profileChampionsTable th[data-champion-sort]");
+    if (!sortTh) return;
+    e.preventDefault(); // Space would otherwise scroll the page
+    toggleChampionSort(sortTh.dataset.championSort);
   });
 
   document.addEventListener("click", (e) => {

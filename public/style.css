@@ -1991,25 +1991,25 @@ td:has(.pick-detail) {
 /* Sortable champion headers. The app-wide thead rules already provide the
    pointer cursor and hover color; the arrow slot is always reserved (hidden
    until active) so the columns don't shift width when a sort is applied. */
-.tournament-champions-table th[data-champion-sort]::after {
+th[data-champion-sort]::after {
   content: "▼";
   margin-left: 6px;
   font-size: 0.7rem;
   color: var(--accent);
   visibility: hidden;
 }
-.tournament-champions-table th[data-champion-sort].sorted-desc::after {
+th[data-champion-sort].sorted-desc::after {
   content: "▼";
   visibility: visible;
 }
-.tournament-champions-table th[data-champion-sort].sorted-asc::after {
+th[data-champion-sort].sorted-asc::after {
   content: "▲";
   visibility: visible;
 }
 .tournament-champions-table th.not-sortable {
   cursor: default;
 }
-.tournament-champions-table th[data-champion-sort]:focus-visible {
+th[data-champion-sort]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -2136,4 +2136,16 @@ td:has(.pick-detail) {
   .tournament-layout.has-bans {
     grid-template-columns: 540px minmax(0, 1fr);
   }
+}
+
+/* Sortable headers on the player profile's Champions table. Each reserves a
+   little room for its sort arrow, so keep the gap small and let headers wrap
+   ("Win rate", "Banned against") to stay inside the narrow sidebar. */
+.profile-champions-table th {
+  white-space: normal;
+  line-height: 1.15;
+  vertical-align: bottom;
+}
+.profile-champions-table th[data-champion-sort]::after {
+  margin-left: 2px;
 }
