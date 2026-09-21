@@ -939,7 +939,7 @@ function buildHistoryTableHtml(historyEntries) {
         <span class="cell-primary">${escapeHtml(entry.ownTeam?.name || "–")}</span>
         <span class="cell-secondary">vs ${escapeHtml(entry.opponent || "–")}</span>
       </td>
-      ${showRole ? `<td class="col-secondary col-role">${renderRoleLabel(playerDetail?.role)}</td>` : ""}
+      ${showRole ? `<td class="col-secondary col-role">${renderRoleIcon(playerDetail?.role)}</td>` : ""}
       <td>${playerDetail ? renderChampionIcon(playerDetail.champion) : "–"}</td>
       <td>${playerDetail ? `${playerDetail.kills ?? "–"}/${playerDetail.deaths ?? "–"}/${playerDetail.assists ?? "–"}` : "–"}</td>
       <td class="col-result">

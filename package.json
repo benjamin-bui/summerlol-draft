@@ -14,7 +14,8 @@
     "export-pending-tags": "node src/scripts/export-pending-tags.js",
     "import-pending-tags": "node src/scripts/import-pending-tags.js",
     "sync-riot": "node src/scripts/run-riot-sync.js",
-    "refresh-all": "node src/scripts/refresh-all.js"
+    "refresh-all": "node src/scripts/refresh-all.js",
+    "check-data": "node src/scripts/check-data.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",

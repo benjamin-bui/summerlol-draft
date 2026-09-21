@@ -47,12 +47,11 @@ function parseCsv(text) {
   return rows;
 }
 
-function main() {
-  const csvPath = process.argv[2];
-  if (!csvPath) {
-    console.error("Usage: node data/ingest-matches.js <path-to-match-csv>");
-    process.exit(1);
-  }
+// Loads the match CSV into the `matches` table of the DB at `dbPath` (the app's
+// DB by default), replacing any previous contents. Returns how many matches
+// were loaded. The CLI below is a thin wrapper; check-data.js calls this with a
+// throwaway DB.
+function ingestMatches(csvPath, { dbPath = DB_PATH } = {}) {
   const text = fs.readFileSync(csvPath, "utf8");
   const [header, ...rows] = parseCsv(text);
 
@@ -75,7 +74,7 @@ function main() {
   // failing ingestion entirely.
   const matchStageIdx = header.indexOf("Match Stage");
 
-  const db = new Database(DB_PATH);
+  const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = OFF");
   db.exec("DROP TABLE IF EXISTS match_details");
@@ -163,11 +162,18 @@ function main() {
   insertMany(rows);
 
   const { n } = db.prepare("SELECT COUNT(*) AS n FROM matches").get();
-  console.log(`Loaded ${n} matches into ${DB_PATH}`);
+  db.close();
+  return n;
 }
 
 if (require.main === module) {
-  main();
+  const csvPath = process.argv[2];
+  if (!csvPath) {
+    console.error("Usage: node data/ingest-matches.js <path-to-match-csv>");
+    process.exit(1);
+  }
+  const n = ingestMatches(csvPath);
+  console.log(`Loaded ${n} matches into ${DB_PATH}`);
 }
 
-module.exports = { parseCsv };
+module.exports = { parseCsv, ingestMatches, DB_PATH };
