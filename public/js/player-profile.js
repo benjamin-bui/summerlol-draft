@@ -462,7 +462,7 @@ function renderSummaryPanelBlock(player, tournaments, championStats, history) {
     </div>
     ${renderRoleBreakdown(history)}
     <div class="profile-summary-coplay">
-      <div><span>eest win rate with</span>${renderSummaryPlayerLink(bestWith)}</div>
+      <div><span>Highest win rate with</span>${renderSummaryPlayerLink(bestWith)}</div>
       <div><span>Worst win rate with</span>${renderSummaryPlayerLink(worstWith)}</div>
       <div><span>Best win rate against</span>${renderSummaryPlayerLink(bestAgainst)}</div>
       <div><span>Worst win rate against</span>${renderSummaryPlayerLink(worstAgainst)}</div>
