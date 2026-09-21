@@ -404,7 +404,7 @@ function renderSummaryPlayerLink(rec) {
   if (!rec) return '<span class="profile-summary-coplay-value stat-formula">–</span>';
   const slug = buildPlayerSlug(rec.name) || rec.identityKey;
   const pct = Math.round(rec.winRate * 100);
-  return `<span class="profile-summary-coplay-value"><a href="/player/${slug}" class="player-link" data-player-key="${escapeHtml(slug)}">${renderNameWithTag(rec.name)}</a> <span class="stat-formula">(${pct}%, ${rec.games}games)</span></span>`;
+  return `<span class="profile-summary-coplay-value"><a href="/player/${slug}" class="player-link" data-player-key="${escapeHtml(slug)}">${renderNameWithTag(rec.name)}</a> <span class="stat-formula">(${pct}%, ${rec.games} g)</span></span>`;
 }
 
 // Share of this player's games spent in each role. Only games with a role
