@@ -6,6 +6,8 @@ import {
   getRankTier,
   renderChampionIcon,
   renderBanList,
+  renderRoleIcon,
+  renderRoleLabel,
   ROLES,
   sortByRole,
   buildPlayerSlug,
@@ -279,10 +281,8 @@ function buildChartHtml(history, containerWidth = 0) {
       </svg>
     </div>
     <div class="profile-chart-legend">
-      <span><i style="background:#2b6cb0"></i> TrueSkill (skill estimate)</span>
       <span><i style="background:#2e7d32"></i> win</span>
       <span><i style="background:#c62828"></i> loss</span>
-      <span><i style="background:transparent;border-top:2px dashed #bbb;width:12px;height:0;border-radius:0;"></i> new tournament</span>
     </div>`;
 }
 
@@ -411,6 +411,9 @@ function renderSummaryPlayerLink(rec) {
 // recorded count -- a game with no Role in the CSV isn't "no role", it's
 // unknown -- so the percentages always add to 100 over the games we know about.
 // Returns "" when no game has a role, so profiles without role data show nothing.
+// Full role names for text ("Supp" is stored, "Support" is shown).
+const ROLE_NAMES = { Top: "Top", Jungle: "Jungle", Mid: "Mid", Bot: "Bot", Supp: "Support" };
+
 function renderRoleBreakdown(history) {
   const counts = new Map(ROLES.map((role) => [role, 0]));
   let total = 0;
@@ -833,6 +836,7 @@ function buildHistoryTableHtml(historyEntries) {
   if (!historyEntries.length) {
     return "<p>No matching games.</p>";
   }
+  const showRole = !!profileSearch?.historyHasRoles;
   const rows = historyEntries
     .map((entry, idx) => {
       const outcomeClass =
@@ -854,6 +858,9 @@ function buildHistoryTableHtml(historyEntries) {
         ]),
       );
       const hasDetails = (entry.details || []).length > 0;
+      // Someone in this game has a role -> players without one get an empty
+      // icon slot so the names still line up.
+      const gameHasRoles = (entry.details || []).some((d) => d.role);
       const gameHasBans =
         (entry.bans?.own?.length || 0) + (entry.bans?.opponent?.length || 0) > 0;
       const rosterTable = (team, name, bans) => {
@@ -874,7 +881,7 @@ function buildHistoryTableHtml(historyEntries) {
             const nameCell = slug
               ? `<a href="/player/${slug}" class="player-link" data-player-key="${escapeHtml(slug)}">${escapeHtml(member.displayName)}</a>`
               : escapeHtml(member.displayName);
-            return `<tr><td>${nameCell}</td><td>${renderTrueSkillValue(member.conservativeRating)}</td>${
+            return `<tr><td>${renderRoleIcon(detail?.role, { reserveSpace: gameHasRoles })}${nameCell}</td><td>${renderTrueSkillValue(member.conservativeRating)}</td>${
               hasDetails
                 ? `<td>${detail ? renderChampionIcon(detail.champion) : "–"}</td><td>${detail?.kills ?? "–"}</td><td>${detail?.deaths ?? "–"}</td><td>${detail?.assists ?? "–"}</td>`
                 : ""
@@ -906,6 +913,7 @@ function buildHistoryTableHtml(historyEntries) {
       // next to a two- or three-digit number. Pred. Win % isn't repeated
       // here since it now lives inline under Result on every screen size.
       const extraStatsHtml = `<div class="match-extra-stats">
+          ${showRole && playerDetail?.role ? `<div><span>Role</span><strong>${escapeHtml(ROLE_NAMES[playerDetail.role] || playerDetail.role)}</strong></div>` : ""}
           <div><span>Captain</span><strong>${escapeHtml(entry.ownTeam?.name || "–")}</strong></div>
           <div><span>Opponent</span><strong>${escapeHtml(entry.opponent || "–")}</strong></div>
           <div><span>Your Team Avg</span><strong>${entry.ownTeam?.avgConservativeRating ?? "–"}</strong></div>
@@ -931,6 +939,7 @@ function buildHistoryTableHtml(historyEntries) {
         <span class="cell-primary">${escapeHtml(entry.ownTeam?.name || "–")}</span>
         <span class="cell-secondary">vs ${escapeHtml(entry.opponent || "–")}</span>
       </td>
+      ${showRole ? `<td class="col-secondary col-role">${renderRoleLabel(playerDetail?.role)}</td>` : ""}
       <td>${playerDetail ? renderChampionIcon(playerDetail.champion) : "–"}</td>
       <td>${playerDetail ? `${playerDetail.kills ?? "–"}/${playerDetail.deaths ?? "–"}/${playerDetail.assists ?? "–"}` : "–"}</td>
       <td class="col-result">
@@ -943,10 +952,11 @@ function buildHistoryTableHtml(historyEntries) {
       </td>
       <td class="col-secondary col-trueskill">
         <span class="cell-primary">${renderTrueSkillValue(entry.conservativeRating)} <span class="${changeClass}">${changeLabel}</span></span>
+        <span class="cell-secondary">μ${entry.mu ?? "–"} σ${entry.sigma ?? "–"}</span>
       </td>
     </tr>
     <tr id="${rosterId}" class="roster-detail-row" hidden>
-      <td colspan="8">
+      <td colspan="${showRole ? 9 : 8}">
         <div class="roster-detail">
           ${rosterTable(entry.ownTeam, entry.ownTeam?.name || "Your team", entry.bans?.own)}
           ${rosterTable(entry.opponentTeam, entry.opponentName || "Opponent", entry.bans?.opponent)}
@@ -956,7 +966,7 @@ function buildHistoryTableHtml(historyEntries) {
     </tr>`;
     })
     .join("");
-  return `<table class="profile-history-table"><thead><tr><th class="col-toggle"><span class="sr-only">Expand</span></th><th class="col-match">Match</th><th class="col-secondary col-matchup">Matchup</th><th>Champion</th><th>K/D/A</th><th class="col-result">Result</th><th class="col-secondary col-ratings">Avg Rating</th><th class="col-secondary col-trueskill">TrueSkill</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="profile-history-table"><thead><tr><th class="col-toggle"><span class="sr-only">Expand</span></th><th class="col-match">Match</th><th class="col-secondary col-matchup">Matchup</th>${showRole ? '<th class="col-secondary col-role">Role</th>' : ""}<th>Champion</th><th>K/D/A</th><th class="col-result">Result</th><th class="col-secondary col-ratings">Avg Rating</th><th class="col-secondary col-trueskill">TrueSkill</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 // Every teammate/opponent this player's own match history has ever
@@ -1021,6 +1031,10 @@ function renderPlayerProfileContent(player, containerWidth) {
     championStats,
     championExtras,
     championSort: { column: null, dir: "desc" },
+    // The match history's Role column only appears for players with at least
+    // one game that has a role recorded (career-wide, so filtering the table
+    // never makes the column come and go).
+    historyHasRoles: history.some((e) => e.playerDetails?.[0]?.role),
     displayedChampionStats: championStats,
     teammates,
     opponents,

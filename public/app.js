@@ -14,6 +14,7 @@ import {
   seasonRankLocal,
   renderChampionIcon,
   renderBanList,
+  renderRoleIcon,
   sortByRole,
   buildPlayerSlug,
 } from "./js/utils.js";
@@ -481,6 +482,7 @@ async function loadtrueskillData(forceRefresh) {
   const players = Array.isArray(data.players) ? data.players : [];
   const funFacts = data.funFacts || { staticCutoffs: [] };
   latestTrueskillPlayers = players;
+  refreshPlayerSearches();
   buildPastDraftOptions(document.getElementById("pastDraftsOptgroup"));
   setRankTiers(funFacts.staticCutoffs || []);
   document.getElementById("trueskill-fun-facts").innerHTML =
@@ -489,24 +491,33 @@ async function loadtrueskillData(forceRefresh) {
   trueskillLoaded = true;
 }
 
-// ==================== TrueSkill tab: player search ====================
-// The primary way to find a specific player on this tab -- same
-// autocomplete pattern as the profile page's "played with/against"
-// search (same CSS, same interaction), but selecting a result navigates
+// ==================== Player search (TrueSkill tab + profile page) ====================
+// The primary way to find a specific player: an autocomplete over every player
+// the TrueSkill data knows about (same CSS and interaction as the profile
+// page's "played with/against" search), where picking a result navigates
 // straight to that player's profile instead of filtering rows in place.
-// Uses a distinct suggestion class name (.trueskill-search-suggestion,
-// not .profile-search-suggestion) so this doesn't also trigger
-// player-profile.js's own global click handler for its search.
-function trueskillSearchDropdown(query) {
-  const dropdown = document.getElementById("trueskillSearchDropdown");
-  if (!dropdown) return;
-  const q = query.trim().toLowerCase();
+//
+// Two instances share this code: the TrueSkill tab's search box, and the box
+// on the profile page itself (so you can hop between players without going
+// back first). Both use the .trueskill-search-suggestion class, not
+// .profile-search-suggestion, so neither also triggers player-profile.js's own
+// global click handler for its "played with/against" search.
+const playerSearches = [];
+
+function playerSearchDropdown({ input, dropdown }) {
+  const q = input.value.trim().toLowerCase();
   if (!q) {
     dropdown.hidden = true;
     dropdown.innerHTML = "";
     return;
   }
-  const matches = (latestTrueskillPlayers || [])
+  if (!latestTrueskillPlayers.length) {
+    // A direct load of a /player/... link: the player list is still on its way.
+    dropdown.innerHTML = `<div class="profile-search-empty">Loading players…</div>`;
+    dropdown.hidden = false;
+    return;
+  }
+  const matches = latestTrueskillPlayers
     .filter((p) => (p.group || "").toLowerCase().includes(q))
     .sort((a, b) => (a.group || "").localeCompare(b.group || ""))
     .slice(0, 8);
@@ -521,15 +532,31 @@ function trueskillSearchDropdown(query) {
   dropdown.hidden = false;
 }
 
-function initTrueskillSearch() {
-  const input = document.getElementById("trueskillSearchInput");
-  const dropdown = document.getElementById("trueskillSearchDropdown");
-  const clearBtn = document.getElementById("trueskillSearchClear");
-  if (!input || !dropdown) return;
+// `clearOnSelect`: empty the box after navigating. Right for the profile-page
+// instance, which stays on screen for the next search; the TrueSkill tab's
+// instance is left as typed, as it always was.
+function initPlayerSearch({ inputId, clearId, dropdownId, clearOnSelect = false }) {
+  const input = document.getElementById(inputId);
+  const dropdown = document.getElementById(dropdownId);
+  const clearBtn = document.getElementById(clearId);
+  if (!input || !dropdown || !clearBtn) return;
+  const search = { input, dropdown };
+  playerSearches.push(search);
+
+  const reset = () => {
+    input.value = "";
+    clearBtn.hidden = true;
+    dropdown.hidden = true;
+    dropdown.innerHTML = "";
+  };
+  const go = (slug) => {
+    loadPlayerProfilePage(slug, { push: true });
+    if (clearOnSelect) reset();
+  };
 
   input.addEventListener("input", () => {
     clearBtn.hidden = input.value.trim() === "";
-    trueskillSearchDropdown(input.value);
+    playerSearchDropdown(search);
   });
 
   input.addEventListener("keydown", (e) => {
@@ -540,28 +567,46 @@ function initTrueskillSearch() {
     if (e.key === "Enter") {
       e.preventDefault();
       const first = dropdown.querySelector(".trueskill-search-suggestion");
-      if (first) loadPlayerProfilePage(first.dataset.slug, { push: true });
+      if (first) go(first.dataset.slug);
     }
   });
 
   clearBtn.addEventListener("click", () => {
-    input.value = "";
-    clearBtn.hidden = true;
-    dropdown.hidden = true;
-    dropdown.innerHTML = "";
+    reset();
     input.focus();
   });
 
   dropdown.addEventListener("click", (e) => {
     const suggestion = e.target.closest(".trueskill-search-suggestion");
-    if (!suggestion) return;
-    loadPlayerProfilePage(suggestion.dataset.slug, { push: true });
+    if (suggestion) go(suggestion.dataset.slug);
   });
 
   document.addEventListener("click", (e) => {
-    if (!e.target.closest("#trueskillSearchInput") && !e.target.closest("#trueskillSearchDropdown")) {
+    if (!e.target.closest(`#${inputId}`) && !e.target.closest(`#${dropdownId}`)) {
       dropdown.hidden = true;
     }
+  });
+}
+
+// Once the player list arrives, refresh any dropdown someone already typed
+// into while it was still loading.
+function refreshPlayerSearches() {
+  for (const search of playerSearches) {
+    if (search.input.value.trim()) playerSearchDropdown(search);
+  }
+}
+
+function initTrueskillSearch() {
+  initPlayerSearch({
+    inputId: "trueskillSearchInput",
+    clearId: "trueskillSearchClear",
+    dropdownId: "trueskillSearchDropdown",
+  });
+  initPlayerSearch({
+    inputId: "profileJumpSearchInput",
+    clearId: "profileJumpSearchClear",
+    dropdownId: "profileJumpSearchDropdown",
+    clearOnSelect: true,
   });
 }
 
@@ -2304,6 +2349,9 @@ function renderMatchRosterDetail(row) {
     (row.match_details || []).map((detail) => [normalizePlayer(detail.player), detail]),
   );
   // Top -> Supp when roles were recorded for this game.
+  // Someone in this match has a role -> players without one get an empty icon
+  // slot so the names still line up.
+  const matchHasRoles = (row.match_details || []).some((d) => d.role);
   const rosterList = (team) =>
     sortByRole(
       team?.roster || [],
@@ -2313,7 +2361,7 @@ function renderMatchRosterDetail(row) {
       const detailCells = row.match_details?.length
         ? `<td>${detail ? renderChampionIcon(detail.champion) : "–"}</td><td>${detail?.kills ?? "–"}</td><td>${detail?.deaths ?? "–"}</td><td>${detail?.assists ?? "–"}</td>`
         : "";
-      return `<tr><td>${escapeHtml(member.displayName)}</td><td>${renderTrueSkillValue(member.conservativeRating, member.mu)}</td>${detailCells}</tr>`;
+      return `<tr><td>${renderRoleIcon(detail?.role, { reserveSpace: matchHasRoles })}${escapeHtml(member.displayName)}</td><td>${renderTrueSkillValue(member.conservativeRating, member.mu)}</td>${detailCells}</tr>`;
     }).join("");
   // Bans are shown for both teams as soon as either has any recorded, so a
   // team with none reads "–" instead of just looking like data is missing.

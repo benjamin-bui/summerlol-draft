@@ -2149,3 +2149,44 @@ th[data-champion-sort]:focus-visible {
 .profile-champions-table th[data-champion-sort]::after {
   margin-left: 2px;
 }
+
+/* Role icon just left of a player's name in match detail rosters. The slot is a
+   fixed size whether or not it holds an icon, so names line up in a roster
+   where only some players have a role. */
+.role-icon-slot {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.role-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Back button + player search, side by side across the top of a profile. */
+.player-profile-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.player-profile-topbar .player-profile-back {
+  margin-bottom: 0;
+}
+.player-profile-topbar .profile-search-box {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+/* Role column in the profile's match history. */
+.profile-history-table .col-role {
+  white-space: nowrap;
+}
+.role-label {
+  vertical-align: middle;
+}

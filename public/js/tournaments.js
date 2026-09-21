@@ -14,6 +14,7 @@ import {
   buildPlayerSlug,
   renderChampionIcon,
   renderBanList,
+  renderRoleIcon,
   renderTrueSkillValue,
   sortByRole,
 } from "./utils.js";
@@ -417,12 +418,14 @@ function renderTeamsBlock(t) {
 
 // ----------------------------------------------------------------- matches
 
-function renderMatchRosterTable(side, won, hasDetails, showBans) {
+// `hasRoles`: someone in this match (either team) has a role, so players
+// without one get an empty icon slot and the names still line up.
+function renderMatchRosterTable(side, won, hasDetails, showBans, hasRoles) {
   // Top -> Supp when roles were recorded for this game.
   const rows = sortByRole(side.roster, (p) => p.role)
     .map(
       (p) => `<tr${championFilterKey && p.championKey === championFilterKey ? ' class="tournament-picked"' : ""}>
-      <td>${playerLink(p.displayName, p.identityKey)}</td>
+      <td>${renderRoleIcon(p.role, { reserveSpace: hasRoles })}${playerLink(p.displayName, p.identityKey)}</td>
       <td>${renderTrueSkillValue(p.conservativeRating)}</td>
       ${
         hasDetails
@@ -484,6 +487,7 @@ function renderMatchesBlock(t) {
   const rows = shown
     .map(({ m, i }) => {
       const detailId = `tmatch-detail-${i}`;
+      const matchHasRoles = [...m.team1.roster, ...m.team2.roster].some((p) => p.role);
       const t1Won = m.winner === "team1";
       const t2Won = m.winner === "team2";
       const winnerSide = t1Won ? m.team1 : t2Won ? m.team2 : null;
@@ -505,8 +509,8 @@ function renderMatchesBlock(t) {
     <tr id="${detailId}" class="roster-detail-row" hidden>
       <td colspan="7">
         <div class="roster-detail">
-          ${renderMatchRosterTable(m.team1, m.winner === "draw" ? null : t1Won, m.hasDetails, m.hasBans)}
-          ${renderMatchRosterTable(m.team2, m.winner === "draw" ? null : t2Won, m.hasDetails, m.hasBans)}
+          ${renderMatchRosterTable(m.team1, m.winner === "draw" ? null : t1Won, m.hasDetails, m.hasBans, matchHasRoles)}
+          ${renderMatchRosterTable(m.team2, m.winner === "draw" ? null : t2Won, m.hasDetails, m.hasBans, matchHasRoles)}
         </div>
       </td>
     </tr>`;

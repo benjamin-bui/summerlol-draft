@@ -79,6 +79,40 @@ export function renderBanList(bans, { highlightKey = null } = {}) {
 // src/lib/match-detail-fields.js).
 export const ROLES = ["Top", "Jungle", "Mid", "Bot", "Supp"];
 
+// Role icons are looked up in public/icons/roles/, one file per role named by
+// the lowercased role: top, jungle, mid, bot, supp (so top.svg, jungle.svg,
+// mid.svg, bot.svg, supp.svg). Change the extension here if the files aren't SVGs.
+const ROLE_ICON_DIR = "/icons/roles";
+const ROLE_ICON_EXT = "svg";
+const ROLE_LABELS = { Top: "Top", Jungle: "Jungle", Mid: "Mid", Bot: "Bot", Supp: "Support" };
+
+// The role's icon, to sit just left of a player's name. It goes in a fixed-width
+// slot so names line up down a roster:
+//   - a player with a role gets the icon in the slot;
+//   - a player without one gets an EMPTY slot -- but only when `reserveSpace` is
+//     true, which callers set when someone else in the same match has a role;
+//   - in a match where nobody has a role there are no slots at all, so those
+//     games look exactly as they did before roles existed.
+// A missing icon file just leaves its slot empty (the broken image removes
+// itself), so the alignment holds either way.
+export function renderRoleIcon(role, { reserveSpace = false } = {}) {
+  const known = ROLES.includes(role);
+  if (!known && !reserveSpace) return "";
+  const label = known ? ROLE_LABELS[role] : "";
+  const icon = known
+    ? `<img src="${ROLE_ICON_DIR}/${role.toLowerCase()}.${ROLE_ICON_EXT}" alt="${label}" title="${label}" class="role-icon" onerror="this.remove()" />`
+    : "";
+  return `<span class="role-icon-slot">${icon}</span>`;
+}
+
+// The role as a table cell's content: its icon followed by its name, or "–"
+// when there's no role. Unlike renderRoleIcon this always shows the name, so the
+// cell still reads correctly if an icon file is missing.
+export function renderRoleLabel(role) {
+  if (!ROLES.includes(role)) return "–";
+  return `${renderRoleIcon(role)}<span class="role-label">${ROLE_LABELS[role]}</span>`;
+}
+
 // Orders a team's roster Top / Jungle / Mid / Bot / Supp when roles are known.
 // `roleOf(member)` returns that member's role or a falsy value. Anyone without
 // a recorded role goes after those with one, in their original order, so a
