@@ -530,7 +530,7 @@ function renderMatchesBlock(t) {
           <th>Team 1</th>
           <th>Team 2</th>
           <th>Winner</th>
-          <th class="col-narrow" title="Pre-match predicted win probability of the winner">Pred. win %</th>
+          <th class="col-narrow" title="Pre-match predicted win probability of the winner">Result Prob.</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>

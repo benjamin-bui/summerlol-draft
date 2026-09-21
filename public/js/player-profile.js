@@ -404,7 +404,7 @@ function renderSummaryPlayerLink(rec) {
   if (!rec) return '<span class="profile-summary-coplay-value stat-formula">–</span>';
   const slug = buildPlayerSlug(rec.name) || rec.identityKey;
   const pct = Math.round(rec.winRate * 100);
-  return `<span class="profile-summary-coplay-value"><a href="/player/${slug}" class="player-link" data-player-key="${escapeHtml(slug)}">${renderNameWithTag(rec.name)}</a> <span class="stat-formula">(${pct}%, ${rec.games} g)</span></span>`;
+  return `<span class="profile-summary-coplay-value"><a href="/player/${slug}" class="player-link" data-player-key="${escapeHtml(slug)}">${renderNameWithTag(rec.name)}</a> <span class="stat-formula">(${pct}%, ${rec.games}g)</span></span>`;
 }
 
 // Share of this player's games spent in each role. Only games with a role
@@ -462,7 +462,7 @@ function renderSummaryPanelBlock(player, tournaments, championStats, history) {
     </div>
     ${renderRoleBreakdown(history)}
     <div class="profile-summary-coplay">
-      <div><span>Best win rate with</span>${renderSummaryPlayerLink(bestWith)}</div>
+      <div><span>eest win rate with</span>${renderSummaryPlayerLink(bestWith)}</div>
       <div><span>Worst win rate with</span>${renderSummaryPlayerLink(worstWith)}</div>
       <div><span>Best win rate against</span>${renderSummaryPlayerLink(bestAgainst)}</div>
       <div><span>Worst win rate against</span>${renderSummaryPlayerLink(worstAgainst)}</div>
@@ -910,7 +910,7 @@ function buildHistoryTableHtml(historyEntries) {
       // in style.css) and surface instead in the expanded roster detail's
       // "extra stats" block, so nothing is actually lost on mobile -- it's
       // one tap away instead of extra columns that are mostly blank space
-      // next to a two- or three-digit number. Pred. Win % isn't repeated
+      // next to a two- or three-digit number. Win Prob. % isn't repeated
       // here since it now lives inline under Result on every screen size.
       const extraStatsHtml = `<div class="match-extra-stats">
           ${showRole && playerDetail?.role ? `<div><span>Role</span><strong>${escapeHtml(ROLE_NAMES[playerDetail.role] || playerDetail.role)}</strong></div>` : ""}
@@ -944,7 +944,7 @@ function buildHistoryTableHtml(historyEntries) {
       <td>${playerDetail ? `${playerDetail.kills ?? "–"}/${playerDetail.deaths ?? "–"}/${playerDetail.assists ?? "–"}` : "–"}</td>
       <td class="col-result">
         <span class="cell-primary ${outcomeClass}">${escapeHtml(entry.outcome || "–")}</span>
-        <span class="cell-secondary">${predWinPct}% pred.</span>
+        <span class="cell-secondary">${predWinPct}% Win Prob.</span>
       </td>
       <td class="col-secondary col-ratings">
         <span class="cell-primary">${entry.ownTeam?.avgConservativeRating ?? "–"}</span>
