@@ -1,63 +1,66 @@
 # Summer LoL Draft
 
-A mostly-for-fun look at draft/TrueSkill performance across the Williams
-College Summer/Winter LoL tournaments. Two parts:
+A React and Express application for exploring draft and match data from
+Williams College League of Legends tournaments. The backend owns the SQLite
+database, API, CSV ingestion, TrueSkill calculations, and optional Riot API
+identity sync. The frontend is a Vite app built and served by the backend.
 
-- **`backend/`** -- Express + SQLite API and data pipeline (ingestion,
-  TrueSkill computation, Riot API sync). See `backend/README.md` for the
-  data model, tab-by-tab behavior, CSV format, and the player-identity
-  system. Unchanged from before.
-- **`frontend/`** -- React (Vite) app that renders the site, built into
-  `backend/public/` so the backend can serve it as static files. See
-  `frontend/README.md` for its structure. This is a from-scratch port of
-  what used to be hand-rolled vanilla JS in `backend/public/`.
+## Requirements
 
-## Quickest path: Docker
+- Docker Compose for the container workflow.
+- Node.js 22.12 or newer for local frontend development and tests. The
+  backend Docker image currently uses Node 20.
 
-```
-cp backend/.env.example backend/.env   # fill in RIOT_API_KEY etc. if you want live Riot lookups
-docker compose up -d --build
-```
+## Run with Docker
 
-Open http://localhost:3000. The image is built in two stages (see
-`Dockerfile`): the frontend is compiled first, then baked into the backend
-image alongside the committed SQLite DB. One image, one container, no
-separate static host.
+Compose requires an environment file even when Riot integration is unused:
 
-Data lives in `backend/data/`, bind-mounted into the container (see
-`docker-compose.yml`) so it survives image rebuilds. Run as your own host
-UID so those files stay editable without `sudo`:
-
-```
-UID=$(id -u) GID=$(id -g) docker compose up -d --build
+```sh
+cp backend/.env.example backend/.env
+UID=$(id -u) GID=$(id -g) docker compose up --build
 ```
 
-## Developing without Docker
+Open <http://localhost:3000>. The container builds the frontend and serves it
+with the API. `backend/data/` is mounted into the container so the database
+and local data survive image rebuilds. The UID/GID settings keep files
+created by the container editable by the current Linux user.
 
-Run both halves separately, each against the backend's API on port 3000:
+## Develop Locally
 
-```
-cd backend && npm install && npm start        # http://localhost:3000 (API + last-built frontend)
-cd frontend && npm install && npm run dev     # http://localhost:5173 (live-reloading frontend, proxies /api to :3000)
-```
+Install dependencies once in each package:
 
-Do your frontend work against `:5173`; `:3000` keeps serving whatever the
-frontend's last `npm run build` produced until you build again.
-
-To build the frontend into the backend's `public/` folder without Docker
-(e.g. to test the production build locally, or to deploy without
-containers):
-
-```
-cd frontend && npm run build
-cd ../backend && npm start
+```sh
+(cd backend && npm ci)
+(cd frontend && npm ci)
 ```
 
-## Repo layout
+Run the backend and frontend in separate terminals. From the repository root:
 
+```sh
+cd backend && npm start
 ```
-Dockerfile              # multi-stage: builds frontend/, bakes it into backend/
-docker-compose.yml
-backend/                 # Express + SQLite -- see backend/README.md
-frontend/                # React (Vite) -- see frontend/README.md
+
+```sh
+cd frontend && npm run dev
 ```
+
+Use <http://localhost:5173> for frontend work; Vite proxies `/api` and
+`/icons` to the backend at port 3000. The backend also serves the last built
+frontend at <http://localhost:3000>.
+
+## Verify Changes
+
+```sh
+(cd backend && npm test)
+(cd frontend && npm run lint && npm test)
+```
+
+Build the production frontend locally with `cd frontend && npm run build`.
+This writes generated assets into `backend/public/`; edit source files under
+`frontend/src/`, not generated output. The Docker build uses a separate
+temporary output directory.
+
+## Project Guides
+
+- [Backend development, data formats, and scripts](backend/README.md)
+- [Frontend development, tests, and fixtures](frontend/README.md)

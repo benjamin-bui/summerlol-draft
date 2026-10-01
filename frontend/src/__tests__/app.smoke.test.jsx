@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 
 // This suite renders the real app (with a real DOM via jsdom) against
@@ -18,6 +18,10 @@ function renderApp(initialPath = "/") {
     </MemoryRouter>,
   );
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("App smoke test against real data", () => {
   it("loads the TrueSkill tab with real rows and no console errors", async () => {

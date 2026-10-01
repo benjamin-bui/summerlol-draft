@@ -1,72 +1,57 @@
-# summerlol-draft frontend
+# Frontend
 
-React (Vite) port of the old vanilla-JS `public/` front-end. The Express +
-SQLite backend (`../summerlol-draft/server.js`) is untouched -- this only
-replaces how the pages are built and rendered.
+React application built with Vite. It consumes the API from the sibling
+`../backend/` service; the production bundle is served from
+`../backend/public/`.
 
-## Develop
+## Development
 
+Use Node.js 22.12 or newer with npm:
+
+```sh
+npm ci
+npm run dev
 ```
-npm install
-npm run dev          # http://localhost:5173, proxies /api and /icons to :3000
-```
 
-Run the backend separately on port 3000 (`cd ../summerlol-draft && npm start`)
-while developing.
+Start the backend separately from `../backend/` on port 3000. Vite runs on
+port 5173 and proxies `/api` and `/icons` to that backend.
 
-## Build for production
+## Build
 
-```
+```sh
 npm run build
 ```
 
-Builds straight into `../summerlol-draft/public/`, overwriting the old
-`index.html`/`app.js`/`js/*.js` (icons and any other static assets in
-`public/` are left alone). Deploying is then just `npm start` in the backend
--- no separate static host needed.
+The local build writes to `../backend/public/`. This directory contains
+generated output; make UI changes under `src/`. The root Dockerfile sets
+`VITE_OUT_DIR` so its multi-stage build does not modify the working tree.
 
-## Test
+## Tests and Lint
 
-```
-npm run lint   # eslint, including react-hooks rules
-npm test       # vitest + @testing-library/react, jsdom
-```
-
-The test suite in `src/__tests__/` mounts the real app against snapshots of
-actual production API responses (`test-fixtures/`, mocked via `global.fetch`
-in `src/__tests__/setup.js`) and clicks through every tab, so it exercises
-real data-fetch effects and re-renders, not just static markup. If the
-backend's data shapes change, re-fetch the fixtures:
-
-```
-cd ../summerlol-draft && npm start &
-curl -s http://localhost:3000/api/trueskill > ../frontend/test-fixtures/trueskill.json
-curl -s http://localhost:3000/api/draft-analysis > ../frontend/test-fixtures/draftanalysis.json
-curl -s http://localhost:3000/api/tournaments > ../frontend/test-fixtures/tournaments.json
-curl -s http://localhost:3000/api/raw > ../frontend/test-fixtures/raw.json
-curl -s http://localhost:3000/api/raw-matches > ../frontend/test-fixtures/rawmatches.json
-curl -s http://localhost:3000/api/meta > ../frontend/test-fixtures/meta.json
-curl -s http://localhost:3000/api/presets > ../frontend/test-fixtures/presets.json
-curl -s "http://localhost:3000/api/player/<some-slug>" > ../frontend/test-fixtures/player.json
+```sh
+npm run lint
+npm test
 ```
 
-## Structure
+Vitest runs in jsdom. The current smoke suite mounts the app against API
+response fixtures in `test-fixtures/`; `src/__tests__/setup.js` mocks
+`fetch`, `ResizeObserver`, and `matchMedia`. These tests exercise component
+rendering, data loading, tab navigation, and selected user flows. They do not
+replace browser-level visual or interaction testing.
 
-- `src/components/table/DataTable.jsx` -- the reusable table (sorting,
-  per-column filters, show/hide columns, pagination, sticky columns,
-  expandable rows) used by every tab that shows tabular data. This replaces
-  the old `public/js/table-utils.js`, which each tab used to wire up by hand.
-- `src/components/shared/` -- small presentational pieces reused across tabs
-  and the player profile page (`PlayerLink`, `ChampionIcon`, `RankBadge`,
-  `TrueSkillValue`, `NameFilterBox`, `PlayerSearchBox`, ...).
-- `src/pages/` -- one file per tab, plus the player profile pages.
-- `src/charts/DraftScatterChart.jsx` -- the Draft IQ vs. win-rate scatter
-  plot (custom SVG: regression line, drag-to-zoom, grouping, tooltip).
-- `src/utils/` -- pure logic ported from the old `utils.js`/`player-profile.js`
-  (formatting, name matching, profile stat computation) -- kept
-  framework-agnostic so it's covered by `test-fixtures`-backed unit checks
-  independent of rendering.
-- `src/style.css` -- unchanged copy of the old `public/style.css`. Every
-  component uses the same class names the old HTML did, so today's look is
-  preserved; restyling later is just editing this file and/or the JSX, not
-  untangling render logic first.
+When an API response shape intentionally changes, update the relevant
+fixtures from a running local backend and review the resulting JSON before
+committing it. Fixtures should represent the response contract required by
+the UI, not unrelated database changes.
+
+## Source Layout
+
+- `src/App.jsx` and `src/main.jsx`: app shell and client entry point.
+- `src/pages/`: tab and profile views.
+- `src/components/`: shared controls and table components.
+- `src/api/client.js`: API requests.
+- `src/charts/`: chart components.
+- `src/utils/`: formatting, filtering, and profile calculations.
+- `src/__tests__/`: Vitest tests and shared setup.
+- `test-fixtures/`: API response fixtures used by tests.
+- `src/style.css`: application styles.

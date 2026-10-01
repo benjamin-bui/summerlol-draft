@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "test": "node --test",
     "ingest-csv": "node src/scripts/csv-to-sqlite.js",
     "watch-csv": "node src/scripts/watch-csv.js",
     "ingest-matches": "node src/scripts/ingest-matches.js",
