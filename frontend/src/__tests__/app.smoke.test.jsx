@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -58,6 +58,7 @@ describe("App smoke test against real data", () => {
     const activePanel = () => within(document.querySelector(".tab-panel.active"));
     const tabChecks = [
       ["Tournaments", () => activePanel().findByText("Summary", {}, { timeout: 10000 })],
+      ["Champions", () => activePanel().findByRole("columnheader", { name: /Champion/ }, { timeout: 10000 })],
       ["Draft vs. TrueSkill", () => activePanel().findByRole("heading", { name: "Draft IQ" }, { timeout: 10000 })],
       ["Team Balance", () => activePanel().findByRole("columnheader", { name: /Captain/ }, { timeout: 10000 })],
       ["Mock Draft", () => activePanel().findByRole("heading", { name: "Mock Draft" }, { timeout: 10000 })],
@@ -83,6 +84,31 @@ describe("App smoke test against real data", () => {
     expect(errSpy).not.toHaveBeenCalled();
     errSpy.mockRestore();
   });
+
+  it("expands a champion's games and opens the selected match in Tournaments", async () => {
+    const user = userEvent.setup();
+    renderApp("/?tab=champions");
+    const championPanel = within(document.querySelector("#tab-champions.active"));
+    await championPanel.findByRole("columnheader", { name: /Champion/ }, { timeout: 10000 });
+
+    const championButton = document.querySelector("#tab-champions.active .champions-table-wrap .table-expand-link");
+    expect(championButton).toBeTruthy();
+    await user.click(championButton);
+    await championPanel.findByRole("columnheader", { name: "Opponent champion" }, { timeout: 10000 });
+    const gameButton = document.querySelector("#tab-champions.active .champions-games-table tbody button");
+    expect(gameButton).toBeTruthy();
+
+    const gameRow = gameButton.closest("tr");
+    const matchKey = gameRow.dataset.matchKey;
+    await user.click(gameButton);
+
+    const tournamentPanel = within(document.querySelector("#tab-tournaments.active"));
+    await tournamentPanel.findByText("Summary", {}, { timeout: 10000 });
+    await waitFor(() => {
+      const matchRow = document.querySelector(`#tab-tournaments tr[data-match-key="${matchKey}"]`);
+      expect(matchRow?.querySelector(".roster-toggle")).toHaveAttribute("aria-expanded", "true");
+    });
+  }, 30000);
 
   it("Draft IQ tab renders captain rows and opens the draft-history modal", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});

@@ -5,6 +5,7 @@ import { useTheme } from "./hooks/useTheme";
 import { routeState } from "./utils/routeState";
 import TrueSkillTab from "./pages/TrueSkillTab";
 import TournamentsTab from "./pages/TournamentsTab";
+import ChampionsTab from "./pages/ChampionsTab";
 import DraftIQTab from "./pages/DraftIQTab";
 import TeamBalanceTab from "./pages/TeamBalanceTab";
 import MockDraftTab from "./pages/MockDraftTab";
@@ -17,6 +18,7 @@ import SimpleProfilePage from "./pages/SimpleProfilePage";
 const TABS = [
   { key: "trueskill", label: "TrueSkill" },
   { key: "tournaments", label: "Tournaments" },
+  { key: "champions", label: "Champions" },
   { key: "draftiq", label: "Draft vs. TrueSkill" },
   { key: "teambalance", label: "Team Balance" },
   { key: "mockdraft", label: "Mock Draft" },
@@ -92,10 +94,22 @@ function MainTabs() {
       <TournamentsTab
         active={tab === "tournaments"}
         selectedTournamentId={searchParams.get("tournament")}
+        selectedMatchKey={searchParams.get("match")}
         onSelectionChange={(id) => {
           routeState.lastTournamentId = id;
           const next = new URLSearchParams(searchParams);
           if (id) next.set("tournament", id);
+          setSearchParams(next, { replace: true });
+        }}
+      />
+      <ChampionsTab
+        active={tab === "champions"}
+        onOpenMatch={(tournamentId, matchKey) => {
+          routeState.lastTournamentId = tournamentId;
+          const next = new URLSearchParams(searchParams);
+          next.set("tab", "tournaments");
+          next.set("tournament", tournamentId);
+          next.set("match", matchKey);
           setSearchParams(next, { replace: true });
         }}
       />

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { useAppData } from "../context/AppDataContext";
 import { PlayerLink, ChampionIcon, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
@@ -568,7 +568,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
   );
 }
 
-export default function TournamentsTab({ active, selectedTournamentId, onSelectionChange }) {
+export default function TournamentsTab({ active, selectedTournamentId, selectedMatchKey, onSelectionChange }) {
   const { loadTrueskill } = useAppData();
   const [tournaments, setTournaments] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -576,6 +576,7 @@ export default function TournamentsTab({ active, selectedTournamentId, onSelecti
   const [championSort, setChampionSort] = useState({ column: null, dir: "desc" });
   const [flashKey, setFlashKey] = useState(null);
   const [expandedKeys, setExpandedKeys] = useState(() => new Set());
+  const lastExternalMatchKey = useRef(null);
 
   useEffect(() => {
     if (!active || loaded) return;
@@ -608,6 +609,28 @@ export default function TournamentsTab({ active, selectedTournamentId, onSelecti
 
   const t = tournaments.find((x) => x.id === effectiveId);
 
+  useEffect(() => {
+    if (!active) {
+      lastExternalMatchKey.current = null;
+      return;
+    }
+    if (!t || !selectedMatchKey || !t.matches.some((match) => match.matchKey === selectedMatchKey)) return;
+    const selectionKey = `${t.id}::${selectedMatchKey}`;
+    if (lastExternalMatchKey.current === selectionKey) return;
+    lastExternalMatchKey.current = selectionKey;
+    setExpandedKeys((previous) => new Set(previous).add(selectedMatchKey));
+    setFlashKey(selectedMatchKey);
+    const scrollTimer = setTimeout(() => {
+      const row = [...document.querySelectorAll("tr[data-match-key]")].find((matchRow) => matchRow.dataset.matchKey === selectedMatchKey);
+      row?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    }, 80);
+    const flashTimer = setTimeout(() => setFlashKey(null), 1600);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(flashTimer);
+    };
+  }, [active, t, selectedMatchKey]);
+
   function toggleChampion(key) {
     const next = key === championFilterKey ? null : key;
     setChampionFilterKey(next);
@@ -627,8 +650,8 @@ export default function TournamentsTab({ active, selectedTournamentId, onSelecti
     setExpandedKeys((prev) => new Set(prev).add(matchKey));
     setFlashKey(matchKey);
     setTimeout(() => {
-      const row = document.querySelector(`tr[data-match-key="${CSS.escape(matchKey)}"]`);
-      row?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const row = [...document.querySelectorAll("tr[data-match-key]")].find((matchRow) => matchRow.dataset.matchKey === matchKey);
+      row?.scrollIntoView?.({ behavior: "smooth", block: "center" });
     }, 50);
     setTimeout(() => setFlashKey(null), 1500);
   }

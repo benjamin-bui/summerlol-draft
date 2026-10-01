@@ -117,7 +117,7 @@ export default function DataTable({
         <table>
           <thead>
             <tr>
-              {expandable && <th className="not-sortable" />}
+              {expandable && !expandable.hideToggle && <th className="not-sortable" />}
               {visibleColumns.map((col, i) => (
                 <HeaderCell
                   key={col.key}
@@ -142,7 +142,7 @@ export default function DataTable({
           <tbody>
             {total === 0 ? (
               <tr>
-                <td colSpan={visibleColumns.length + (expandable ? 1 : 0)} className="empty">
+                <td colSpan={visibleColumns.length + (expandable && !expandable.hideToggle ? 1 : 0)} className="empty">
                   {emptyMessage}
                 </td>
               </tr>
@@ -263,7 +263,7 @@ function RowGroup({ row, i, visibleColumns, stickyOffsets, expandable, isOpen, o
   return (
     <>
       <tr>
-        {expandable && (
+        {expandable && !expandable.hideToggle && (
           <td>
             <button className="roster-toggle" aria-expanded={isOpen} onClick={onToggle}>
               {isOpen ? "\u25bc" : "\u25b6"}
@@ -271,23 +271,44 @@ function RowGroup({ row, i, visibleColumns, stickyOffsets, expandable, isOpen, o
           </td>
         )}
         {visibleColumns.map((col, ci) => (
-          <Cell key={col.key} col={col} row={row} i={i} stickyLeft={stickyOffsets.left[ci]} stickyLast={stickyOffsets.lastIndex === ci} />
+          <Cell
+            key={col.key}
+            col={col}
+            row={row}
+            i={i}
+            stickyLeft={stickyOffsets.left[ci]}
+            stickyLast={stickyOffsets.lastIndex === ci}
+            expandable={expandable}
+            isOpen={isOpen}
+            onToggle={onToggle}
+          />
         ))}
       </tr>
       {expandable && isOpen && (
         <tr className="roster-detail-row">
-          <td colSpan={visibleColumns.length + 1}>{expandable.getDetail(row)}</td>
+          <td colSpan={visibleColumns.length + (expandable.hideToggle ? 0 : 1)}>{expandable.getDetail(row)}</td>
         </tr>
       )}
     </>
   );
 }
 
-function Cell({ col, row, i, stickyLeft, stickyLast }) {
+function Cell({ col, row, i, stickyLeft, stickyLast, expandable, isOpen, onToggle }) {
   const classes = [col.className || (col.key === "rank" ? "rank" : ""), stickyLeft != null ? "sticky-col" : "", stickyLast ? "sticky-col-last" : ""]
     .filter(Boolean)
     .join(" ");
   const style = stickyLeft != null ? { left: stickyLeft } : undefined;
+
+  if (expandable?.toggleColumn === col.key) {
+    const value = col.key === "rank" ? i + 1 : row[col.key];
+    return (
+      <td className={classes || undefined} style={style}>
+        <button type="button" className="table-expand-link" aria-expanded={isOpen} onClick={onToggle}>
+          {col.render ? col.render(value, row) : formatCell(value, col)}
+        </button>
+      </td>
+    );
+  }
 
   if (col.playerLink || col.key === "group") {
     // A plain "group" column (TrueSkill, Mock Draft) reads identityKey and
