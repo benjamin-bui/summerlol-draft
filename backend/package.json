@@ -1,0 +1,30 @@
+{
+  "name": "summerlol-draft",
+  "version": "1.5",
+  "description": "Risk-adjusted LoL draft player rankings with Riot API identity tracking",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "ingest-csv": "node src/scripts/csv-to-sqlite.js",
+    "watch-csv": "node src/scripts/watch-csv.js",
+    "ingest-matches": "node src/scripts/ingest-matches.js",
+    "ingest-match-details": "node src/scripts/ingest-match-details.js",
+    "update-champion-icons": "node src/scripts/update-champion-icons.js",
+    "bootstrap-identities": "node src/scripts/bootstrap-player-identities.js",
+    "export-pending-tags": "node src/scripts/export-pending-tags.js",
+    "import-pending-tags": "node src/scripts/import-pending-tags.js",
+    "sync-riot": "node src/scripts/run-riot-sync.js",
+    "refresh-all": "node src/scripts/refresh-all.js",
+    "check-data": "node src/scripts/check-data.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "chokidar": "^3.6.0",
+    "csv-parse": "^5.5.6",
+    "express": "^4.19.2",
+    "ts-trueskill": "^5.1.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  }
+}

@@ -3,18 +3,24 @@
 # for your setup.
 #
 # Usage:
-#   cp .env.example .env        # fill in RIOT_API_KEY etc.
+#   cp backend/.env.example backend/.env   # fill in RIOT_API_KEY etc.
 #   docker compose up -d --build
 #
+# Builds the root Dockerfile, which compiles the React frontend (frontend/)
+# and bakes it into the Express + SQLite backend (backend/) as one image --
+# see Dockerfile for details.
+#
 # Runs the container as your own host user (via UID/GID below) so files
-# in ./data — including app.db and the CSV — stay owned by you, no
+# in ./backend/data — including app.db and the CSV — stay owned by you, no
 # chown/sudo dance needed to edit the CSV between runs. Export UID/GID
-# before running compose, or set them in .env:
+# before running compose, or set them in backend/.env:
 #   UID=$(id -u) GID=$(id -g) docker compose up -d --build
 
 services:
   summerlol-draft:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: summerlol-draft
     container_name: summerlol-draft
     restart: unless-stopped
@@ -22,8 +28,8 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./data:/app/data
+      - ./backend/data:/app/data
     env_file:
-      - .env
+      - backend/.env
     environment:
       - PORT=3000

@@ -1,0 +1,26 @@
+name: Build release image
+on:
+  push:
+    tags:
+      - 'v*'
+      - '!v*-beta*'   # exclude beta tags from this trigger -- handled by the workflow above instead
+
+jobs:
+  build:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to registry
+        run: echo "${{ secrets.PACKAGE_TOKEN }}" | docker login forgejo:3000 -u "${{ secrets.REGISTRY_USER }}" --password-stdin
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Build and tag
+        run: |
+          IMAGE=forgejo:3000/${{ github.repository_owner }}/summerlol-draft
+          docker build -t $IMAGE:${{ steps.version.outputs.version }} -t $IMAGE:latest .
+      - name: Push
+        run: |
+          IMAGE=forgejo:3000/${{ github.repository_owner }}/summerlol-draft
+          docker push $IMAGE:${{ steps.version.outputs.version }}
+          docker push $IMAGE:latest
