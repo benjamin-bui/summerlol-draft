@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import DataTable from "../components/table/DataTable";
 import { ChampionIcon, RoleIcon } from "../components/shared/Cells";
@@ -219,6 +219,18 @@ export default function ChampionsTab({ active, onOpenMatch }) {
   const [selectedIds, setSelectedIds] = useState(null);
   const [selectedRoles, setSelectedRoles] = useState(() => new Set());
   const [pickerOpen, setPickerOpen] = useState(false);
+  const tournamentControlRef = useRef(null);
+
+  useEffect(() => {
+    if (!pickerOpen) return undefined;
+    function closeOnOutsideClick(event) {
+      if (tournamentControlRef.current && !tournamentControlRef.current.contains(event.target)) {
+        setPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, [pickerOpen]);
 
   useEffect(() => {
     if (!active || tournaments) return;
@@ -266,7 +278,7 @@ export default function ChampionsTab({ active, onOpenMatch }) {
   return (
     <section className={`tab-panel${active ? " active" : ""}`} id="tab-champions">
       <div className="champions-toolbar">
-        <div className="champions-tournament-control">
+        <div className="champions-tournament-control" ref={tournamentControlRef}>
           <button
             type="button"
             className="columns-btn"

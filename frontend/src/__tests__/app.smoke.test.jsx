@@ -105,6 +105,16 @@ describe("App smoke test against real data", () => {
     expect(screen.getByRole("button", { name: /Tournaments \(2\)/ })).toBeInTheDocument();
   }, 15000);
 
+  it("closes the Champions tournament filter when clicking outside it", async () => {
+    const user = userEvent.setup();
+    renderApp("/?tab=champions");
+    await user.click(await screen.findByRole("button", { name: /All tournaments/ }, { timeout: 10000 }));
+    expect(screen.getByRole("group", { name: "Filter tournaments" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("heading", { name: /Williams College Player Rankings/i }));
+    expect(screen.queryByRole("group", { name: "Filter tournaments" })).not.toBeInTheDocument();
+  }, 15000);
+
   it("expands a champion's games and opens the selected match in Tournaments", async () => {
     const user = userEvent.setup();
     renderApp("/?tab=champions");
