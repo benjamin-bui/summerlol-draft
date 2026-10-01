@@ -5,6 +5,12 @@ Williams College League of Legends tournaments. The backend owns the SQLite
 database, API, CSV ingestion, TrueSkill calculations, and optional Riot API
 identity sync. The frontend is a Vite app built and served by the backend.
 
+## Repository Hosting
+
+GitHub is a read-only mirror. The canonical repository is hosted on
+[Forgejo](https://forgejo.benbooee.com/benbooee/summerlol-draft); submit
+issues and pull requests there.
+
 ## Requirements
 
 - Docker Compose for the container workflow.
