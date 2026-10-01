@@ -85,6 +85,26 @@ describe("App smoke test against real data", () => {
     errSpy.mockRestore();
   });
 
+  it("selects only the clicked tournament on the first click from all selected", async () => {
+    const user = userEvent.setup();
+    renderApp("/?tab=champions");
+    const pickerButton = await screen.findByRole("button", { name: /All tournaments/ }, { timeout: 10000 });
+    await user.click(pickerButton);
+
+    const tournamentGroup = within(screen.getByRole("group", { name: "Filter tournaments" }));
+    const chosen = tournamentGroup.getByRole("checkbox", { name: "Summer 2026" });
+    await user.click(chosen);
+
+    expect(chosen).toBeChecked();
+    const second = tournamentGroup.getByRole("checkbox", { name: "Winter 2026" });
+    expect(second).not.toBeChecked();
+    expect(screen.getByRole("button", { name: /Tournaments \(1\)/ })).toBeInTheDocument();
+
+    await user.click(second);
+    expect(second).toBeChecked();
+    expect(screen.getByRole("button", { name: /Tournaments \(2\)/ })).toBeInTheDocument();
+  }, 15000);
+
   it("expands a champion's games and opens the selected match in Tournaments", async () => {
     const user = userEvent.setup();
     renderApp("/?tab=champions");

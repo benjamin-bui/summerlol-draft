@@ -246,6 +246,7 @@ export default function ChampionsTab({ active, onOpenMatch }) {
 
   function toggleTournament(id) {
     setSelectedIds((previous) => {
+      if (allSelected) return new Set([id]);
       const next = new Set(previous || []);
       if (next.has(id)) next.delete(id);
       else next.add(id);
