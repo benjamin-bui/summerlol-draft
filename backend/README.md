@@ -6,7 +6,7 @@ Run commands in this guide from `backend/` unless a command says otherwise.
 
 ## Local Setup
 
-Requires Node.js and npm. Install dependencies and start the API:
+Requires Node.js 22.12 or newer and npm. Install dependencies and start the API:
 
 ```sh
 npm ci

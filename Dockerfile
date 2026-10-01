@@ -4,7 +4,7 @@
 # Isolated build environment -- only frontend/ is visible here, so this
 # never touches (or depends on) whatever happens to already be sitting in
 # backend/public/ from a local `npm run build`.
-FROM node:20-alpine AS frontend-build
+FROM node:22-alpine AS frontend-build
 WORKDIR /frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
@@ -23,7 +23,7 @@ RUN npm run build
 # (a bit larger than the pure-JSON version because better-sqlite3 is a
 # native module; the build stage below compiles it if no prebuilt binary
 # matches this platform, then the toolchain is discarded from this layer)
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 

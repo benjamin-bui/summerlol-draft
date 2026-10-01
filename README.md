@@ -14,8 +14,7 @@ issues and pull requests there.
 ## Requirements
 
 - Docker Compose for the container workflow.
-- Node.js 22.12 or newer for local frontend development and tests. The
-  backend Docker image currently uses Node 20.
+- Node.js 22.12 or newer for local development, tests, and the Docker image.
 
 ## Run with Docker
 
