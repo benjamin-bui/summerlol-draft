@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -115,29 +115,20 @@ describe("App smoke test against real data", () => {
     expect(screen.queryByRole("group", { name: "Filter tournaments" })).not.toBeInTheDocument();
   }, 15000);
 
-  it("expands a champion's games and opens the selected match in Tournaments", async () => {
+  it("links each champion in the Champions tab to its profile page", async () => {
     const user = userEvent.setup();
     renderApp("/?tab=champions");
     const championPanel = within(document.querySelector("#tab-champions.active"));
     await championPanel.findByRole("columnheader", { name: /Champion/ }, { timeout: 10000 });
 
-    const championButton = document.querySelector("#tab-champions.active .champions-table-wrap .table-expand-link");
-    expect(championButton).toBeTruthy();
-    await user.click(championButton);
-    await championPanel.findByRole("columnheader", { name: "Opponent champion" }, { timeout: 10000 });
-    const gameButton = document.querySelector("#tab-champions.active .champions-games-table tbody button");
-    expect(gameButton).toBeTruthy();
-
-    const gameRow = gameButton.closest("tr");
-    const matchKey = gameRow.dataset.matchKey;
-    await user.click(gameButton);
-
-    const tournamentPanel = within(document.querySelector("#tab-tournaments.active"));
-    await tournamentPanel.findByText("Summary", {}, { timeout: 10000 });
-    await waitFor(() => {
-      const matchRow = document.querySelector(`#tab-tournaments tr[data-match-key="${matchKey}"]`);
-      expect(matchRow?.querySelector(".roster-toggle")).toHaveAttribute("aria-expanded", "true");
-    });
+    const link = document.querySelector("#tab-champions.active .champions-table-wrap a.champion-link");
+    expect(link).toBeTruthy();
+    expect(link).toHaveAttribute("href", expect.stringMatching(/^\/champion\/[a-z0-9]+$/));
+    // Clicking the name navigates to the champion's page instead of expanding a dropdown.
+    expect(document.querySelector("#tab-champions .roster-detail-row")).toBeNull();
+    await user.click(link);
+    expect(await screen.findByText("Summary", {}, { timeout: 10000 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Players" })).toBeInTheDocument();
   }, 30000);
 
   it("Draft IQ tab renders captain rows and opens the draft-history modal", async () => {
@@ -174,9 +165,81 @@ describe("App smoke test against real data", () => {
     expect(await screen.findByText("Summary", {}, { timeout: 10000 })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Tournaments" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "TrueSkill" })).toBeInTheDocument();
+    // The player's expanded roster tables keep their TrueSkill column.
+    await userEvent.setup().click(document.querySelector(".profile-history-table button.roster-toggle"));
+    const rosterHeaders = [...document.querySelectorAll(".match-details-table")].map((t) => [...t.querySelectorAll("th")].map((th) => th.textContent));
+    expect(rosterHeaders.length).toBe(2);
+    for (const headers of rosterHeaders) expect(headers).toContain("TrueSkill");
     expect(errSpy).not.toHaveBeenCalled();
     errSpy.mockRestore();
   });
+
+  it("Champion profile page shows summary, tournaments, players and a per-game history", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = userEvent.setup();
+    renderApp("/champion/syndra");
+    expect(await screen.findByText("Summary", {}, { timeout: 10000 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Tournaments" })).toBeInTheDocument();
+    const playersHeading = screen.getByRole("heading", { name: "Players" });
+    // Syndra's fixture has 23 games across several tournaments.
+    expect(screen.getByText(/Games: 23/)).toBeInTheDocument();
+    expect(screen.getByText("Role breakdown", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("Highest win rate with")).toBeInTheDocument();
+    expect(screen.getByText("Worst win rate against")).toBeInTheDocument();
+
+    // Left panel: no placement/pick columns, no TrueSkill or champion pick-rate tables.
+    const sidebar = within(document.querySelector(".profile-sidebar"));
+    expect(sidebar.queryByRole("columnheader", { name: "Placement" })).not.toBeInTheDocument();
+    expect(sidebar.queryByRole("columnheader", { name: "Pick" })).not.toBeInTheDocument();
+    expect(sidebar.queryByRole("heading", { name: "TrueSkill" })).not.toBeInTheDocument();
+    expect(sidebar.queryByRole("heading", { name: "Champions" })).not.toBeInTheDocument();
+    const playersTable = playersHeading.closest("section").querySelector("table");
+    const playerHeaders = [...playersTable.querySelectorAll("th")].map((th) => th.textContent);
+    expect(playerHeaders).toEqual(["Player", "Games", "Win rate", "Avg KDA"]);
+    // Per-player games add up to the champion's total.
+    const gamesTotal = [...playersTable.querySelectorAll("tbody tr")].reduce((sum, tr) => sum + Number(tr.children[1].textContent), 0);
+    expect(gamesTotal).toBe(23);
+
+    // Main panel: one history row per game, with the picking player in place of the champion.
+    const history = document.querySelector(".profile-main .profile-history-table");
+    expect(within(history).getByRole("columnheader", { name: "Player" })).toBeInTheDocument();
+    expect(within(history).queryByRole("columnheader", { name: "Champion" })).not.toBeInTheDocument();
+    expect(history.querySelectorAll("tbody > tr:not(.roster-detail-row)")).toHaveLength(23);
+    expect(history.querySelector("tbody td a.player-link")).toBeTruthy();
+    // Lane opponent's champion and K/D/A are shown; the picker's rating columns are not.
+    expect(within(history).getByRole("columnheader", { name: "Lane Opponent" })).toBeInTheDocument();
+    expect(within(history).getByRole("columnheader", { name: "Lane K/D/A" })).toBeInTheDocument();
+    expect(within(history).queryByRole("columnheader", { name: "Avg Rating" })).not.toBeInTheDocument();
+    expect(within(history).queryByRole("columnheader", { name: "TrueSkill" })).not.toBeInTheDocument();
+    const headerCount = history.querySelectorAll("thead th").length;
+    const firstRow = history.querySelector("tbody > tr:not(.roster-detail-row)");
+    expect(firstRow.children).toHaveLength(headerCount);
+
+    // Expanding a game shows both rosters without any TrueSkill (column or phone stats).
+    await user.click(history.querySelector("button.roster-toggle"));
+    const rosterTables = history.querySelectorAll(".match-details-table");
+    expect(rosterTables).toHaveLength(2);
+    for (const table of rosterTables) {
+      const headers = [...table.querySelectorAll("th")].map((th) => th.textContent);
+      expect(headers).toEqual(expect.arrayContaining(["Player", "Champion", "K", "D", "A"]));
+      expect(headers).not.toContain("TrueSkill");
+    }
+    const extraLabels = [...history.querySelectorAll(".match-extra-stats span")].map((el) => el.textContent);
+    expect(extraLabels).toEqual(expect.arrayContaining(["Captain", "Opponent"]));
+    for (const rating of ["TrueSkill", "Change", "Team Avg", "Opp Avg"]) expect(extraLabels).not.toContain(rating);
+    await user.click(history.querySelector("button.roster-toggle"));
+
+    // Filtering by tournament narrows both the history and the players table.
+    const select = document.querySelector(".tournament-filter-select");
+    const firstTournament = select.querySelectorAll("option")[1];
+    await user.selectOptions(select, firstTournament.value);
+    const rows = history.querySelectorAll("tbody > tr:not(.roster-detail-row)").length;
+    expect(rows).toBeGreaterThan(0);
+    expect(rows).toBeLessThan(23);
+
+    expect(errSpy).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  }, 30000);
 
   it("Simple profile page renders for an unresolved name without crashing", async () => {
     renderApp("/player/simple/SomeRandomName-NA1");

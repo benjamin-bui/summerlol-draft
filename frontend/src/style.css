@@ -1142,65 +1142,25 @@ thead .sticky-col {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-#tab-champions .roster-detail-row td {
-  padding: 10px 12px;
-  background: var(--bg);
+/* A champion name that links to its profile page; styled like player links. */
+a.champion-link {
+  color: inherit;
+  text-decoration: none;
 }
-.champions-games-scroll {
-  overflow-x: auto;
-}
-.champions-games-table {
-  width: 100%;
-  min-width: 940px;
-  border-collapse: collapse;
-  font-size: 0.82rem;
-}
-.champions-games-table th,
-.champions-games-table td {
-  padding: 7px 9px;
-  text-align: left;
-  vertical-align: middle;
-}
-.champions-games-table th {
-  color: var(--muted);
-  white-space: nowrap;
-}
-.champions-game-stage button {
-  padding: 0;
-  border: 0;
-  background: none;
+a.champion-link:hover {
   color: var(--accent);
-  font: inherit;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-.champions-game-stage button:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.champions-game-teams {
-  white-space: nowrap;
+/* Champion profile page: the champion's name is the page title, so show it
+   larger than the 28px icon used in tables. */
+.champion-profile-title .champion-cell {
+  gap: 14px;
 }
-.champions-game-teams > span:first-child,
-.champions-game-teams > span:last-child {
-  font-weight: 600;
-}
-.champions-game-vs {
-  padding: 0 7px;
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-.champions-game-winner {
-  color: var(--accent);
-  font-weight: 700;
-}
-.champions-game-kda {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.champions-no-games {
-  margin: 6px 0;
+.champion-profile-title .champion-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
 }
 @media (max-width: 760px) {
   #tab-champions .champions-toolbar {

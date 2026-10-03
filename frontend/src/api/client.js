@@ -16,6 +16,7 @@ export const api = {
   placements: () => getJson("/api/placements"),
   tournaments: () => getJson("/api/tournaments"),
   player: (keyOrSlug) => getJson(`/api/player/${keyOrSlug}`),
+  champion: (key) => getJson(`/api/champion/${encodeURIComponent(key)}`),
   raw: () => getJson("/api/raw"),
   rawMatches: () => getJson("/api/raw-matches"),
   upcomingRoster: async () => {

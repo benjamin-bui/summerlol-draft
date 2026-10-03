@@ -19,6 +19,7 @@ const {
 } = require("./src/lib/match-details-schema");
 const { ensureRowsIdColumn } = require("./src/lib/rows-schema");
 const { championKey } = require("./src/lib/champion-releases");
+const { buildChampionProfile } = require("./src/lib/champion-profile");
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -353,9 +354,13 @@ app.use(express.json());
 // instead of a 404 -- same index.html express.static already serves at "/".
 // Must be registered before any other app.get("/player*") route, and must
 // NOT collide with the existing /api/player/:key data endpoint below.
-app.get(["/player/:key", "/player/simple/:fullname"], (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
+// Champion profile pages (/champion/:key) are served the same way.
+app.get(
+  ["/player/:key", "/player/simple/:fullname", "/champion/:key"],
+  (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "index.html"));
+  },
+);
 
 // Shared by /api/stats, /api/roi, /api/tiers — resolves identity for the
 // full dataset so each alternative methodology operates on the same
@@ -1056,6 +1061,47 @@ app.get("/api/player/:key", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load player profile" });
+  }
+});
+
+// Champion profile page: every game the champion was picked in, as history
+// entries shaped like a player's own (plus who picked it and what else was on
+// each side). `key` is the normalized champion id used by the icons, so
+// "leesin", "Lee Sin" and "lee-sin" all resolve. Aggregates (per-player and
+// per-tournament records, win rate with/against other champions) are computed
+// client-side from this history so they respect the page's tournament filter.
+// See src/lib/champion-profile.js.
+app.get("/api/champion/:key", async (req, res) => {
+  try {
+    const key = championKey(req.params.key);
+    if (!key) return res.status(404).json({ error: "Champion not found" });
+    const identityMap = loadIdentityMap(db);
+    const allRows = resolveIdentities(getAllRows(), identityMap).map((row) => ({
+      ...row,
+      captainIdentityKey:
+        identityMap.get(row.captain)?.identityKey || row.captain,
+    }));
+    const result = await computeTrueSkillFromMatches(
+      getMatches(),
+      allRows,
+      identityMap,
+      {},
+    );
+    const profile = buildChampionProfile({
+      key,
+      games: result.games,
+      players: result.players,
+      resolve: (name) => identityMap.get(name)?.identityKey || name,
+    });
+    // A champion that was never picked or banned in any recorded game has no
+    // page to show.
+    if (!profile.champion) {
+      return res.status(404).json({ error: "Champion not found" });
+    }
+    res.json(profile);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to load champion profile" });
   }
 });
 

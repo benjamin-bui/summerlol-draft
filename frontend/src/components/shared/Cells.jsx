@@ -79,6 +79,17 @@ export function ChampionIcon({ champion }) {
   );
 }
 
+// A champion (icon + name) as a link to its profile page. `championKey` is the
+// normalized id the server uses; it's derived from the name when not given.
+export function ChampionLink({ champion, championKey = null }) {
+  const key = championKey || championIconKey(champion);
+  return (
+    <Link to={`/champion/${encodeURIComponent(key)}`} className="champion-link" title="View champion">
+      <ChampionIcon champion={champion} />
+    </Link>
+  );
+}
+
 // A team's bans for one game, as a labeled row of champion chips.
 export function BanList({ bans, highlightKey = null }) {
   const list = bans || [];

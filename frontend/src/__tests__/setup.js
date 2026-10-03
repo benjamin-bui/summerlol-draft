@@ -13,6 +13,7 @@ const tournaments = load("tournaments.json");
 const raw = load("raw.json");
 const rawMatches = load("rawmatches.json");
 const player = load("player.json");
+const champion = load("champion.json");
 const meta = load("meta.json");
 const presets = load("presets.json");
 
@@ -47,5 +48,6 @@ global.fetch = vi.fn((url) => {
   if (u.startsWith("/api/presets")) return json(presets);
   if (u.startsWith("/api/upcoming-roster")) return json({ error: "not found" }, 404);
   if (u.startsWith("/api/player/")) return json(player);
+  if (u.startsWith("/api/champion/")) return json(champion);
   return Promise.reject(new Error(`Unmocked fetch: ${u}`));
 });

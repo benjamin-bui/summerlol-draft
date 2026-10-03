@@ -8,7 +8,9 @@ import ProfileChart from "../components/shared/ProfileChart";
 import ProfileChampionsTable from "../components/shared/ProfileChampionsTable";
 import ProfileHistoryTable from "../components/shared/ProfileHistoryTable";
 import ProfileCoPlaySearch from "../components/shared/ProfileCoPlaySearch";
-import { routeState } from "../utils/routeState";
+import ProfileTournamentFilter from "../components/shared/ProfileTournamentFilter";
+import RoleBreakdown from "../components/shared/RoleBreakdown";
+import { useGoBack } from "../hooks/useGoBack";
 import {
   average,
   buildCoPlayMaps,
@@ -38,41 +40,6 @@ function SummaryPlayerLink({ rec }) {
         ({pct}%, {rec.games}g)
       </span>
     </span>
-  );
-}
-
-const ROLES = ["Top", "Jungle", "Mid", "Bot", "Supp"];
-const ROLE_NAMES = { Top: "Top", Jungle: "Jungle", Mid: "Mid", Bot: "Bot", Supp: "Support" };
-
-function RoleBreakdown({ history }) {
-  const counts = new Map(ROLES.map((r) => [r, 0]));
-  let total = 0;
-  for (const entry of history) {
-    const role = entry.playerDetails?.[0]?.role;
-    if (!counts.has(role)) continue;
-    counts.set(role, counts.get(role) + 1);
-    total += 1;
-  }
-  if (!total) return null;
-  return (
-    <div className="profile-summary-roles">
-      <h4>
-        Role breakdown <span className="stat-formula">({total} {total === 1 ? "game" : "games"} with a role)</span>
-      </h4>
-      {ROLES.map((role) => {
-        const games = counts.get(role);
-        const pct = Math.round((games / total) * 100);
-        return (
-          <div className="role-row" title={`${games} of ${total} games`} key={role}>
-            <span>{ROLE_NAMES[role]}</span>
-            <span className="role-bar">
-              <span style={{ width: `${(games / total) * 100}%` }} />
-            </span>
-            <strong>{pct}%</strong>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
@@ -214,26 +181,6 @@ function TrueSkillBlock({ player, tournaments }) {
   );
 }
 
-function TournamentFilterBlock({ tournaments, value, onChange }) {
-  if (!tournaments.length) return null;
-  const sorted = [...tournaments].sort((a, b) => b.year - a.year || seasonRankLocal(b.tournament) - seasonRankLocal(a.tournament));
-  return (
-    <section className="profile-block profile-filter-block">
-      <div className="profile-filter-row">
-        <span>Filtered for:</span>
-        <select className="tournament-filter-select" value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
-          <option value="">All</option>
-          {sorted.map((t) => (
-            <option value={tournamentKey(t)} key={tournamentKey(t)}>
-              {t.tournament} {t.year}
-            </option>
-          ))}
-        </select>
-      </div>
-    </section>
-  );
-}
-
 function CoPlaySummary({ mode, otherName, filtered, tournaments, selectedKey, placements }) {
   const wins = filtered.filter((e) => e.outcome === "win").length;
   const losses = filtered.filter((e) => e.outcome === "loss").length;
@@ -303,6 +250,7 @@ function CoPlaySummary({ mode, otherName, filtered, tournaments, selectedKey, pl
 export default function PlayerProfilePage() {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const goBack = useGoBack();
   const { loadTrueskill } = useAppData();
   const [player, setPlayer] = useState(null);
   const [error, setError] = useState(null);
@@ -344,15 +292,6 @@ export default function PlayerProfilePage() {
   useEffect(() => {
     if (selectedKey) api.placements().then(setPlacements);
   }, [selectedKey]);
-
-  function goBack() {
-    const cameFromThisSite = document.referrer && document.referrer.startsWith(window.location.origin);
-    if (cameFromThisSite && window.history.length > 1) {
-      navigate(-1);
-    } else {
-      navigate(`/?tab=${routeState.lastKnownTab}`);
-    }
-  }
 
   if (error) {
     return (
@@ -432,7 +371,7 @@ export default function PlayerProfilePage() {
       <div className="profile-layout">
         <aside className="profile-sidebar">
           <SummaryBlock player={player} tournaments={tournaments} championStats={player.championStats || []} history={history} />
-          <TournamentFilterBlock tournaments={tournaments} value={tournamentFilter} onChange={setTournamentFilter} />
+          <ProfileTournamentFilter tournaments={tournaments} value={tournamentFilter} onChange={setTournamentFilter} />
           <TournamentsBlock tournaments={tournaments} />
           <TrueSkillBlock player={player} tournaments={tournaments} />
           <ProfileChampionsTable championStats={championStats} extras={championExtras} sort={championSort} setSort={setChampionSort} />

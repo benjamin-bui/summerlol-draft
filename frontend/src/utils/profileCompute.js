@@ -64,7 +64,9 @@ export function computeCoPlayRecords(history, selfKey) {
   return { withMap, againstMap };
 }
 
-export function pickExtreme(map, mode) {
+// `tieBreak(a, b)` replaces the final random shuffle when callers need a stable
+// result (the champion page, where many champions tie at 100% over few games).
+export function pickExtreme(map, mode, tieBreak = null) {
   const entries = [...map.values()].map((r) => ({ ...r, winRate: r.games ? r.wins / r.games : 0, isCaptain: r.captainGames > 0 }));
   if (!entries.length) return null;
   entries.sort((a, b) => {
@@ -72,7 +74,7 @@ export function pickExtreme(map, mode) {
     if (winDiff !== 0) return winDiff;
     if (b.games !== a.games) return b.games - a.games;
     if (b.isCaptain !== a.isCaptain) return (b.isCaptain ? 1 : 0) - (a.isCaptain ? 1 : 0);
-    return Math.random() - 0.5;
+    return tieBreak ? tieBreak(a, b) : Math.random() - 0.5;
   });
   return entries[0];
 }
@@ -173,4 +175,78 @@ export function sortChampionStats(stats, sort) {
       return b.games - a.games || x.index - y.index;
     })
     .map((entry) => entry.champion);
+}
+
+// ---- Champion profile page ----
+// A champion's history entries are one pick each (see the server's
+// champion-profile.js): `player` is who picked it, `teamChampions` and
+// `opponentChampions` are everything else on the two sides that game.
+
+// Per-player record on the champion. KDA is total (K + A) / total D, the same
+// convention as the player profile's Champions table: null = zero deaths.
+export function computeChampionPlayers(history) {
+  const byPlayer = new Map();
+  for (const entry of history) {
+    const who = entry.player;
+    if (!who) continue;
+    if (!byPlayer.has(who.identityKey)) {
+      byPlayer.set(who.identityKey, { identityKey: who.identityKey, name: who.displayName, games: 0, wins: 0, losses: 0, kills: 0, deaths: 0, assists: 0 });
+    }
+    const p = byPlayer.get(who.identityKey);
+    const detail = entry.playerDetails?.[0];
+    p.games += 1;
+    if (entry.outcome === "win") p.wins += 1;
+    else if (entry.outcome === "loss") p.losses += 1;
+    p.kills += detail?.kills ?? 0;
+    p.deaths += detail?.deaths ?? 0;
+    p.assists += detail?.assists ?? 0;
+  }
+  return [...byPlayer.values()]
+    .map((p) => ({
+      ...p,
+      winRate: p.games ? round3(p.wins / p.games) : null,
+      kda: p.deaths > 0 ? round3((p.kills + p.assists) / p.deaths) : null,
+    }))
+    .sort((a, b) => b.games - a.games || a.name.localeCompare(b.name));
+}
+
+// One row per tournament the champion was picked in, newest first.
+export function computeChampionTournaments(history) {
+  const byTournament = new Map();
+  for (const entry of history) {
+    const key = tournamentKey(entry);
+    if (!byTournament.has(key)) byTournament.set(key, { year: entry.year, tournament: entry.tournament, games: 0, wins: 0, losses: 0 });
+    const t = byTournament.get(key);
+    t.games += 1;
+    if (entry.outcome === "win") t.wins += 1;
+    else if (entry.outcome === "loss") t.losses += 1;
+  }
+  return [...byTournament.values()]
+    .map((t) => ({ ...t, winRate: t.games ? round3(t.wins / t.games) : null }))
+    .sort((a, b) => b.year - a.year || seasonRankLocal(b.tournament) - seasonRankLocal(a.tournament));
+}
+
+// Win rate in games where another champion was on the same team ("with") or
+// on the opposing team ("against"). Shaped like computeCoPlayRecords' maps so
+// pickExtreme works on them, keyed by champion.
+export function computeChampionMatchups(history) {
+  const withMap = new Map();
+  const againstMap = new Map();
+  const tally = (map, others, isWin) => {
+    const seen = new Set(); // a champion appears once per game
+    for (const other of others || []) {
+      if (!other.key || seen.has(other.key)) continue;
+      seen.add(other.key);
+      if (!map.has(other.key)) map.set(other.key, { key: other.key, champion: other.champion, games: 0, wins: 0 });
+      const rec = map.get(other.key);
+      rec.games += 1;
+      if (isWin) rec.wins += 1;
+    }
+  };
+  for (const entry of history) {
+    const isWin = entry.outcome === "win";
+    tally(withMap, entry.teamChampions, isWin);
+    tally(againstMap, entry.opponentChampions, isWin);
+  }
+  return { withMap, againstMap };
 }

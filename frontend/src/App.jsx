@@ -14,6 +14,7 @@ import DraftDataTab from "./pages/DraftDataTab";
 import MatchDataTab from "./pages/MatchDataTab";
 import PlayerProfilePage from "./pages/PlayerProfilePage";
 import SimpleProfilePage from "./pages/SimpleProfilePage";
+import ChampionProfilePage from "./pages/ChampionProfilePage";
 
 const TABS = [
   { key: "trueskill", label: "TrueSkill" },
@@ -102,17 +103,7 @@ function MainTabs() {
           setSearchParams(next, { replace: true });
         }}
       />
-      <ChampionsTab
-        active={tab === "champions"}
-        onOpenMatch={(tournamentId, matchKey) => {
-          routeState.lastTournamentId = tournamentId;
-          const next = new URLSearchParams(searchParams);
-          next.set("tab", "tournaments");
-          next.set("tournament", tournamentId);
-          next.set("match", matchKey);
-          setSearchParams(next, { replace: true });
-        }}
-      />
+      <ChampionsTab active={tab === "champions"} />
       <TrueSkillTab active={tab === "trueskill"} />
       <DraftIQTab active={tab === "draftiq"} />
       <TeamBalanceTab active={tab === "teambalance"} />
@@ -131,6 +122,7 @@ export default function App() {
         <Route path="/" element={<MainTabs />} />
         <Route path="/player/:slug" element={<PlayerProfilePage />} />
         <Route path="/player/simple/:slug" element={<SimpleProfilePage />} />
+        <Route path="/champion/:key" element={<ChampionProfilePage />} />
       </Routes>
       <footer>
         <a href="https://github.com/benjamin-bui/summerlol-draft" target="_blank" rel="noopener noreferrer">

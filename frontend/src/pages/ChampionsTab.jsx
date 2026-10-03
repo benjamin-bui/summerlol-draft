@@ -1,61 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import DataTable from "../components/table/DataTable";
-import { ChampionIcon, RoleIcon } from "../components/shared/Cells";
+import { ChampionLink, RoleIcon } from "../components/shared/Cells";
 import { ROLE_LABELS, ROLES } from "../utils/format";
-
-function KdaLine({ player }) {
-  if (!player) return "\u2013";
-  return `${player.kills ?? 0} / ${player.deaths ?? 0} / ${player.assists ?? 0}`;
-}
-
-function ChampionGames({ row, onOpenMatch }) {
-  if (!row.matchGames.length) {
-    return <p className="stat-formula champions-no-games">No games with match details are available for this champion.</p>;
-  }
-  return (
-    <div className="champions-games-scroll">
-      <table className="champions-games-table">
-        <thead>
-          <tr>
-            <th>Tournament</th>
-            <th>Stage</th>
-            <th>Teams</th>
-            <th>Winner</th>
-            <th>Role</th>
-            <th>Champion</th>
-            <th>K / D / A</th>
-            <th>Opponent champion</th>
-            <th>K / D / A</th>
-          </tr>
-        </thead>
-        <tbody>
-          {row.matchGames.map((game) => (
-            <tr data-match-key={game.matchKey} key={game.matchKey} className={game.championWon ? "champions-game-win" : ""}>
-              <td>{game.tournament}</td>
-              <td className="champions-game-stage">
-                <button type="button" onClick={() => onOpenMatch(game.tournamentId, game.matchKey)}>
-                  {game.stage || "Match"}{game.order != null ? ` \u00b7 #${game.order}` : ""}
-                </button>
-              </td>
-              <td className="champions-game-teams">
-                <span>{game.team1}</span>
-                <span className="champions-game-vs">vs</span>
-                <span>{game.team2}</span>
-              </td>
-              <td className={game.winner ? "champions-game-winner" : ""}>{game.winner || "Draw"}</td>
-              <td>{game.role ? <RoleIcon role={game.role} /> : "\u2013"}</td>
-              <td><ChampionIcon champion={game.champion} /></td>
-              <td className="champions-game-kda"><KdaLine player={game.player} /></td>
-              <td>{game.opponent ? <ChampionIcon champion={game.opponent.champion} /> : "\u2013"}</td>
-              <td className="champions-game-kda"><KdaLine player={game.opponent} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 const CHAMPION_COLUMNS = [
   {
@@ -65,7 +12,7 @@ const CHAMPION_COLUMNS = [
     hideable: false,
     type: "string",
     className: "champions-name-cell",
-    render: (value) => <ChampionIcon champion={value} />,
+    render: (value, row) => <ChampionLink champion={value} championKey={row.key} />,
   },
   { key: "games", label: "Games", sortable: true, hideable: true, type: "number", decimals: 0 },
   {
@@ -136,7 +83,6 @@ function aggregateChampions(tournaments) {
           deaths: 0,
           assists: 0,
           roles: new Set(),
-          matchGames: [],
         });
       }
       const row = byKey.get(stat.key);
@@ -163,31 +109,9 @@ function aggregateChampions(tournaments) {
               deaths: 0,
               assists: 0,
               roles: new Set(),
-              matchGames: [],
             };
             byKey.set(player.championKey, row);
           }
-          const opponentTeam = team === match.team1 ? match.team2 : match.team1;
-          const opponent = player.role
-            ? opponentTeam?.roster?.find((member) => member.role === player.role && member.champion)
-            : null;
-          const championSide = team === match.team1 ? "team1" : "team2";
-          const winnerTeam = match.winner === "team1" ? match.team1 : match.winner === "team2" ? match.team2 : null;
-          row.matchGames.push({
-            tournamentId: tournament.id,
-            tournament: tournament.label,
-            matchKey: match.matchKey,
-            order: match.order,
-            stage: match.stage,
-            team1: match.team1?.name || "Team 1",
-            team2: match.team2?.name || "Team 2",
-            winner: winnerTeam?.name || null,
-            championWon: match.winner === championSide,
-            role: player.role,
-            champion: player.champion,
-            player,
-            opponent: opponent || null,
-          });
           row.games += 1;
           if (match.winner === "draw") row.draws += 1;
           else if (match.winner === (team === match.team1 ? "team1" : "team2")) row.wins += 1;
@@ -214,7 +138,7 @@ function aggregateChampions(tournaments) {
   return { rows, gamesWithBans, gamesWithChampionData };
 }
 
-export default function ChampionsTab({ active, onOpenMatch }) {
+export default function ChampionsTab({ active }) {
   const [tournaments, setTournaments] = useState(null);
   const [selectedIds, setSelectedIds] = useState(null);
   const [selectedRoles, setSelectedRoles] = useState(() => new Set());
@@ -349,11 +273,6 @@ export default function ChampionsTab({ active, onOpenMatch }) {
               defaultSortDirection="desc"
               emptyMessage={tournamentCount ? "No champion data matches these filters" : "Select one or more tournaments"}
               pagination={{ pageSizeOptions: [40, 80, "all"], defaultPageSize: 40 }}
-              expandable={{
-                hideToggle: true,
-                toggleColumn: "champion",
-                getDetail: (row) => <ChampionGames row={row} onOpenMatch={onOpenMatch} />,
-              }}
             />
           )}
           {!!gamesWithBans && !!gamesWithChampionData && (
