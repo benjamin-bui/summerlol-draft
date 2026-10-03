@@ -263,7 +263,7 @@ export default function ChampionsTab({ active }) {
 
         <main className="champions-table-wrap">
           {tournaments === null ? (
-            <p>Loading champion statistics\u2026</p>
+            <p>Loading champion statistics…</p>
           ) : (
             <DataTable
               columns={CHAMPION_COLUMNS}

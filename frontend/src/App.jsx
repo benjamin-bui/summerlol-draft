@@ -28,8 +28,7 @@ const TABS = [
   { key: "matchdata", label: "Match History" },
 ];
 
-function ThemeToggle() {
-  const [theme, toggle] = useTheme();
+function ThemeToggle({ theme, toggle }) {
   return (
     <button className="theme-toggle" aria-label="Toggle dark/light mode" title="Toggle dark/light mode" onClick={toggle}>
       {theme === "light" ? "\u2600\ufe0f" : "\ud83c\udf19"}
@@ -37,7 +36,7 @@ function ThemeToggle() {
   );
 }
 
-function MainTabs() {
+function MainTabs({ theme, toggleTheme }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { loadTrueskill, loadMeta } = useAppData();
   const [upcomingRosterTitle, setUpcomingRosterTitle] = useState(null);
@@ -71,7 +70,7 @@ function MainTabs() {
         <div>
           <h1>Williams College Player Rankings</h1>
         </div>
-        <ThemeToggle />
+        <ThemeToggle theme={theme} toggle={toggleTheme} />
       </header>
 
       <section className="notes-section">
@@ -116,10 +115,11 @@ function MainTabs() {
 }
 
 export default function App() {
+  const [theme, toggleTheme] = useTheme();
   return (
     <AppDataProvider>
       <Routes>
-        <Route path="/" element={<MainTabs />} />
+        <Route path="/" element={<MainTabs theme={theme} toggleTheme={toggleTheme} />} />
         <Route path="/player/:slug" element={<PlayerProfilePage />} />
         <Route path="/player/simple/:slug" element={<SimpleProfilePage />} />
         <Route path="/champion/:key" element={<ChampionProfilePage />} />

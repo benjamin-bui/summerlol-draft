@@ -250,5 +250,6 @@ test("the database it borrows aliases from is left exactly as it was, with no fi
 
   assert.deepEqual(snapshot(), before, "no -shm/-wal (or anything else) may appear beside the DB");
   assert.ok(fs.readFileSync(dbPath).equals(bytesBefore), "DB bytes unchanged");
-  assert.equal(fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith("summerlol-check-")).length, 0, "temp dir cleaned up");
+  const leftoverDirs = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith("summerlol-check-"));
+  assert.deepEqual(leftoverDirs, [], `temporary check-data directories remain: ${leftoverDirs.join(", ") || "none"}`);
 });

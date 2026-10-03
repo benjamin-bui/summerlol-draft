@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PlayerLink, ChampionIcon, ChampionLink, BanList, RoleIcon, TrueSkillValue } from "./Cells";
+import { PlayerLink, ChampionLink, BanList, RoleIcon, TrueSkillValue } from "./Cells";
 import { sortByRole, ROLE_LABELS } from "../../utils/format";
 
 const kdaText = (d) => `${d.kills ?? "\u2013"}/${d.deaths ?? "\u2013"}/${d.assists ?? "\u2013"}`;
@@ -42,7 +42,7 @@ function RosterTable({ team, name, bans, gameHasBans, gameHasRoles, hasDetails, 
                 )}
                 {hasDetails && (
                   <>
-                    <td>{detail ? <ChampionIcon champion={detail.champion} /> : "\u2013"}</td>
+                    <td>{detail ? <ChampionLink champion={detail.champion} championKey={detail.championKey} /> : "\u2013"}</td>
                     <td>{detail?.kills ?? "\u2013"}</td>
                     <td>{detail?.deaths ?? "\u2013"}</td>
                     <td>{detail?.assists ?? "\u2013"}</td>
@@ -71,7 +71,7 @@ function HistoryRow({ entry, showRole, showPlayer }) {
   const predWinPct = Math.round((entry.predictedWinProb ?? 0) * 100);
   // toggle, match, matchup, [role], champion/player, K/D/A, result, plus either
   // the rating columns or (champion page) the lane-opponent columns.
-  const columnCount = 6 + (showRole ? 1 : 0) + 2;
+  const columnCount = 6 + (showRole ? 1 : 0) + (showPlayer ? 3 : 2);
 
   return (
     <>
@@ -100,7 +100,7 @@ function HistoryRow({ entry, showRole, showPlayer }) {
           {showPlayer ? (
             <PlayerLink fullName={entry.player?.displayName} identityKey={entry.player?.identityKey} />
           ) : playerDetail ? (
-            <ChampionIcon champion={playerDetail.champion} />
+            <ChampionLink champion={playerDetail.champion} championKey={playerDetail.championKey} />
           ) : (
             "\u2013"
           )}
@@ -108,6 +108,12 @@ function HistoryRow({ entry, showRole, showPlayer }) {
         <td>{playerDetail ? `${playerDetail.kills ?? "\u2013"}/${playerDetail.deaths ?? "\u2013"}/${playerDetail.assists ?? "\u2013"}` : "\u2013"}</td>
         {showPlayer && (
           <>
+            <td className="col-secondary">
+              <PlayerLink
+                fullName={entry.laneOpponent?.player?.displayName}
+                identityKey={entry.laneOpponent?.player?.identityKey}
+              />
+            </td>
             <td className="col-secondary">{entry.laneOpponent ? <ChampionLink champion={entry.laneOpponent.champion} championKey={entry.laneOpponent.key} /> : "\u2013"}</td>
             <td className="col-secondary">{entry.laneOpponent ? kdaText(entry.laneOpponent) : "\u2013"}</td>
           </>
@@ -231,37 +237,40 @@ function HistoryRow({ entry, showRole, showPlayer }) {
 export default function ProfileHistoryTable({ entries, showRole, showPlayer = false }) {
   if (!entries.length) return <p>No matching games.</p>;
   return (
-    <table className="profile-history-table">
-      <thead>
-        <tr>
-          <th className="col-toggle">
-            <span className="sr-only">Expand</span>
-          </th>
-          <th className="col-match">Match</th>
-          <th className="col-secondary col-matchup">Matchup</th>
-          {showRole && <th className="col-secondary col-role">Role</th>}
-          <th>{showPlayer ? "Player" : "Champion"}</th>
-          <th>K/D/A</th>
-          {showPlayer && (
-            <>
-              <th className="col-secondary">Lane Opponent</th>
-              <th className="col-secondary">Lane K/D/A</th>
-            </>
-          )}
-          <th className="col-result">Result</th>
-          {!showPlayer && (
-            <>
-              <th className="col-secondary col-ratings">Avg Rating</th>
-              <th className="col-secondary col-trueskill">TrueSkill</th>
-            </>
-          )}
-        </tr>
-      </thead>
-      <tbody>
-        {entries.map((entry, i) => (
-          <HistoryRow entry={entry} showRole={showRole} showPlayer={showPlayer} key={i} />
-        ))}
-      </tbody>
-    </table>
+    <div className="table-section profile-history-section">
+      <table className="profile-history-table">
+        <thead>
+          <tr>
+            <th className="col-toggle">
+              <span className="sr-only">Expand</span>
+            </th>
+            <th className="col-match">Match</th>
+            <th className="col-secondary col-matchup">Matchup</th>
+            {showRole && <th className="col-secondary col-role">Role</th>}
+            <th>{showPlayer ? "Player" : "Champion"}</th>
+            <th>K/D/A</th>
+            {showPlayer && (
+              <>
+                <th>Opponent Player</th>
+                <th className="col-secondary">Lane Opponent</th>
+                <th className="col-secondary">Lane K/D/A</th>
+              </>
+            )}
+            <th className="col-result">Result</th>
+            {!showPlayer && (
+              <>
+                <th className="col-secondary col-ratings">Avg Rating</th>
+                <th className="col-secondary col-trueskill">TrueSkill</th>
+              </>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry, i) => (
+            <HistoryRow entry={entry} showRole={showRole} showPlayer={showPlayer} key={i} />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

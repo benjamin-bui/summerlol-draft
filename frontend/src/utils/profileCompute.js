@@ -1,4 +1,4 @@
-import { round3 } from "./format";
+import { ROLES, round3 } from "./format";
 
 export function seasonRankLocal(tournament) {
   const t = String(tournament || "").trim().toLowerCase();
@@ -232,6 +232,7 @@ export function computeChampionTournaments(history) {
 export function computeChampionMatchups(history) {
   const withMap = new Map();
   const againstMap = new Map();
+  const againstSameRoleByRole = new Map();
   const tally = (map, others, isWin) => {
     const seen = new Set(); // a champion appears once per game
     for (const other of others || []) {
@@ -247,6 +248,50 @@ export function computeChampionMatchups(history) {
     const isWin = entry.outcome === "win";
     tally(withMap, entry.teamChampions, isWin);
     tally(againstMap, entry.opponentChampions, isWin);
+    const role = entry.playerDetails?.[0]?.role;
+    if (role && entry.laneOpponent?.role === role) {
+      if (!againstSameRoleByRole.has(role)) againstSameRoleByRole.set(role, new Map());
+      tally(againstSameRoleByRole.get(role), [entry.laneOpponent], isWin);
+    }
   }
-  return { withMap, againstMap };
+  return { withMap, againstMap, againstSameRoleByRole };
+}
+
+export function computeChampionMatchupRows(history) {
+  const byRoleAndChampion = new Map();
+  for (const entry of history) {
+    const detail = entry.playerDetails?.[0];
+    const opponent = entry.laneOpponent;
+    const role = detail?.role;
+    if (!role || opponent?.role !== role || !opponent.key) continue;
+
+    const key = `${role}::${opponent.key}`;
+    if (!byRoleAndChampion.has(key)) {
+      byRoleAndChampion.set(key, {
+        key,
+        role,
+        champion: opponent.champion,
+        championKey: opponent.key,
+        games: 0,
+        wins: 0,
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+      });
+    }
+    const matchup = byRoleAndChampion.get(key);
+    matchup.games += 1;
+    if (entry.outcome === "win") matchup.wins += 1;
+    matchup.kills += detail.kills ?? 0;
+    matchup.deaths += detail.deaths ?? 0;
+    matchup.assists += detail.assists ?? 0;
+  }
+
+  return [...byRoleAndChampion.values()]
+    .map((matchup) => ({
+      ...matchup,
+      winRate: matchup.games ? round3(matchup.wins / matchup.games) : null,
+      kda: matchup.deaths ? round3((matchup.kills + matchup.assists) / matchup.deaths) : null,
+    }))
+    .sort((a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || b.games - a.games || a.champion.localeCompare(b.champion));
 }

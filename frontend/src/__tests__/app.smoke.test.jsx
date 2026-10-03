@@ -1,8 +1,9 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
+import ProfileHistoryTable from "../components/shared/ProfileHistoryTable";
 
 // This suite renders the real app (with a real DOM via jsdom) against
 // snapshots of the *actual* production API responses, and clicks through
@@ -21,9 +22,21 @@ function renderApp(initialPath = "/") {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  localStorage.removeItem("lol-draft-theme");
+  document.documentElement.removeAttribute("data-theme");
 });
 
 describe("App smoke test against real data", () => {
+  it.each([
+    ["player", "/player/Voidliss-NA1"],
+    ["champion", "/champion/syndra"],
+  ])("applies the saved theme when opening a %s profile directly", async (_type, path) => {
+    localStorage.setItem("lol-draft-theme", "light");
+    renderApp(path);
+
+    await waitFor(() => expect(document.documentElement).toHaveAttribute("data-theme", "light"));
+  });
+
   it("loads the TrueSkill tab with real rows and no console errors", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     renderApp("/");
@@ -165,6 +178,8 @@ describe("App smoke test against real data", () => {
     expect(await screen.findByText("Summary", {}, { timeout: 10000 })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Tournaments" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "TrueSkill" })).toBeInTheDocument();
+    const championsSection = screen.getByRole("heading", { name: "Champions" }).closest("section");
+    expect(championsSection.querySelector("a.champion-link")).toHaveAttribute("href", expect.stringMatching(/^\/champion\//));
     // The player's expanded roster tables keep their TrueSkill column.
     await userEvent.setup().click(document.querySelector(".profile-history-table button.roster-toggle"));
     const rosterHeaders = [...document.querySelectorAll(".match-details-table")].map((t) => [...t.querySelectorAll("th")].map((th) => th.textContent));
@@ -184,8 +199,15 @@ describe("App smoke test against real data", () => {
     // Syndra's fixture has 23 games across several tournaments.
     expect(screen.getByText(/Games: 23/)).toBeInTheDocument();
     expect(screen.getByText("Role breakdown", { exact: false })).toBeInTheDocument();
+    const matchupSection = screen.getByRole("heading", { name: "Champion Matchups" }).closest("section");
+    const matchupTable = matchupSection.querySelector("table");
+    expect([...matchupTable.querySelectorAll("th")].map((th) => th.textContent)).toEqual(["Role", "Enemy champion", "Games", "Win rate", "KDA"]);
+    expect(matchupTable.querySelectorAll("tbody tr").length).toBeGreaterThan(0);
     expect(screen.getByText("Highest win rate with")).toBeInTheDocument();
-    expect(screen.getByText("Worst win rate against")).toBeInTheDocument();
+    expect(screen.getByText("Best win rate against overall")).toBeInTheDocument();
+    expect(screen.getByText("Worst win rate against overall")).toBeInTheDocument();
+    expect(screen.getByText("Best win rate against (Mid)")).toBeInTheDocument();
+    expect(screen.getByText("Worst win rate against (Mid)")).toBeInTheDocument();
 
     // Left panel: no placement/pick columns, no TrueSkill or champion pick-rate tables.
     const sidebar = within(document.querySelector(".profile-sidebar"));
@@ -208,6 +230,7 @@ describe("App smoke test against real data", () => {
     expect(history.querySelector("tbody td a.player-link")).toBeTruthy();
     // Lane opponent's champion and K/D/A are shown; the picker's rating columns are not.
     expect(within(history).getByRole("columnheader", { name: "Lane Opponent" })).toBeInTheDocument();
+    expect(within(history).getByRole("columnheader", { name: "Opponent Player" })).toBeInTheDocument();
     expect(within(history).getByRole("columnheader", { name: "Lane K/D/A" })).toBeInTheDocument();
     expect(within(history).queryByRole("columnheader", { name: "Avg Rating" })).not.toBeInTheDocument();
     expect(within(history).queryByRole("columnheader", { name: "TrueSkill" })).not.toBeInTheDocument();
@@ -240,6 +263,38 @@ describe("App smoke test against real data", () => {
     expect(errSpy).not.toHaveBeenCalled();
     errSpy.mockRestore();
   }, 30000);
+
+  it("links the lane opponent player name in champion history", () => {
+    render(
+      <MemoryRouter>
+        <ProfileHistoryTable
+          entries={[
+            {
+              player: { identityKey: "picker", displayName: "Picker#NA1" },
+              playerDetails: [{ role: "Bot", kills: 8, deaths: 1, assists: 4 }],
+              laneOpponent: {
+                champion: "Syndra",
+                key: "syndra",
+                role: "Bot",
+                player: { identityKey: "opponent", displayName: "Opponent#NA1" },
+                kills: 2,
+                deaths: 5,
+                assists: 3,
+              },
+              outcome: "win",
+              predictedWinProb: 0.5,
+              ownTeam: { name: "Alpha", roster: [] },
+              opponentTeam: { name: "Beta", roster: [] },
+            },
+          ]}
+          showRole
+          showPlayer
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "Opponent#NA1" })).toHaveAttribute("href", "/player/Opponent-NA1");
+  });
 
   it("Simple profile page renders for an unresolved name without crashing", async () => {
     renderApp("/player/simple/SomeRandomName-NA1");

@@ -1,4 +1,4 @@
-import { ChampionIcon } from "./Cells";
+import { ChampionLink } from "./Cells";
 import { CHAMPION_SORTS, sortChampionStats } from "../../utils/profileCompute";
 
 function SortHeader({ column, hint, extraClass, sort, onSort }) {
@@ -72,7 +72,7 @@ export default function ProfileChampionsTable({ championStats, extras = [], sort
             return (
               <tr key={c.key || c.champion}>
                 <td>
-                  <ChampionIcon champion={c.champion} />
+                  <ChampionLink champion={c.champion} championKey={c.key} />
                 </td>
                 <td>{c.games}</td>
                 <td>{winRate}</td>

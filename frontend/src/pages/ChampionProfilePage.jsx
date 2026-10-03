@@ -3,12 +3,14 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAppData } from "../context/AppDataContext";
 import { ChampionIcon, ChampionLink } from "../components/shared/Cells";
+import ChampionMatchupTable from "../components/shared/ChampionMatchupTable";
 import ChampionPlayersTable from "../components/shared/ChampionPlayersTable";
 import ProfileHistoryTable from "../components/shared/ProfileHistoryTable";
 import ProfileTournamentFilter from "../components/shared/ProfileTournamentFilter";
 import RoleBreakdown from "../components/shared/RoleBreakdown";
 import { useGoBack } from "../hooks/useGoBack";
-import { computeChampionMatchups, computeChampionPlayers, computeChampionTournaments, pickExtreme, tournamentKey } from "../utils/profileCompute";
+import { ROLE_LABELS, ROLES } from "../utils/format";
+import { computeChampionMatchupRows, computeChampionMatchups, computeChampionPlayers, computeChampionTournaments, pickExtreme, tournamentKey } from "../utils/profileCompute";
 
 const byChampionName = (a, b) => a.champion.localeCompare(b.champion);
 
@@ -26,13 +28,14 @@ function SummaryChampionLink({ rec }) {
 }
 
 function SummaryBlock({ history }) {
-  const { withMap, againstMap } = useMemo(() => computeChampionMatchups(history), [history]);
+  const { withMap, againstMap, againstSameRoleByRole } = useMemo(() => computeChampionMatchups(history), [history]);
   const bestWith = pickExtreme(withMap, "max", byChampionName);
   const worstWith = pickExtreme(withMap, "min", byChampionName);
   const bestAgainst = pickExtreme(againstMap, "max", byChampionName);
   const worstAgainst = pickExtreme(againstMap, "min", byChampionName);
+  const rolesPlayed = ROLES.filter((role) => history.some((entry) => entry.playerDetails?.[0]?.role === role));
   return (
-    <section className="profile-block profile-summary-block">
+    <section className="profile-block profile-summary-block champion-profile-summary">
       <h3>Summary</h3>
       <RoleBreakdown history={history} />
       <div className="profile-summary-coplay">
@@ -45,13 +48,26 @@ function SummaryBlock({ history }) {
           <SummaryChampionLink rec={worstWith} />
         </div>
         <div>
-          <span>Best win rate against</span>
+          <span>Best win rate against overall</span>
           <SummaryChampionLink rec={bestAgainst} />
         </div>
         <div>
-          <span>Worst win rate against</span>
+          <span>Worst win rate against overall</span>
           <SummaryChampionLink rec={worstAgainst} />
         </div>
+        {rolesPlayed.flatMap((role) => {
+          const matchups = againstSameRoleByRole.get(role) || new Map();
+          return [
+            <div key={`${role}-best`}>
+              <span>Best win rate against ({ROLE_LABELS[role] || role})</span>
+              <SummaryChampionLink rec={pickExtreme(matchups, "max", byChampionName)} />
+            </div>,
+            <div key={`${role}-worst`}>
+              <span>Worst win rate against ({ROLE_LABELS[role] || role})</span>
+              <SummaryChampionLink rec={pickExtreme(matchups, "min", byChampionName)} />
+            </div>,
+          ];
+        })}
       </div>
     </section>
   );
@@ -145,6 +161,7 @@ export default function ChampionProfilePage() {
     [history, tournamentFilter],
   );
   const players = useMemo(() => computeChampionPlayers(filteredHistory), [filteredHistory]);
+  const matchupRows = useMemo(() => computeChampionMatchupRows(filteredHistory), [filteredHistory]);
   const historyDescending = useMemo(() => [...filteredHistory].reverse(), [filteredHistory]);
 
   const backButton = (
@@ -203,6 +220,7 @@ export default function ChampionProfilePage() {
           <ProfileTournamentFilter tournaments={tournaments} value={tournamentFilter} onChange={setTournamentFilter} />
           <TournamentsBlock tournaments={tournaments} />
           <ChampionPlayersTable players={players} />
+          <ChampionMatchupTable matchups={matchupRows} />
         </aside>
         <main className="profile-main">
           <div id="profileHistoryTableWrap">

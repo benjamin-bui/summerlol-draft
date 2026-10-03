@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, downloadUrl } from "../api/client";
 import DataTable from "../components/table/DataTable";
 import { coerceNumericColumns } from "../components/table/tableLogic";
-import { ChampionIcon, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
+import { ChampionLink, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
 import { sortByRole } from "../utils/format";
 
 const MATCH_DATA_COLUMNS = [
@@ -71,7 +71,7 @@ function MatchRosterDetail({ row }) {
                   </td>
                   {hasDetails && (
                     <>
-                      <td>{detail ? <ChampionIcon champion={detail.champion} /> : "\u2013"}</td>
+                      <td>{detail ? <ChampionLink champion={detail.champion} championKey={detail.championKey} /> : "\u2013"}</td>
                       <td>{detail?.kills ?? "\u2013"}</td>
                       <td>{detail?.deaths ?? "\u2013"}</td>
                       <td>{detail?.assists ?? "\u2013"}</td>

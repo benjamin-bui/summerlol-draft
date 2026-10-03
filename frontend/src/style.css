@@ -602,6 +602,12 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 10px;
   overflow-x: auto;
 }
+.profile-history-section {
+  margin-top: 16px;
+}
+.profile-history-section .profile-history-table {
+  margin-top: 0;
+}
 
 /* ---- Table pagination footer ---- */
 .table-footer {
@@ -1244,6 +1250,21 @@ a.champion-link:hover {
 }
 .profile-summary-coplay-value .stat-formula {
   white-space: nowrap;
+}
+.champion-profile-summary .profile-summary-coplay > div > span:first-child {
+  min-width: 0;
+}
+.champion-profile-summary .profile-summary-coplay-value {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+}
+.champion-profile-summary .profile-summary-coplay > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
 }
 
 .profile-block table {
@@ -2311,6 +2332,19 @@ th[data-champion-sort]:focus-visible {
   white-space: normal;
   line-height: 1.15;
   vertical-align: bottom;
+}
+.profile-champions-table th,
+.profile-champions-table td {
+  text-align: center;
+  vertical-align: middle;
+}
+.profile-champions-table th:first-child,
+.profile-champions-table td:first-child {
+  text-align: left;
+}
+.champion-matchup-table th:nth-child(2),
+.champion-matchup-table td:nth-child(2) {
+  text-align: left;
 }
 .profile-champions-table th[data-champion-sort]::after {
   margin-left: 2px;

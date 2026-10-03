@@ -84,7 +84,12 @@ export function ChampionIcon({ champion }) {
 export function ChampionLink({ champion, championKey = null }) {
   const key = championKey || championIconKey(champion);
   return (
-    <Link to={`/champion/${encodeURIComponent(key)}`} className="champion-link" title="View champion">
+    <Link
+      to={`/champion/${encodeURIComponent(key)}`}
+      className="champion-link"
+      title="View champion"
+      onClick={(event) => event.stopPropagation()}
+    >
       <ChampionIcon champion={champion} />
     </Link>
   );
@@ -101,7 +106,7 @@ export function BanList({ bans, highlightKey = null }) {
           const key = b.key ?? b.championKey ?? null;
           return (
             <span key={i} className={`ban-chip${highlightKey && key === highlightKey ? " is-highlighted" : ""}`}>
-              <ChampionIcon champion={b.champion} />
+              <ChampionLink champion={b.champion} championKey={key} />
             </span>
           );
         })

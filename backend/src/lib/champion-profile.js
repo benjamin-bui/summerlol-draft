@@ -92,14 +92,23 @@ function buildChampionProfile({ key, games, players, resolve }) {
               sideOf.get(resolve(other.player)) === (side === 1 ? 2 : 1),
           )
         : null;
-      const laneOpponent = laneDetail
-        ? {
-            ...summarizeChampion(laneDetail),
-            kills: laneDetail.kills ?? null,
-            deaths: laneDetail.deaths ?? null,
-            assists: laneDetail.assists ?? null,
-          }
-        : null;
+      let laneOpponent = null;
+      if (laneDetail) {
+        const opponentIdentityKey = resolve(laneDetail.player);
+        const opponentTeam = side === 1 ? game.team2 : game.team1;
+        laneOpponent = {
+          ...summarizeChampion(laneDetail),
+          player: {
+            identityKey: opponentIdentityKey,
+            displayName:
+              opponentTeam.roster.find((member) => member.identityKey === opponentIdentityKey)?.displayName ||
+              laneDetail.player,
+          },
+          kills: laneDetail.kills ?? null,
+          deaths: laneDetail.deaths ?? null,
+          assists: laneDetail.assists ?? null,
+        };
+      }
 
       const own = side === 1 ? game.team1 : game.team2;
       history.push({

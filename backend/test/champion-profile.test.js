@@ -95,7 +95,39 @@ test('buildChampionProfile finds the opposing player in the same role', async ()
   assert.equal(history[0].laneOpponent, null);
   // Game 2: Cy (Mid, Beta) faces Alpha's Ahri... which Ann played Mid for Alpha.
   assert.deepEqual(history[1].laneOpponent, {
-    champion: 'Ahri', key: 'ahri', role: 'Mid', kills: 4, deaths: 4, assists: 4,
+    champion: 'Ahri', key: 'ahri', role: 'Mid',
+    player: { identityKey: 'Ann', displayName: 'Ann' },
+    kills: 4, deaths: 4, assists: 4,
+  });
+});
+
+test('buildChampionProfile excludes another champion picked in a different role from laneOpponent', () => {
+  const game = {
+    matchKey: 'jhin-bot',
+    csvRowIndex: 0,
+    team1: { name: 'Alpha', roster: [{ identityKey: 'JhinBot' }] },
+    team2: { name: 'Beta', roster: [{ identityKey: 'SyndraBot' }, { identityKey: 'SyndraMid' }] },
+    details: [
+      detail('jhin-bot', 'JhinBot', 'Jhin', 8, 1, 4, 'Bot'),
+      detail('jhin-bot', 'SyndraBot', 'Syndra', 2, 5, 3, 'Bot'),
+      detail('jhin-bot', 'SyndraMid', 'Syndra', 5, 2, 6, 'Mid'),
+    ],
+  };
+  const profile = buildChampionProfile({
+    key: 'jhin',
+    games: [game],
+    players: [{ identityKey: 'JhinBot', history: [{ matchKey: 'jhin-bot', outcome: 'win' }] }],
+    resolve: (name) => name,
+  });
+
+  assert.deepEqual(profile.history[0].opponentChampions.map(({ champion, role }) => ({ champion, role })), [
+    { champion: 'Syndra', role: 'Bot' },
+    { champion: 'Syndra', role: 'Mid' },
+  ]);
+  assert.deepEqual(profile.history[0].laneOpponent, {
+    champion: 'Syndra', key: 'syndra', role: 'Bot',
+    player: { identityKey: 'SyndraBot', displayName: 'SyndraBot' },
+    kills: 2, deaths: 5, assists: 3,
   });
 });
 

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { useAppData } from "../context/AppDataContext";
-import { PlayerLink, ChampionIcon, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
+import { PlayerLink, ChampionLink, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
 import { ordinal, pct, pctOrLessThanOne, sortByRole } from "../utils/format";
 
 function playerLinkProps(displayName, identityKey) {
@@ -16,7 +16,7 @@ function ChampionValue({ names, stat }) {
     <span className="tournament-champion-value">
       <span className="tournament-champion-list">
         {shown.map((n) => (
-          <ChampionIcon champion={n} key={n} />
+          <ChampionLink champion={n} key={n} />
         ))}
         {more > 0 && <span className="stat-formula">+{more} more</span>}
       </span>
@@ -233,7 +233,7 @@ function ChampionRows({ stats, options = {} }) {
             onClick={c.onClick}
           >
             <td>
-              <ChampionIcon champion={c.champion} />
+              <ChampionLink champion={c.champion} championKey={c.key} />
             </td>
             <td>{c.games}</td>
             <td>{winRate}</td>
@@ -420,7 +420,7 @@ function MatchRosterTable({ side, won, hasDetails, showBans, hasRoles, championF
               </td>
               {hasDetails && (
                 <>
-                  <td>{p.champion ? <ChampionIcon champion={p.champion} /> : "\u2013"}</td>
+                  <td>{p.champion ? <ChampionLink champion={p.champion} championKey={p.championKey} /> : "\u2013"}</td>
                   <td>{p.kills ?? "\u2013"}</td>
                   <td>{p.deaths ?? "\u2013"}</td>
                   <td>{p.assists ?? "\u2013"}</td>
@@ -465,7 +465,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
       {filterChampion && (
         <div className="tournament-filter-bar">
           <span>
-            Matches with <ChampionIcon champion={filterChampion.champion} />
+            Matches with <ChampionLink champion={filterChampion.champion} championKey={filterChampion.key} />
             {hasBanData(t) && <span className="stat-formula"> (picked or banned)</span>}
           </span>
           <button type="button" className="tournament-clear-filter" onClick={onClearFilter}>

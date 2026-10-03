@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node --test",
+    "test": "node src/scripts/test.js",
     "ingest-csv": "node src/scripts/csv-to-sqlite.js",
     "watch-csv": "node src/scripts/watch-csv.js",
     "ingest-matches": "node src/scripts/ingest-matches.js",
