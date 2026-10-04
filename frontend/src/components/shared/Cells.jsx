@@ -182,7 +182,10 @@ export function TrueSkillValue({ rating, mu }) {
   return (
     <span className="trueskill-cell">
       <RankBadge input={rating} />
-      {formatRating(rating)} ({formatRating(mu)})
+      <span className="trueskill-ratings">
+        {formatRating(rating)}
+        <span className="trueskill-mu">({formatRating(mu)})</span>
+      </span>
     </span>
   );
 }

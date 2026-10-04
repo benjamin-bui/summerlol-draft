@@ -865,6 +865,14 @@ header {
   display: inline-flex;
   align-items: center; /* This handles the vertical centering */
 }
+.trueskill-ratings {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25em;
+}
+.trueskill-mu {
+  white-space: nowrap;
+}
 
 .rank-badge {
   /* 1em equals the exact font size of the surrounding text. 

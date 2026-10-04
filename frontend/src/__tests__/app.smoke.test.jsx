@@ -44,6 +44,7 @@ describe("App smoke test against real data", () => {
     expect((await screen.findAllByText(/Voidliss/i, {}, { timeout: 10000 })).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: /Williams College Player Rankings/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Players" })).toBeInTheDocument();
+    expect(document.querySelector(".tab-panel.active .trueskill-ratings .trueskill-mu .rating-number")).toBeInTheDocument();
     expect(within(document.querySelector(".tab-panel.active")).queryByPlaceholderText("Search for a champion...")).not.toBeInTheDocument();
     expect(errSpy).not.toHaveBeenCalled();
     errSpy.mockRestore();
