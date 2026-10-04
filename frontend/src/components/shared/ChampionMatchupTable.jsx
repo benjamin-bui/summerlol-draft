@@ -1,5 +1,4 @@
-import { ChampionLink } from "./Cells";
-import { ROLE_LABELS } from "../../utils/format";
+import { ChampionLink, RoleIcon } from "./Cells";
 
 export default function ChampionMatchupTable({ matchups }) {
   return (
@@ -19,7 +18,9 @@ export default function ChampionMatchupTable({ matchups }) {
           <tbody>
             {matchups.map((matchup) => (
               <tr key={matchup.key}>
-                <td>{ROLE_LABELS[matchup.role] || matchup.role}</td>
+                <td>
+                  <RoleIcon role={matchup.role} />
+                </td>
                 <td>
                   <ChampionLink champion={matchup.champion} championKey={matchup.championKey} />
                 </td>

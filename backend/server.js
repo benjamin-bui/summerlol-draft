@@ -4,6 +4,7 @@ const path = require("path");
 const Database = require("better-sqlite3");
 const {
   loadIdentityMap,
+  lookupIdentity,
   identityTablesExist,
   opggLinkFromDisplayName,
   slugFromDisplayName,
@@ -162,7 +163,7 @@ function getAllRows() {
 // resolved.
 function resolveIdentities(rows, identityMap) {
   return rows.map((row) => {
-    const identity = identityMap.get(row.groupVal);
+    const identity = lookupIdentity(identityMap, row.groupVal);
     return {
       ...row,
       identityKey: identity ? identity.identityKey : row.groupVal,

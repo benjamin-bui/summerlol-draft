@@ -222,6 +222,7 @@ describe("App smoke test against real data", () => {
     const matchupTable = matchupSection.querySelector("table");
     expect([...matchupTable.querySelectorAll("th")].map((th) => th.textContent)).toEqual(["Role", "Enemy champion", "Games", "Win rate", "KDA"]);
     expect(matchupTable.querySelectorAll("tbody tr").length).toBeGreaterThan(0);
+    expect(matchupTable.querySelector("tbody td:first-child img.role-icon")).toHaveAttribute("alt", expect.any(String));
     expect(screen.getByText("Highest win rate with")).toBeInTheDocument();
     expect(screen.getByText("Best win rate against overall")).toBeInTheDocument();
     expect(screen.getByText("Worst win rate against overall")).toBeInTheDocument();

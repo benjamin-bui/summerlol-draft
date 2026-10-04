@@ -52,6 +52,11 @@ function identityTablesExist(db) {
   return !!row;
 }
 
+function lookupIdentity(identityMap, name) {
+  const rawName = String(name ?? "");
+  return identityMap.get(rawName.trim()) || identityMap.get(rawName) || null;
+}
+
 /**
  * Returns a Map from raw alias string -> { identityKey, displayName, profileUrl, resolved }.
  * identityKey is what stats aggregation should actually GROUP BY — it's the
@@ -110,6 +115,7 @@ function buildReverseIdentityLookup(identityMap) {
 
 module.exports = {
   loadIdentityMap,
+  lookupIdentity,
   buildReverseIdentityLookup,
   opggLink,
   opggLinkFromDisplayName,
