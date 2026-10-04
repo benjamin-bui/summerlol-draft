@@ -41,7 +41,7 @@ export default function PlayerSearchBox({ placeholder = "Search for a player..."
   }
 
   return (
-    <div className="profile-search-box" ref={boxRef} style={{ flex: "1 1 100%" }}>
+    <div className="profile-search-box" ref={boxRef}>
       <input
         type="text"
         className="profile-search-input"

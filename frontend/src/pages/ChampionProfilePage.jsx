@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAppData } from "../context/AppDataContext";
 import { ChampionIcon, ChampionLink } from "../components/shared/Cells";
+import ChampionSearchBox from "../components/shared/ChampionSearchBox";
 import ChampionMatchupTable from "../components/shared/ChampionMatchupTable";
 import ChampionPlayersTable from "../components/shared/ChampionPlayersTable";
 import ProfileHistoryTable from "../components/shared/ProfileHistoryTable";
@@ -193,7 +194,10 @@ export default function ChampionProfilePage() {
 
   return (
     <div className="wrap">
-      <div className="player-profile-header">{backButton}</div>
+      <div className="player-profile-topbar">
+        {backButton}
+        <ChampionSearchBox />
+      </div>
       <h2 className="player-profile-title champion-profile-title">
         <ChampionIcon champion={champion.champion} />
       </h2>

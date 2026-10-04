@@ -37,12 +37,14 @@ describe("App smoke test against real data", () => {
     await waitFor(() => expect(document.documentElement).toHaveAttribute("data-theme", "light"));
   });
 
-  it("loads the TrueSkill tab with real rows and no console errors", async () => {
+  it("loads the Players tab with real rows and no console errors", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     renderApp("/");
     // Wait for real player rows to appear (any known name from the fixture).
     expect((await screen.findAllByText(/Voidliss/i, {}, { timeout: 10000 })).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: /Williams College Player Rankings/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Players" })).toBeInTheDocument();
+    expect(within(document.querySelector(".tab-panel.active")).queryByPlaceholderText("Search for a champion...")).not.toBeInTheDocument();
     expect(errSpy).not.toHaveBeenCalled();
     errSpy.mockRestore();
   });
@@ -55,6 +57,21 @@ describe("App smoke test against real data", () => {
     const link = matches.map((el) => el.closest("a.player-link")).find(Boolean);
     expect(link).toBeTruthy();
     expect(link).toHaveAttribute("href", expect.stringMatching(/^\/player\/(?!simple\/)/));
+  });
+
+  it("searches champions from the Champions tab and opens the champion profile", async () => {
+    const user = userEvent.setup();
+    renderApp("/?tab=champions");
+    const championPanel = within(document.querySelector("#tab-champions.active"));
+    const input = championPanel.getByPlaceholderText("Search for a champion...");
+    await user.type(input, "Syndra");
+    const suggestion = await waitFor(() => {
+      const element = document.querySelector("#tab-champions.active .trueskill-search-suggestion");
+      expect(element).toBeInTheDocument();
+      return element;
+    });
+    await user.click(suggestion);
+    expect(await screen.findByText(/Games: 23/, {}, { timeout: 10000 })).toBeInTheDocument();
   });
 
   it("switches to every tab without throwing, and shows real data", async () => {
@@ -177,6 +194,7 @@ describe("App smoke test against real data", () => {
     renderApp("/player/Voidliss-NA1");
     expect(await screen.findByText("Summary", {}, { timeout: 10000 })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Tournaments" })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Search for a champion...")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "TrueSkill" })).toBeInTheDocument();
     const championsSection = screen.getByRole("heading", { name: "Champions" }).closest("section");
     expect(championsSection.querySelector("a.champion-link")).toHaveAttribute("href", expect.stringMatching(/^\/champion\//));
@@ -194,6 +212,7 @@ describe("App smoke test against real data", () => {
     const user = userEvent.setup();
     renderApp("/champion/syndra");
     expect(await screen.findByText("Summary", {}, { timeout: 10000 })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search for a champion...")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Tournaments" })).toBeInTheDocument();
     const playersHeading = screen.getByRole("heading", { name: "Players" });
     // Syndra's fixture has 23 games across several tournaments.

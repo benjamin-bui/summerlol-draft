@@ -341,7 +341,7 @@ export default function PlayerProfilePage() {
 
   return (
     <div className="wrap">
-      <div className="player-profile-header">
+      <div className="player-profile-topbar">
         <button className="player-profile-back" onClick={goBack}>
           {"\u2190"} Back
         </button>

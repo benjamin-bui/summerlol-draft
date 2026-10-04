@@ -17,7 +17,7 @@ import SimpleProfilePage from "./pages/SimpleProfilePage";
 import ChampionProfilePage from "./pages/ChampionProfilePage";
 
 const TABS = [
-  { key: "trueskill", label: "TrueSkill" },
+  { key: "trueskill", label: "Players" },
   { key: "tournaments", label: "Tournaments" },
   { key: "champions", label: "Champions" },
   { key: "draftiq", label: "Draft vs. TrueSkill" },

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import DataTable from "../components/table/DataTable";
 import { ChampionLink, RoleIcon } from "../components/shared/Cells";
+import ChampionSearchBox from "../components/shared/ChampionSearchBox";
 import { ROLE_LABELS, ROLES } from "../utils/format";
 
 const CHAMPION_COLUMNS = [
@@ -236,6 +237,7 @@ export default function ChampionsTab({ active }) {
             </div>
           )}
         </div>
+        <ChampionSearchBox />
         <span className="champions-result-count">
           {visibleRows.length} champions {tournamentCount ? `\u00b7 ${selectedTournaments.reduce((sum, t) => sum + t.gamesPlayed, 0)} games` : "\u00b7 no tournaments selected"}
         </span>
