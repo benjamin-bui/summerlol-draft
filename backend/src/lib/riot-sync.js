@@ -19,12 +19,13 @@
  * resolvePending / refreshKnown / refreshRankedStats / runFullSync all take
  * an optional `onProgress` callback in their options object:
  *
- *   onProgress({ phase, event, current, total, label })
+ *   onProgress({ phase, event, current, total, label, status })
  *
  *   phase: 'pending' | 'refresh' | 'ranked'
- *   event: 'start' | 'tick' | 'end'
- *   current/total: row counts within the current phase (only on 'tick'/'end')
+ *   event: 'start' | 'processing' | 'tick' | 'end'
+ *   current/total: row counts within the current phase
  *   label: short human string, e.g. the raw name or player id being processed
+ *   status: 'done' | 'failed' on tick events
  *
  * It's a plain callback (not an EventEmitter) so it stays trivial to pass
  * through nested calls and trivial to no-op in tests — callers who don't
@@ -254,6 +255,13 @@ async function resolvePending(
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const region = row.region || DEFAULT_REGION;
+    onProgress({
+      phase: "pending",
+      event: "processing",
+      current: i + 1,
+      total,
+      label: row.raw_name,
+    });
     let account;
     try {
       account = await fetchAccountByRiotId(region, row.game_name, row.tag_line);
@@ -270,6 +278,7 @@ async function resolvePending(
         current: i + 1,
         total,
         label: row.raw_name,
+        status: "failed",
       });
       continue;
     }
@@ -292,6 +301,7 @@ async function resolvePending(
       current: i + 1,
       total,
       label: row.raw_name,
+      status: "done",
     });
   }
 
@@ -332,6 +342,13 @@ async function refreshKnown(
     const label = row.riot_game_name
       ? `${row.riot_game_name}#${row.riot_tag_line}`
       : `player ${row.id}`;
+    onProgress({
+      phase: "refresh",
+      event: "processing",
+      current: i + 1,
+      total,
+      label,
+    });
     let account;
     try {
       account = await fetchAccountByPuuid(region, row.puuid);
@@ -343,6 +360,7 @@ async function refreshKnown(
         current: i + 1,
         total,
         label,
+        status: "failed",
       });
       continue;
     }
@@ -366,6 +384,7 @@ async function refreshKnown(
       current: i + 1,
       total,
       label,
+      status: "done",
     });
   }
 
@@ -424,7 +443,8 @@ async function refreshRankedStats(
 ) {
   const rows = db
     .prepare(
-      `SELECT id, puuid, riot_region FROM players WHERE puuid IS NOT NULL ORDER BY id ASC LIMIT ?`,
+      `SELECT id, puuid, riot_region, riot_game_name, riot_tag_line, display_name_override
+       FROM players WHERE puuid IS NOT NULL ORDER BY id ASC LIMIT ?`,
     )
     .all(limit);
 
@@ -438,7 +458,19 @@ async function refreshRankedStats(
     const row = rows[i];
     const region = row.riot_region || DEFAULT_REGION;
     const platform = platformHost(region); // league-v4 is PLATFORM-routed, not regional -- see platformHost above
-    const label = `player ${row.id}`;
+    const label =
+      row.display_name_override ||
+      (row.riot_game_name
+        ? `${row.riot_game_name}#${row.riot_tag_line}`
+        : `player ${row.id}`);
+
+    onProgress({
+      phase: "ranked",
+      event: "processing",
+      current: i + 1,
+      total,
+      label,
+    });
 
     let entries;
     try {
@@ -451,6 +483,7 @@ async function refreshRankedStats(
         current: i + 1,
         total,
         label,
+        status: "failed",
       });
       continue;
     }
@@ -466,6 +499,7 @@ async function refreshRankedStats(
       current: i + 1,
       total,
       label,
+      status: "done",
     });
   }
 
