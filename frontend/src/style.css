@@ -10,6 +10,12 @@
   --accent-secondary: #5ec8a8;
   --danger: #d9736b;
   --shadow: rgba(0, 0, 0, 0.4);
+  /* Match-history row tints. The stripe colors match the profile chart's
+     win/loss dots; the backgrounds are those same hues, washed out. */
+  --win-stripe: #2e7d32;
+  --loss-stripe: #c62828;
+  --win-tint: rgba(76, 175, 80, 0.14);
+  --loss-tint: rgba(229, 83, 75, 0.15);
   --mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
   --sans: "Inter", "Segoe UI", system-ui, sans-serif;
 }
@@ -34,6 +40,10 @@
   --accent-secondary: #9edef9;
   --danger: #d9736b;
   --shadow: rgba(61, 36, 64, 0.18);
+  /* On the pink page a red wash reads as "more pink", so the loss tint leans
+     toward true red and both tints are a touch stronger than in dark mode. */
+  --win-tint: rgba(46, 125, 50, 0.13);
+  --loss-tint: rgba(198, 40, 40, 0.12);
 }
 
 * {
@@ -2397,4 +2407,152 @@ th[data-champion-sort]:focus-visible {
 }
 .role-label {
   vertical-align: middle;
+}
+
+/* ---- Expanded match: both teams side by side ----
+   The expanded roster used to be a flex row of two full-size tables, each
+   ~650px wide, so on anything under ~1400px it wrapped (teams stacked
+   top/bottom) or pushed the whole history table into a horizontal scroll.
+
+   Now: .match-rosters is a size container, so the layout reacts to the room
+   the expanded row actually has (the profile pages lose 400px to the sidebar,
+   Tournaments loses 480px, Match Data gets the full page) instead of guessing
+   from viewport width. Inside it, .match-rosters-grid is two equal columns
+   with compact tables, and degrades in steps as the container narrows:
+     >= 900px  full tables: champion names, comfortable padding
+     560-900   same two columns, champion names collapse to icon-only
+     < 560     teams stack (phones / very narrow windows) */
+/* The scroll wrappers that host an expandable table are size containers too,
+   so an expanded row can size itself to the VISIBLE width (100cqw) rather
+   than the table's full scroll width. Without that, a table wider than its
+   wrapper (the history tables are ~1050-1250px wide) hands the roster a
+   container wider than the screen and the right-hand team is clipped. */
+.profile-history-section,
+.tournament-matches-scroll,
+.table-section-expandable {
+  container: table-scroll / inline-size;
+}
+.match-rosters {
+  container: match-rosters / inline-size;
+  /* Pinned to the left edge of the scrollport and as wide as it (minus the
+     detail cell's 18px side padding), so it never scrolls out of view. */
+  position: sticky;
+  left: 0;
+  width: calc(100cqw - 36px);
+  max-width: 100%;
+}
+.match-rosters-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 560px));
+  justify-content: start;
+  gap: 12px 24px;
+}
+.match-roster {
+  min-width: 0;
+}
+.match-roster .match-details-table {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 0.88rem;
+}
+.match-roster .match-details-table th,
+.match-roster .match-details-table td {
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+.match-roster .match-details-table th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.74rem;
+}
+/* Player column soaks up the slack and truncates; everything else hugs its
+   content. (width:100% + max-width:0 is the standard auto-layout ellipsis
+   trick: the cell claims all leftover width but can't force the table wider.) */
+.match-roster .match-details-table th:first-child,
+.match-roster .match-details-table td:first-child {
+  width: 100%;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* K / D / A: narrow, centered, aligned digits. */
+.match-roster .match-details-table th:nth-last-child(-n + 3),
+.match-roster .match-details-table td:nth-last-child(-n + 3) {
+  text-align: center;
+  padding-left: 4px;
+  padding-right: 4px;
+  min-width: 2ch;
+  font-variant-numeric: tabular-nums;
+}
+/* "Name #tag" on one line rather than the default stacked name-over-tag. */
+.match-roster .player-name,
+.match-roster .player-tag {
+  display: inline;
+}
+.match-roster .player-tag {
+  margin-left: 1px;
+}
+.match-roster .champion-icon {
+  width: 24px;
+  height: 24px;
+}
+.match-roster .champion-cell {
+  gap: 6px;
+}
+.match-roster .ban-list {
+  margin: 4px 0 2px;
+  gap: 4px 6px;
+}
+.match-roster .ban-list .champion-icon {
+  width: 22px;
+  height: 22px;
+}
+/* Ban chips are icon-only here; five names would wrap onto several lines. */
+.match-roster .ban-list .champion-name {
+  display: none;
+}
+.match-roster .trueskill-cell {
+  gap: 4px;
+}
+
+@container match-rosters (max-width: 900px) {
+  .match-rosters-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+  }
+  .match-roster .match-details-table td .champion-name {
+    display: none;
+  }
+  .match-roster .match-details-table th,
+  .match-roster .match-details-table td {
+    padding: 5px 6px;
+  }
+}
+@container match-rosters (max-width: 560px) {
+  .match-rosters-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Plenty of vertical room once stacked, so bring the names back. */
+  .match-roster .match-details-table td .champion-name {
+    display: inline;
+  }
+}
+
+/* ---- Match history rows: color = result ----
+   Win/loss used to be a text column; now the whole row is tinted (and gets a
+   solid stripe in the chart's win/loss color so it isn't color-wash alone). */
+.profile-history-table tr.row-win > td {
+  background: var(--win-tint);
+}
+.profile-history-table tr.row-loss > td {
+  background: var(--loss-tint);
+}
+.profile-history-table tr.row-win > td:first-child {
+  box-shadow: inset 3px 0 0 var(--win-stripe);
+}
+.profile-history-table tr.row-loss > td:first-child {
+  box-shadow: inset 3px 0 0 var(--loss-stripe);
+}
+.profile-history-table tr.history-row:hover > td {
+  filter: brightness(1.06);
 }

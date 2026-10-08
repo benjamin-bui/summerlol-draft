@@ -113,7 +113,7 @@ export default function DataTable({
         />
         {extraControls}
       </div>
-      <div className="table-section">
+      <div className={`table-section${expandable ? " table-section-expandable" : ""}`}>
         <table>
           <thead>
             <tr>

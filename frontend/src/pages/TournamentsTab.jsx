@@ -387,8 +387,8 @@ function MatchRosterTable({ side, won, hasDetails, showBans, hasRoles, championF
   const rows = sortByRole(side.roster, (p) => p.role);
   const result = won === null ? null : won ? <span className="outcome-win">Win</span> : <span className="outcome-loss">Loss</span>;
   return (
-    <div>
-      <strong>{side.name}</strong>
+    <div className="match-roster">
+      <strong className="match-roster-name">{side.name}</strong>
       {result && <> {result}</>} <span className="stat-formula">
         avg TrueSkill <TrueSkillValue rating={side.avg} mu={side.avgMu} />
       </span>
@@ -534,7 +534,8 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                     {isOpen && (
                       <tr key={`${m.matchKey || i}-detail`} className="roster-detail-row">
                         <td colSpan={7}>
-                          <div className="roster-detail">
+                          <div className="match-rosters">
+                          <div className="roster-detail match-rosters-grid">
                             <MatchRosterTable
                               side={m.team1}
                               won={m.winner === "draw" ? null : t1Won}
@@ -551,6 +552,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                               hasRoles={matchHasRoles}
                               championFilterKey={championFilterKey}
                             />
+                          </div>
                           </div>
                         </td>
                       </tr>

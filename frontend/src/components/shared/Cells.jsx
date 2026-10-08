@@ -74,7 +74,7 @@ export function ChampionIcon({ champion }) {
           e.currentTarget.hidden = true;
         }}
       />
-      <span>{label}</span>
+      <span className="champion-name">{label}</span>
     </span>
   );
 }
@@ -87,7 +87,7 @@ export function ChampionLink({ champion, championKey = null }) {
     <Link
       to={`/champion/${encodeURIComponent(key)}`}
       className="champion-link"
-      title="View champion"
+      title={champion ? `View ${champion}` : "View champion"}
       onClick={(event) => event.stopPropagation()}
     >
       <ChampionIcon champion={champion} />

@@ -8,8 +8,8 @@ function RosterTable({ team, name, bans, gameHasBans, gameHasRoles, hasDetails, 
   const normalizePlayer = (v) => String(v || "").trim().toLowerCase();
   const orderedRoster = sortByRole(team?.roster || [], (member) => detailsByPlayer.get(normalizePlayer(member.displayName))?.role);
   return (
-    <div>
-      <strong>{name}</strong>
+    <div className="match-roster">
+      <strong className="match-roster-name">{name}</strong>
       {gameHasBans && <BanList bans={bans} />}
       <table className="match-details-table">
         <thead>
@@ -59,7 +59,7 @@ function RosterTable({ team, name, bans, gameHasBans, gameHasRoles, hasDetails, 
 
 function HistoryRow({ entry, showRole, showPlayer }) {
   const [open, setOpen] = useState(false);
-  const outcomeClass = entry.outcome === "win" ? "outcome-win" : entry.outcome === "loss" ? "outcome-loss" : "outcome-draw";
+  const rowClass = entry.outcome === "win" ? "row-win" : entry.outcome === "loss" ? "row-loss" : "row-draw";
   const playerDetail = entry.playerDetails?.[0];
   const normalizePlayer = (v) => String(v || "").trim().toLowerCase();
   const detailsByPlayer = new Map((entry.details || []).map((d) => [normalizePlayer(d.player), d]));
@@ -75,7 +75,7 @@ function HistoryRow({ entry, showRole, showPlayer }) {
 
   return (
     <>
-      <tr>
+      <tr className={`history-row ${rowClass}`}>
         <td className="col-toggle">
           <button className="roster-toggle" aria-expanded={open} aria-label="Show match details" onClick={() => setOpen((o) => !o)}>
             {open ? "\u25bc" : "\u25b6"}
@@ -118,9 +118,10 @@ function HistoryRow({ entry, showRole, showPlayer }) {
             <td className="col-secondary">{entry.laneOpponent ? kdaText(entry.laneOpponent) : "\u2013"}</td>
           </>
         )}
-        <td className="col-result">
-          <span className={`cell-primary ${outcomeClass}`}>{entry.outcome || "\u2013"}</span>
-          <span className="cell-secondary">{predWinPct}% Win Prob.</span>
+        <td className="col-result" title={entry.outcome ? `${entry.outcome} (${predWinPct}% predicted win probability)` : undefined}>
+          {/* Win/loss is carried by the row's color; keep it readable for screen readers too. */}
+          <span className="sr-only">{entry.outcome ? `${entry.outcome}, ` : ""}</span>
+          <span className="cell-primary">{predWinPct}%</span>
         </td>
         {!showPlayer && (
           <>
@@ -144,7 +145,8 @@ function HistoryRow({ entry, showRole, showPlayer }) {
       {open && (
         <tr className="roster-detail-row">
           <td colSpan={columnCount}>
-            <div className="roster-detail">
+            <div className="match-rosters">
+            <div className="roster-detail match-rosters-grid">
               <RosterTable
                 team={entry.ownTeam}
                 name={entry.ownTeam?.name || "Your team"}
@@ -165,6 +167,7 @@ function HistoryRow({ entry, showRole, showPlayer }) {
                 detailsByPlayer={detailsByPlayer}
                 showTrueSkill={!showPlayer}
               />
+            </div>
             </div>
             <div className="match-extra-stats">
               {showRole && playerDetail?.role && (
@@ -256,7 +259,7 @@ export default function ProfileHistoryTable({ entries, showRole, showPlayer = fa
                 <th className="col-secondary">Lane K/D/A</th>
               </>
             )}
-            <th className="col-result">Result</th>
+            <th className="col-result">Win Prob.</th>
             {!showPlayer && (
               <>
                 <th className="col-secondary col-ratings">Avg Rating</th>

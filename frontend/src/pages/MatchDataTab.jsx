@@ -39,8 +39,8 @@ function MatchRosterDetail({ row }) {
     const roster = sortByRole(team?.roster || [], (member) => detailsByPlayer.get(normalizePlayer(member.displayName))?.role);
     const hasDetails = !!row.match_details?.length;
     return (
-      <div>
-        <strong>{name}</strong> - avg TrueSkill: <TrueSkillValue rating={team?.avg} mu={team?.avgMu} />
+      <div className="match-roster">
+        <strong className="match-roster-name">{name}</strong> - avg TrueSkill: <TrueSkillValue rating={team?.avg} mu={team?.avgMu} />
         {hasBans && <BanList bans={bans} />}
         <table className="match-details-table">
           <thead>
@@ -87,9 +87,11 @@ function MatchRosterDetail({ row }) {
   };
 
   return (
-    <div className="roster-detail">
-      {teamTable(row._team1Roster, row._team1Roster?.name || row.team1, row.bans?.team1)}
-      {teamTable(row._team2Roster, row._team2Roster?.name || row.team2, row.bans?.team2)}
+    <div className="match-rosters">
+      <div className="roster-detail match-rosters-grid">
+        {teamTable(row._team1Roster, row._team1Roster?.name || row.team1, row.bans?.team1)}
+        {teamTable(row._team2Roster, row._team2Roster?.name || row.team2, row.bans?.team2)}
+      </div>
     </div>
   );
 }
