@@ -1,15 +1,63 @@
 const { round3 } = require("./trueskill-matches");
 
+// Rating cutoff for each League rank tier. These are calibrated to the rating
+// scale produced by the default TrueSkill beta (mu / 2 = 500; see
+// trueskill-matches.js) so each tier covers the same share of players as it did
+// before beta moved from 250 to 500: Master ~top 1% (picked so the same three players still count as "ever Master"), Diamond ~top 4.8%,
+// Emerald ~top 18%, Platinum ~top 37%, Gold ~top 57%, Silver ~top 79%, Bronze
+// ~top 96%. Rounded to multiples of 5. If beta (or the rating engine) changes,
+// re-derive these rather than leaving the tiers silently shifted.
 const LOL_RANK_CUTOFFS = [
-  { name: "Master", ratingCutoff: 1200 },
-  { name: "Diamond", ratingCutoff: 1065 },
-  { name: "Emerald", ratingCutoff: 925 },
-  { name: "Platinum", ratingCutoff: 800 },
-  { name: "Gold", ratingCutoff: 675 },
-  { name: "Silver", ratingCutoff: 540 },
+  { name: "Master", ratingCutoff: 1125 },
+  { name: "Diamond", ratingCutoff: 995 },
+  { name: "Emerald", ratingCutoff: 865 },
+  { name: "Platinum", ratingCutoff: 745 },
+  { name: "Gold", ratingCutoff: 660 },
+  { name: "Silver", ratingCutoff: 550 },
   { name: "Bronze", ratingCutoff: 440 },
   { name: "Iron", ratingCutoff: -Infinity },
 ];
+
+// ---- Champion diversity across players ----
+// Same Gini-Simpson index the player profile page shows next to "Champion
+// Diversity" (1 - sum of squared champion pick shares; see
+// computeChampionDiversity in frontend/src/utils/profileCompute.js -- keep the
+// two in step). Computed here for every player so the Players tab can draw a
+// histogram and a profile can say where its owner sits in it.
+//
+// The index is capped at 1 - 1/n for n games, so a player with 3 recorded
+// games can never score above 0.67 however varied they are. Mixing those in
+// would make "diversity" mostly a proxy for "games played", so only players
+// with at least MIN_DIVERSITY_GAMES games that have a champion on record are
+// included in the distribution.
+const MIN_DIVERSITY_GAMES = 10;
+
+function computeChampionDiversityDistribution(
+  players,
+  { minGames = MIN_DIVERSITY_GAMES } = {},
+) {
+  const entries = [];
+  for (const p of players) {
+    const counts = new Map();
+    let games = 0;
+    for (const h of p.history || []) {
+      const champion = h.playerDetails?.[0]?.champion;
+      if (!champion) continue;
+      counts.set(champion, (counts.get(champion) || 0) + 1);
+      games += 1;
+    }
+    if (games < minGames) continue;
+    let sumSquares = 0;
+    for (const n of counts.values()) sumSquares += (n / games) ** 2;
+    entries.push({
+      key: p.identityKey,
+      games,
+      diversity: Math.round((1 - sumSquares) * 10000) / 10000,
+    });
+  }
+  entries.sort((a, b) => a.diversity - b.diversity);
+  return { minGames, players: entries };
+}
 
 function computeFunFacts(result, { rankCutoffs = LOL_RANK_CUTOFFS } = {}) {
   const { players, games } = result;
@@ -168,6 +216,7 @@ function computeFunFacts(result, { rankCutoffs = LOL_RANK_CUTOFFS } = {}) {
       : null,
     mostActiveRivalry,
     everMaster,
+    championDiversity: computeChampionDiversityDistribution(players),
   };
 }
 
@@ -196,4 +245,8 @@ function formatUpset(g) {
   };
 }
 
-module.exports = { computeFunFacts };
+module.exports = {
+  computeFunFacts,
+  computeChampionDiversityDistribution,
+  MIN_DIVERSITY_GAMES,
+};

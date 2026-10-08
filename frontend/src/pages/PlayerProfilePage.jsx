@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAppData } from "../context/AppDataContext";
+import { diversityPercentile } from "../utils/diversityStats";
 import { NameWithTag, TrueSkillValue, SoloQueueRank } from "../components/shared/Cells";
 import PlayerSearchBox from "../components/shared/PlayerSearchBox";
 import ProfileChart from "../components/shared/ProfileChart";
@@ -43,10 +44,37 @@ function SummaryPlayerLink({ rec }) {
   );
 }
 
+// The diversity score, with a hover/focus tooltip placing it among all players.
+function DiversityValue({ diversity, rank }) {
+  const text = diversity != null ? diversity.toFixed(2) : "\u2013";
+  let headline = null;
+  let detail = null;
+  if (rank?.percentile != null) {
+    headline = `Diversity higher than ${rank.percentile}% of other players`;
+    detail = `Compared with ${rank.others} other players who have at least ${rank.minGames} games with a recorded champion.`;
+  } else if (rank?.reason === "too-few-games") {
+    headline = "Not enough games to compare";
+    detail = `${rank.games} with a recorded champion; ${rank.minGames} are needed for a percentile.`;
+  }
+  if (!headline) return <strong>{text}</strong>;
+  return (
+    <strong className="has-tip" tabIndex={0} aria-label={`${text}. ${headline}. ${detail}`}>
+      {text}
+      <span className="tip" role="tooltip">
+        <span className="tip-headline">{headline}</span>
+        <span className="tip-detail">{detail}</span>
+      </span>
+    </strong>
+  );
+}
+
 function SummaryBlock({ player, tournaments, championStats, history }) {
   const avgPick = average(tournaments.map(pickPercentile).filter((v) => v != null));
   const avgPlacement = average(tournaments.map(placementPercentile).filter((v) => v != null));
   const diversity = computeChampionDiversity(championStats);
+  const { funFacts } = useAppData();
+  const championGames = championStats.reduce((sum, c) => sum + (c.games || 0), 0);
+  const diversityRank = diversityPercentile(funFacts?.championDiversity, player?.identityKey, diversity, championGames);
   const { withMap, againstMap } = useMemo(() => computeCoPlayRecords(history, player?.identityKey), [history, player?.identityKey]);
   const bestWith = pickExtreme(withMap, "max");
   const worstWith = pickExtreme(withMap, "min");
@@ -68,7 +96,7 @@ function SummaryBlock({ player, tournaments, championStats, history }) {
         </div>
         <div>
           <span title="Gini-Simpson index">Champion Diversity</span>
-          <strong>{diversity != null ? diversity.toFixed(2) : "\u2013"}</strong>
+          <DiversityValue diversity={diversity} rank={diversityRank} />
         </div>
       </div>
       <RoleBreakdown history={history} />

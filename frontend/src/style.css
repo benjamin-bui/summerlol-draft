@@ -2556,3 +2556,112 @@ th[data-champion-sort]:focus-visible {
 .profile-history-table tr.history-row:hover > td {
   filter: brightness(1.06);
 }
+
+/* ---- Charts used in the fun-facts boxes (diversity histogram, calibration) ---- */
+.diversity-histogram,
+.calibration-chart {
+  margin: 4px 0 16px;
+  max-width: 620px;
+}
+.diversity-histogram svg,
+.calibration-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.chart-bar {
+  fill: var(--accent);
+  opacity: 0.8;
+}
+.chart-bar:hover {
+  opacity: 1;
+}
+.chart-tick,
+.chart-axis-label,
+.chart-note {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: var(--sans);
+}
+.chart-axis-label {
+  font-size: 12px;
+}
+.chart-diagonal {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+.chart-interval {
+  stroke: var(--accent);
+  stroke-width: 2;
+  opacity: 0.55;
+}
+.chart-dot {
+  fill: var(--accent);
+  stroke: var(--panel);
+  stroke-width: 1.5;
+}
+.tournament-fun-facts-table th[title],
+.tournament-fun-facts-table td[title] {
+  cursor: help;
+}
+.tournament-fun-facts-table tfoot td {
+  font-weight: 600;
+  border-top: 2px solid var(--border);
+}
+.tournament-fun-facts-table td,
+.tournament-fun-facts-table th {
+  white-space: nowrap;
+}
+.tournament-fun-facts .profile-filter-row {
+  margin-bottom: 8px;
+}
+
+/* Instant hover/focus tooltip (native title="" has a ~1s delay). */
+.has-tip {
+  position: relative;
+  cursor: help;
+  border-bottom: 1px dotted var(--muted);
+}
+.has-tip .tip {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--panel);
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  box-shadow: 0 4px 14px var(--shadow);
+}
+.has-tip .tip span {
+  display: block;
+}
+.has-tip .tip-headline {
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+.has-tip .tip-detail {
+  margin-top: 3px;
+  opacity: 0.8;
+}
+.diversity-histogram figcaption,
+.calibration-chart figcaption {
+  font-size: 0.78rem;
+  margin-top: 4px;
+}
+.has-tip:hover .tip,
+.has-tip:focus .tip {
+  display: block;
+}

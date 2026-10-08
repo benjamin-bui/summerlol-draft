@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { RankBadge } from "./Cells";
+import DiversityHistogram from "./DiversityHistogram";
 
 export default function FunFacts({ ff }) {
   const [open, setOpen] = useState(false);
@@ -32,6 +33,12 @@ export default function FunFacts({ ff }) {
             ))}
           </tbody>
         </table>
+        {ff.championDiversity?.players?.length > 1 && (
+          <>
+            <h4>Champion diversity across players</h4>
+            <DiversityHistogram distribution={ff.championDiversity} />
+          </>
+        )}
         <ul className="fun-facts-list">
           {ff.biggestUpset && (
             <li>

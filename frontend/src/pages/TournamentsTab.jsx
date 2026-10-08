@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { useAppData } from "../context/AppDataContext";
 import { PlayerLink, ChampionLink, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
+import TournamentFunFacts from "../components/shared/TournamentFunFacts";
 import { ordinal, pct, pctOrLessThanOne, sortByRole } from "../utils/format";
 
 function playerLinkProps(displayName, identityKey) {
@@ -660,6 +661,8 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
 
   return (
     <section className={`tab-panel${active ? " active" : ""}`} id="tab-tournaments">
+      <TournamentFunFacts tournaments={tournaments} />
+
       <section className="profile-block profile-filter-block tournament-picker">
         <div className="profile-filter-row">
           <label>Tournament:</label>

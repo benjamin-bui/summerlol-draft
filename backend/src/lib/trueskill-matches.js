@@ -78,7 +78,15 @@ async function computeTrueSkillFromMatches(
   {
     mu = 1000,
     sigma = mu / 3,
-    beta = mu / 4,
+    // beta = how much a single game's performance varies. mu / 2 (500) rather
+    // than the previous mu / 4 (250): scored on every game's pre-game
+    // prediction, it beat 250 on both 2020-23 and the held-out 2024-26 games
+    // (Brier 0.2447 -> 0.2414 and 0.2396 -> 0.2349) and corrects most of the
+    // favorites' overconfidence. Anything from ~350 to ~750 scores about the
+    // same. Larger beta shrinks per-game rating moves, so the rank cutoffs in
+    // trueskill-funfacts.js are calibrated to this value -- re-derive them if
+    // it changes.
+    beta = mu / 2,
     tau = sigma / 50,
     drawProbability = 0,
     conservativeK = 1,

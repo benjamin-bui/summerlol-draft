@@ -7,11 +7,18 @@ export default function ProfileChart({ history }) {
   const [containerWidth, setContainerWidth] = useState(0);
 
   useEffect(() => {
-    if (!wrapRef.current) return;
-    const measure = () => setContainerWidth(Math.max(0, wrapRef.current.clientWidth - 32));
+    // Capture the element once. Reading wrapRef.current inside `measure` raced
+    // with unmount: React clears the ref before this cleanup runs, so a
+    // ResizeObserver callback delivered in between hit `null.clientWidth`.
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => {
+      if (!el.isConnected) return;
+      setContainerWidth(Math.max(0, el.clientWidth - 32));
+    };
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(wrapRef.current);
+    ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
