@@ -72,6 +72,23 @@ const TRUESKILL_COLUMNS = [
   },
   { key: "mu", label: "μ", sortable: true, hideable: true, filterable: true, type: "number", decimals: 2, className: "adj-avg", defaultHidden: true },
   { key: "sigma", label: "σ", sortable: true, hideable: true, filterable: true, type: "number", decimals: 2, defaultHidden: true },
+  {
+    key: "championDiversity",
+    label: "Champion Diversity",
+    sortable: true,
+    hideable: true,
+    filterable: true,
+    type: "number",
+    decimals: 2,
+    // Blank for players without enough games with a recorded champion: the
+    // index can't exceed 1 - 1/n for n games, so small samples aren't comparable.
+    render: (val, row) =>
+      val == null ? (
+        <span title={`Needs at least ${row.championDiversityMinGames ?? 10} games with a recorded champion`}>{"\u2013"}</span>
+      ) : (
+        <span title={`Gini\u2013Simpson index over ${row.championDiversityGames} games with a recorded champion (higher = more varied)`}>{val.toFixed(2)}</span>
+      ),
+  },
   { key: "games", label: "Games", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
   { key: "tournaments", label: "Tournaments", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
   { key: "wins", label: "Wins", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
@@ -97,6 +114,22 @@ export default function TrueSkillTab({ active }) {
   const { players, funFacts } = useAppData();
   const [filterText, setFilterText] = useState("");
   const [summary, setSummary] = useState(null);
+
+  // Same per-player diversity the Players-tab histogram and profile percentile
+  // use (computed by the backend, players with enough champion-recorded games only).
+  const tableRows = useMemo(() => {
+    const byKey = new Map((funFacts?.championDiversity?.players || []).map((d) => [d.key, d]));
+    const minGames = funFacts?.championDiversity?.minGames;
+    return players.map((p) => {
+      const d = byKey.get(p.identityKey);
+      return {
+        ...p,
+        championDiversity: d ? d.diversity : null,
+        championDiversityGames: d ? d.games : null,
+        championDiversityMinGames: minGames,
+      };
+    });
+  }, [players, funFacts]);
 
   const externalFilter = useMemo(() => {
     if (!filterText.trim()) return null;
@@ -158,7 +191,7 @@ export default function TrueSkillTab({ active }) {
 
       <DataTable
         columns={TRUESKILL_COLUMNS}
-        data={players}
+        data={tableRows}
         ownerKey="trueskill"
         defaultSortColumn="conservativeRating"
         pagination={{ pageSizeOptions: [40, 80, 120, "all"], defaultPageSize: 40 }}

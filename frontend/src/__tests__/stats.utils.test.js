@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { diversityPercentile, freedmanDiaconisHistogram, quantile } from "../utils/diversityStats";
-import { calibrationBins, predictionStats, wilsonInterval } from "../utils/predictionStats";
+import { predictionStats } from "../utils/predictionStats";
 
 describe("quantile", () => {
   it("interpolates like numpy's default", () => {
@@ -89,40 +89,14 @@ describe("predictionStats", () => {
   });
   it("handles no games", () => {
     expect(predictionStats([]).brier).toBeNull();
+    expect(predictionStats([]).skill).toBeNull();
   });
-});
-
-describe("calibrationBins", () => {
-  it("groups by favorite confidence and counts each game once", () => {
-    const bins = calibrationBins([
-      m(0.65, "team1"), // favorite team1 wins
-      m(0.35, "team2"), // favorite team2 (65%) wins
-      m(0.62, "team2"), // favorite loses
-      m(0.85, "team1"),
-      m(0.5, "team1"), // no favorite -> skipped
-    ]);
-    expect(bins.map((b) => [b.lo.toFixed(1), b.n, b.wins])).toEqual([
-      ["0.6", 3, 2],
-      ["0.8", 1, 1],
-    ]);
-    expect(bins[0].observed).toBeCloseTo(2 / 3);
-    expect(bins[0].predicted).toBeCloseTo((0.65 + 0.65 + 0.62) / 3);
-  });
-  it("puts a 100% favorite in the top bin", () => {
-    const bins = calibrationBins([m(1, "team1")]);
-    expect(bins[0].lo).toBeCloseTo(0.9);
-  });
-});
-
-describe("wilsonInterval", () => {
-  it("stays inside [0,1] and brackets the observed rate", () => {
-    const w = wilsonInterval(3, 3);
-    expect(w.high).toBeLessThanOrEqual(1);
-    expect(w.low).toBeGreaterThan(0.4);
-    const z = wilsonInterval(0, 4);
-    expect(z.low).toBe(0);
-    expect(wilsonInterval(5, 10).low).toBeLessThan(0.5);
-    expect(wilsonInterval(5, 10).high).toBeGreaterThan(0.5);
-    expect(wilsonInterval(0, 0)).toBeNull();
+  it("skill is 0 at a coin flip, 1 when perfect, and negative (not clamped) when worse than guessing", () => {
+    expect(predictionStats([m(0.5, "team1"), m(0.5, "team2")]).skill).toBeCloseTo(0, 10);
+    expect(predictionStats([m(1, "team1"), m(0, "team2")]).skill).toBeCloseTo(1, 10);
+    const confidentlyWrong = predictionStats([m(0.9, "team2"), m(0.9, "team2")]);
+    expect(confidentlyWrong.skill).toBeLessThan(0);
+    // 0.9 forecast, 1 win + 1 loss: brier = (0.01 + 0.81) / 2 = 0.41 -> skill = 1 - 0.41 / 0.25
+    expect(predictionStats([m(0.9, "team1"), m(0.9, "team2")]).skill).toBeCloseTo(1 - 0.41 / 0.25, 10);
   });
 });

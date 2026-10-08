@@ -2557,14 +2557,12 @@ th[data-champion-sort]:focus-visible {
   filter: brightness(1.06);
 }
 
-/* ---- Charts used in the fun-facts boxes (diversity histogram, calibration) ---- */
-.diversity-histogram,
-.calibration-chart {
+/* ---- Chart used in the fun-facts box (diversity histogram) ---- */
+.diversity-histogram {
   margin: 4px 0 16px;
   max-width: 620px;
 }
-.diversity-histogram svg,
-.calibration-chart svg {
+.diversity-histogram svg {
   width: 100%;
   height: auto;
   display: block;
@@ -2581,29 +2579,13 @@ th[data-champion-sort]:focus-visible {
   opacity: 1;
 }
 .chart-tick,
-.chart-axis-label,
-.chart-note {
+.chart-axis-label {
   fill: var(--muted);
   font-size: 11px;
   font-family: var(--sans);
 }
 .chart-axis-label {
   font-size: 12px;
-}
-.chart-diagonal {
-  stroke: var(--muted);
-  stroke-width: 1.5;
-  stroke-dasharray: 5 4;
-}
-.chart-interval {
-  stroke: var(--accent);
-  stroke-width: 2;
-  opacity: 0.55;
-}
-.chart-dot {
-  fill: var(--accent);
-  stroke: var(--panel);
-  stroke-width: 1.5;
 }
 .tournament-fun-facts-table th[title],
 .tournament-fun-facts-table td[title] {
@@ -2616,9 +2598,6 @@ th[data-champion-sort]:focus-visible {
 .tournament-fun-facts-table td,
 .tournament-fun-facts-table th {
   white-space: nowrap;
-}
-.tournament-fun-facts .profile-filter-row {
-  margin-bottom: 8px;
 }
 
 /* Instant hover/focus tooltip (native title="" has a ~1s delay). */
@@ -2656,8 +2635,7 @@ th[data-champion-sort]:focus-visible {
   margin-top: 3px;
   opacity: 0.8;
 }
-.diversity-histogram figcaption,
-.calibration-chart figcaption {
+.diversity-histogram figcaption {
   font-size: 0.78rem;
   margin-top: 4px;
 }

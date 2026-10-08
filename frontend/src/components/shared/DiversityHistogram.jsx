@@ -69,7 +69,7 @@ export default function DiversityHistogram({ distribution }) {
         </text>
       </svg>
       <figcaption className="stat-formula">
-        {n} players with at least {distribution.minGames} games that have a recorded champion. Bin width {binWidth} ({method}).
+        {n} players with at least {distribution.minGames} games that have a recorded champion.
       </figcaption>
     </figure>
   );
