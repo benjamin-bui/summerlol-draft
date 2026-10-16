@@ -84,7 +84,7 @@ diff -ru -x node_modules a/src/components/shared/ProfileHistoryTable.jsx b/src/c
                {showRole && playerDetail?.role && (
                  <div>
 @@ -256,7 +259,7 @@
-                 <th className="col-secondary">Lane K/D/A</th>
+                 <th className="col-secondary">Opponent K/D/A</th>
                </>
              )}
 -            <th className="col-result">Result</th>

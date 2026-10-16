@@ -256,7 +256,7 @@ export default function ProfileHistoryTable({ entries, showRole, showPlayer = fa
               <>
                 <th>Opponent Player</th>
                 <th className="col-secondary">Lane Opponent</th>
-                <th className="col-secondary">Lane K/D/A</th>
+                <th className="col-secondary">Opponent K/D/A</th>
               </>
             )}
             <th className="col-result">Win Prob.</th>

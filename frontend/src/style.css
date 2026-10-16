@@ -2277,10 +2277,18 @@ th[data-champion-sort]:focus-visible {
 }
 .role-row {
   display: grid;
-  grid-template-columns: 3.6em 1fr 3em;
+  grid-template-columns: 3.6em minmax(20px, 1fr) 3.4em 3.7em;
   align-items: center;
   gap: 8px;
   font-size: 0.85rem;
+}
+.role-row-header {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1;
+}
+.role-row-header > span:nth-last-child(-n + 2) {
+  text-align: right;
 }
 .role-row > span:first-child {
   color: var(--muted);
@@ -2295,9 +2303,21 @@ th[data-champion-sort]:focus-visible {
   background: var(--border);
   overflow: hidden;
 }
-.role-bar > span {
-  display: block;
+.role-bar-fill {
+  display: flex;
   height: 100%;
+  overflow: hidden;
+}
+.role-bar-fill > span {
+  min-width: 0;
+}
+.role-bar-win {
+  background: var(--win-stripe);
+}
+.role-bar-loss {
+  background: var(--loss-stripe);
+}
+.role-bar-draw {
   background: var(--muted);
 }
 

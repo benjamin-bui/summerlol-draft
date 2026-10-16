@@ -197,6 +197,12 @@ describe("App smoke test against real data", () => {
     expect(screen.getByRole("heading", { name: "Tournaments" })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Search for a champion...")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "TrueSkill" })).toBeInTheDocument();
+    const roleBreakdown = document.querySelector(".profile-summary-roles");
+    expect(roleBreakdown).toBeInTheDocument();
+    expect(within(roleBreakdown).getByText("% Games")).toBeInTheDocument();
+    expect(within(roleBreakdown).getByText("Win rate")).toBeInTheDocument();
+    expect(roleBreakdown.querySelector(".role-bar-win")).toBeInTheDocument();
+    expect(roleBreakdown.querySelector(".role-bar-loss")).toBeInTheDocument();
     const championsSection = screen.getByRole("heading", { name: "Champions" }).closest("section");
     expect(championsSection.querySelector("a.champion-link")).toHaveAttribute("href", expect.stringMatching(/^\/champion\//));
     // The player's expanded roster tables keep their TrueSkill column.
@@ -219,6 +225,11 @@ describe("App smoke test against real data", () => {
     // Syndra's fixture has 23 games across several tournaments.
     expect(screen.getByText(/Games: 23/)).toBeInTheDocument();
     expect(screen.getByText("Role breakdown", { exact: false })).toBeInTheDocument();
+    const roleBreakdown = document.querySelector(".profile-summary-roles");
+    expect(within(roleBreakdown).getByText("% Games")).toBeInTheDocument();
+    expect(within(roleBreakdown).getByText("Win rate")).toBeInTheDocument();
+    expect(roleBreakdown.querySelector(".role-bar-win")).toBeInTheDocument();
+    expect(roleBreakdown.querySelector(".role-bar-loss")).toBeInTheDocument();
     const matchupSection = screen.getByRole("heading", { name: "Champion Matchups" }).closest("section");
     const matchupTable = matchupSection.querySelector("table");
     expect([...matchupTable.querySelectorAll("th")].map((th) => th.textContent)).toEqual(["Role", "Enemy champion", "Games", "Win rate", "KDA"]);
@@ -252,7 +263,7 @@ describe("App smoke test against real data", () => {
     // Lane opponent's champion and K/D/A are shown; the picker's rating columns are not.
     expect(within(history).getByRole("columnheader", { name: "Lane Opponent" })).toBeInTheDocument();
     expect(within(history).getByRole("columnheader", { name: "Opponent Player" })).toBeInTheDocument();
-    expect(within(history).getByRole("columnheader", { name: "Lane K/D/A" })).toBeInTheDocument();
+    expect(within(history).getByRole("columnheader", { name: "Opponent K/D/A" })).toBeInTheDocument();
     expect(within(history).queryByRole("columnheader", { name: "Avg Rating" })).not.toBeInTheDocument();
     expect(within(history).queryByRole("columnheader", { name: "TrueSkill" })).not.toBeInTheDocument();
     const headerCount = history.querySelectorAll("thead th").length;
