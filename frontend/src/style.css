@@ -1290,6 +1290,10 @@ a.champion-link:hover {
   border-collapse: collapse;
   font-size: 0.8rem;
 }
+.profile-tournament-link {
+  color: inherit;
+  text-decoration: none;
+}
 .profile-block th,
 .profile-block td {
   padding: 4px 6px;

@@ -97,7 +97,7 @@ function TournamentsBlock({ tournaments }) {
           {tournaments.map((t) => (
             <tr key={tournamentKey(t)}>
               <td>
-                <Link to={`/?tab=tournaments&tournament=${tournamentRouteId(t)}`}>
+                <Link className="profile-tournament-link" to={`/?tab=tournaments&tournament=${tournamentRouteId(t)}`}>
                   {t.tournament} {t.year}
                 </Link>
               </td>

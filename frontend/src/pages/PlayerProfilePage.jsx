@@ -153,7 +153,7 @@ function TournamentsBlock({ tournaments }) {
             return (
               <tr key={i}>
                 <td>
-                  <Link to={`/?tab=tournaments&tournament=${tournamentRouteId(t)}`}>
+                  <Link className="profile-tournament-link" to={`/?tab=tournaments&tournament=${tournamentRouteId(t)}`}>
                     {t.tournament} {t.year}
                   </Link>
                 </td>
