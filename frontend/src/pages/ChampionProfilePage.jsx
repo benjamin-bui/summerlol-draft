@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAppData } from "../context/AppDataContext";
 import { ChampionIcon, ChampionLink } from "../components/shared/Cells";
@@ -11,7 +11,7 @@ import ProfileTournamentFilter from "../components/shared/ProfileTournamentFilte
 import RoleBreakdown from "../components/shared/RoleBreakdown";
 import { useGoBack } from "../hooks/useGoBack";
 import { ROLE_LABELS, ROLES } from "../utils/format";
-import { computeChampionMatchupRows, computeChampionMatchups, computeChampionPlayers, computeChampionTournaments, pickExtreme, tournamentKey } from "../utils/profileCompute";
+import { computeChampionMatchupRows, computeChampionMatchups, computeChampionPlayers, computeChampionTournaments, pickExtreme, tournamentKey, tournamentRouteId } from "../utils/profileCompute";
 
 const byChampionName = (a, b) => a.champion.localeCompare(b.champion);
 
@@ -97,7 +97,9 @@ function TournamentsBlock({ tournaments }) {
           {tournaments.map((t) => (
             <tr key={tournamentKey(t)}>
               <td>
-                {t.tournament} {t.year}
+                <Link to={`/?tab=tournaments&tournament=${tournamentRouteId(t)}`}>
+                  {t.tournament} {t.year}
+                </Link>
               </td>
               <td>
                 {t.winRate != null ? `${Math.round(t.winRate * 100)}%` : "\u2013"}{" "}

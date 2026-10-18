@@ -25,6 +25,7 @@ import {
   placementPercentile,
   seasonRankLocal,
   tournamentKey,
+  tournamentRouteId,
 } from "../utils/profileCompute";
 import { round3, buildPlayerSlug } from "../utils/format";
 
@@ -152,7 +153,9 @@ function TournamentsBlock({ tournaments }) {
             return (
               <tr key={i}>
                 <td>
-                  {t.tournament} {t.year}
+                  <Link to={`/?tab=tournaments&tournament=${tournamentRouteId(t)}`}>
+                    {t.tournament} {t.year}
+                  </Link>
                 </td>
                 <td>
                   {winRate} <span className="stat-formula">({record})</span>

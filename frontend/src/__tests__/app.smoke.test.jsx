@@ -214,6 +214,22 @@ describe("App smoke test against real data", () => {
     errSpy.mockRestore();
   });
 
+  it.each([
+    ["player", "/player/Voidliss-NA1"],
+    ["champion", "/champion/syndra"],
+  ])("opens the selected tournament from a %s profile", async (_type, path) => {
+    const user = userEvent.setup();
+    renderApp(path);
+
+    await screen.findByRole("heading", { name: "Tournaments" }, { timeout: 10000 });
+    const winterLink = within(document.querySelector(".profile-sidebar")).getByRole("link", { name: "Winter 2026" });
+    expect(winterLink).toHaveAttribute("href", "/?tab=tournaments&tournament=2026-winter");
+    await user.click(winterLink);
+
+    await waitFor(() => expect(document.querySelector("#tab-tournaments .tournament-picker select")).toHaveValue("2026-winter"));
+    expect(screen.getByRole("heading", { name: "Team rosters" })).toBeInTheDocument();
+  }, 20000);
+
   it("Champion profile page shows summary, tournaments, players and a per-game history", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const user = userEvent.setup();

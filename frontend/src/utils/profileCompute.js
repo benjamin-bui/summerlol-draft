@@ -11,6 +11,15 @@ export function tournamentKey(t) {
   return `${t.year}::${t.tournament}`;
 }
 
+export function tournamentRouteId(t) {
+  const slug = String(t.tournament || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `${t.year}-${slug}`;
+}
+
 export function pickPercentile(t) {
   if (t.pickOrder === "Captain" || t.pickOrder == null || !t.totalPicks) return null;
   return (1 - (t.pickOrder - 1) / t.totalPicks) * 100;
