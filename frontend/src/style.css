@@ -2575,8 +2575,17 @@ th[data-champion-sort]:focus-visible {
 .profile-history-table tr.row-win > td {
   background: var(--win-tint);
 }
+.profile-history-table tr.row-win {
+  --history-row-background: var(--win-tint);
+}
 .profile-history-table tr.row-loss > td {
   background: var(--loss-tint);
+}
+.profile-history-table tr.row-loss {
+  --history-row-background: var(--loss-tint);
+}
+.profile-history-table tr.row-draw {
+  --history-row-background: transparent;
 }
 .profile-history-table tr.row-win > td:first-child {
   box-shadow: inset 3px 0 0 var(--win-stripe);
@@ -2588,15 +2597,16 @@ th[data-champion-sort]:focus-visible {
   filter: brightness(1.06);
 }
 @keyframes profile-history-row-flash {
-  0% {
-    filter: brightness(1.24);
+  0%,
+  18% {
+    background-color: color-mix(in srgb, var(--accent) 38%, var(--panel));
   }
   100% {
-    filter: brightness(1);
+    background-color: var(--history-row-background);
   }
 }
 .profile-history-table tr.history-row-flash > td {
-  animation: profile-history-row-flash 1.5s ease-out;
+  animation: profile-history-row-flash 2.5s ease-out;
 }
 
 /* ---- Chart used in the fun-facts box (diversity histogram) ---- */

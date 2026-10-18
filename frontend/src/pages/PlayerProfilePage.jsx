@@ -332,7 +332,7 @@ export default function PlayerProfilePage() {
     if (!selectedMatchKey || !historyScrollRequest) return undefined;
     const row = document.getElementById(`profile-history-${selectedMatchKey}`);
     row?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-    const timeout = window.setTimeout(() => setSelectedMatchKey(null), 1500);
+    const timeout = window.setTimeout(() => setSelectedMatchKey(null), 2500);
     return () => window.clearTimeout(timeout);
   }, [selectedMatchKey, historyScrollRequest]);
 
