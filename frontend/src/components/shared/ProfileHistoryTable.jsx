@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { PlayerLink, ChampionLink, BanList, RoleIcon, TrueSkillValue } from "./Cells";
 import { sortByRole, ROLE_LABELS } from "../../utils/format";
+import { tournamentRouteId } from "../../utils/profileCompute";
 
 const kdaText = (d) => `${d.kills ?? "\u2013"}/${d.deaths ?? "\u2013"}/${d.assists ?? "\u2013"}`;
 
@@ -86,7 +88,14 @@ function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey }) {
         </td>
         <td className="col-match">
           <span className="cell-primary">
-            {entry.year ?? "\u2013"} {entry.tournament || "\u2013"}
+            {entry.year ?? "\u2013"}{" "}
+            {entry.tournament ? (
+              <Link className="profile-tournament-link" to={`/?tab=tournaments&tournament=${tournamentRouteId(entry)}`}>
+                {entry.tournament}
+              </Link>
+            ) : (
+              "\u2013"
+            )}
           </span>
           {entry.matchStage && <span className="cell-secondary">{entry.matchStage}</span>}
         </td>

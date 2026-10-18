@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAppData } from "../context/AppDataContext";
 import DataTable from "../components/table/DataTable";
 import FunFacts from "../components/shared/FunFacts";
@@ -7,6 +8,7 @@ import NameFilterBox, { summarizeNameList } from "../components/shared/NameFilte
 import { TrueSkillValue, SoloQueueRank } from "../components/shared/Cells";
 import { soloQueueSortValueClient } from "../utils/format";
 import { buildNameMatcher } from "../utils/nameMatch";
+import { tournamentRouteIdFromLabel } from "../utils/profileCompute";
 
 const TRUESKILL_COLUMNS = [
   { key: "rank", label: "#", sortable: false, hideable: false, filterable: false },
@@ -27,6 +29,16 @@ const TRUESKILL_COLUMNS = [
     hideable: true,
     filterable: true,
     type: "string",
+    render: (value) => {
+      const tournamentId = tournamentRouteIdFromLabel(value);
+      return tournamentId ? (
+        <Link className="profile-tournament-link" to={`/?tab=tournaments&tournament=${tournamentId}`}>
+          {value}
+        </Link>
+      ) : (
+        value ?? "\u2013"
+      );
+    },
   },
   {
     key: "conservativeRating",

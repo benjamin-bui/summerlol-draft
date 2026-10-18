@@ -20,6 +20,11 @@ export function tournamentRouteId(t) {
   return `${t.year}-${slug}`;
 }
 
+export function tournamentRouteIdFromLabel(label) {
+  const match = String(label || "").trim().match(/^(.+?)\s+(\d{4})$/);
+  return match ? tournamentRouteId({ tournament: match[1], year: match[2] }) : null;
+}
+
 export function pickPercentile(t) {
   if (t.pickOrder === "Captain" || t.pickOrder == null || !t.totalPicks) return null;
   return (1 - (t.pickOrder - 1) / t.totalPicks) * 100;

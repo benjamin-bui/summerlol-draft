@@ -14,7 +14,7 @@ export default function DiversityHistogram({ distribution }) {
   );
   if (!hist) return <p className="stat-formula">Not enough players with recorded champions yet.</p>;
 
-  const { edges, counts, binWidth, n, method } = hist;
+  const { edges, counts, n } = hist;
   const innerW = W - M.left - M.right;
   const innerH = H - M.top - M.bottom;
   const lo = edges[0];

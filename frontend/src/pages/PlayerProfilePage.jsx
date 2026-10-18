@@ -195,7 +195,9 @@ function TrueSkillBlock({ player, tournaments }) {
             {withEntry.map((t, i) => (
               <tr key={i}>
                 <td>
-                  {t.tournament} {t.year}
+                  <Link className="profile-tournament-link" to={`/?tab=tournaments&tournament=${tournamentRouteId(t)}`}>
+                    {t.tournament} {t.year}
+                  </Link>
                 </td>
                 <td>{ofTotal(t.entryRank ? `#${t.entryRank}` : null, t.totalInDraft)}</td>
                 <td>

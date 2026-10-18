@@ -60,6 +60,17 @@ describe("App smoke test against real data", () => {
     expect(link).toHaveAttribute("href", expect.stringMatching(/^\/player\/(?!simple\/)/));
   });
 
+  it("links the latest tournament in the Players tab", async () => {
+    const user = userEvent.setup();
+    renderApp("/");
+
+    const links = await screen.findAllByRole("link", { name: "Summer 2026" }, { timeout: 10000 });
+    const link = links[0];
+    expect(link).toHaveAttribute("href", "/?tab=tournaments&tournament=2026-summer");
+    await user.click(link);
+    await waitFor(() => expect(document.querySelector("#tab-tournaments .tournament-picker select")).toHaveValue("2026-summer"));
+  }, 20000);
+
   it("searches champions from the Champions tab and opens the champion profile", async () => {
     const user = userEvent.setup();
     renderApp("/?tab=champions");
@@ -196,7 +207,9 @@ describe("App smoke test against real data", () => {
     expect(await screen.findByText("Summary", {}, { timeout: 10000 })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Tournaments" })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Search for a champion...")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "TrueSkill" })).toBeInTheDocument();
+    const trueSkillBlock = screen.getByRole("heading", { name: "TrueSkill" }).closest("section");
+    expect(trueSkillBlock).toBeInTheDocument();
+    expect(within(trueSkillBlock).getByRole("link", { name: "Winter 2026" })).toHaveAttribute("href", "/?tab=tournaments&tournament=2026-winter");
     const roleBreakdown = document.querySelector(".profile-summary-roles");
     expect(roleBreakdown).toBeInTheDocument();
     expect(within(roleBreakdown).getByText("% Games")).toBeInTheDocument();
@@ -347,6 +360,22 @@ describe("App smoke test against real data", () => {
     );
 
     expect(screen.getByRole("link", { name: "Opponent#NA1" })).toHaveAttribute("href", "/player/Opponent-NA1");
+  });
+
+  it.each([
+    ["player", true],
+    ["champion", false],
+  ])("links tournament names in %s match history", (_profile, showPlayer) => {
+    render(
+      <MemoryRouter>
+        <ProfileHistoryTable
+          entries={[{ year: 2026, tournament: "Winter", outcome: "win", playerDetails: [] }]}
+          showPlayer={showPlayer}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "Winter" })).toHaveAttribute("href", "/?tab=tournaments&tournament=2026-winter");
   });
 
   it("Simple profile page renders for an unresolved name without crashing", async () => {
