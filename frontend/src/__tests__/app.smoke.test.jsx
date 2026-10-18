@@ -375,7 +375,7 @@ describe("App smoke test against real data", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("link", { name: "Winter" })).toHaveAttribute("href", "/?tab=tournaments&tournament=2026-winter");
+    expect(screen.getByRole("link", { name: "2026 Winter" })).toHaveAttribute("href", "/?tab=tournaments&tournament=2026-winter");
   });
 
   it("Simple profile page renders for an unresolved name without crashing", async () => {

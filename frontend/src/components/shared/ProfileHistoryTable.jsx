@@ -88,13 +88,13 @@ function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey }) {
         </td>
         <td className="col-match">
           <span className="cell-primary">
-            {entry.year ?? "\u2013"}{" "}
             {entry.tournament ? (
               <Link className="profile-tournament-link" to={`/?tab=tournaments&tournament=${tournamentRouteId(entry)}`}>
+                {entry.year ?? "\u2013"}{" "}
                 {entry.tournament}
               </Link>
             ) : (
-              "\u2013"
+              `${entry.year ?? "\u2013"} \u2013`
             )}
           </span>
           {entry.matchStage && <span className="cell-secondary">{entry.matchStage}</span>}
