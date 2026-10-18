@@ -57,7 +57,7 @@ function RosterTable({ team, name, bans, gameHasBans, gameHasRoles, hasDetails, 
   );
 }
 
-function HistoryRow({ entry, showRole, showPlayer }) {
+function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey }) {
   const [open, setOpen] = useState(false);
   const rowClass = entry.outcome === "win" ? "row-win" : entry.outcome === "loss" ? "row-loss" : "row-draw";
   const playerDetail = entry.playerDetails?.[0];
@@ -75,7 +75,10 @@ function HistoryRow({ entry, showRole, showPlayer }) {
 
   return (
     <>
-      <tr className={`history-row ${rowClass}`}>
+      <tr
+        id={entry.matchKey ? `profile-history-${entry.matchKey}` : undefined}
+        className={`history-row ${rowClass}${entry.matchKey === highlightedMatchKey ? " history-row-flash" : ""}`}
+      >
         <td className="col-toggle">
           <button className="roster-toggle" aria-expanded={open} aria-label="Show match details" onClick={() => setOpen((o) => !o)}>
             {open ? "\u25bc" : "\u25b6"}
@@ -237,7 +240,7 @@ function HistoryRow({ entry, showRole, showPlayer }) {
 // TrueSkill / rating display -- history columns, roster tables, and the phone
 // extra-stats grid, all of which describe the picker, not the champion -- is
 // dropped.
-export default function ProfileHistoryTable({ entries, showRole, showPlayer = false }) {
+export default function ProfileHistoryTable({ entries, showRole, showPlayer = false, highlightedMatchKey }) {
   if (!entries.length) return <p>No matching games.</p>;
   return (
     <div className="table-section profile-history-section">
@@ -270,7 +273,13 @@ export default function ProfileHistoryTable({ entries, showRole, showPlayer = fa
         </thead>
         <tbody>
           {entries.map((entry, i) => (
-            <HistoryRow entry={entry} showRole={showRole} showPlayer={showPlayer} key={i} />
+            <HistoryRow
+              entry={entry}
+              showRole={showRole}
+              showPlayer={showPlayer}
+              highlightedMatchKey={highlightedMatchKey}
+              key={entry.matchKey || i}
+            />
           ))}
         </tbody>
       </table>

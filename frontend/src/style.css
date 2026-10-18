@@ -994,6 +994,13 @@ thead .sticky-col {
 .profile-chart-svg {
   display: block;
 }
+.profile-chart-point {
+  cursor: pointer;
+}
+.profile-chart-point:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
 .profile-layout {
   display: grid;
   grid-template-columns: 400px minmax(0, 1fr);
@@ -2579,6 +2586,17 @@ th[data-champion-sort]:focus-visible {
 }
 .profile-history-table tr.history-row:hover > td {
   filter: brightness(1.06);
+}
+@keyframes profile-history-row-flash {
+  0% {
+    filter: brightness(1.24);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+.profile-history-table tr.history-row-flash > td {
+  animation: profile-history-row-flash 1.5s ease-out;
 }
 
 /* ---- Chart used in the fun-facts box (diversity histogram) ---- */

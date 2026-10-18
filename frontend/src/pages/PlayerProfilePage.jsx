@@ -288,6 +288,8 @@ export default function PlayerProfilePage() {
   const [tournamentFilter, setTournamentFilter] = useState(null);
   const [mode, setMode] = useState("with");
   const [selectedKey, setSelectedKey] = useState(null);
+  const [selectedMatchKey, setSelectedMatchKey] = useState(null);
+  const [historyScrollRequest, setHistoryScrollRequest] = useState(0);
   const [championSort, setChampionSort] = useState({ column: null, dir: "desc" });
   const [placements, setPlacements] = useState({});
 
@@ -305,6 +307,8 @@ export default function PlayerProfilePage() {
     setError(null);
     setTournamentFilter(null);
     setSelectedKey(null);
+    setSelectedMatchKey(null);
+    setHistoryScrollRequest(0);
     setChampionSort({ column: null, dir: "desc" });
   }
 
@@ -323,6 +327,14 @@ export default function PlayerProfilePage() {
   useEffect(() => {
     if (selectedKey) api.placements().then(setPlacements);
   }, [selectedKey]);
+
+  useEffect(() => {
+    if (!selectedMatchKey || !historyScrollRequest) return undefined;
+    const row = document.getElementById(`profile-history-${selectedMatchKey}`);
+    row?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    const timeout = window.setTimeout(() => setSelectedMatchKey(null), 1500);
+    return () => window.clearTimeout(timeout);
+  }, [selectedMatchKey, historyScrollRequest]);
 
   if (error) {
     return (
@@ -409,7 +421,15 @@ export default function PlayerProfilePage() {
         </aside>
         <main className="profile-main">
           <div className="profile-header-chart">
-            <ProfileChart history={history} />
+            <ProfileChart
+              history={history}
+              onSelectMatch={(matchKey) => {
+                setTournamentFilter(null);
+                setSelectedKey(null);
+                setSelectedMatchKey(matchKey);
+                setHistoryScrollRequest((request) => request + 1);
+              }}
+            />
           </div>
           <ProfileCoPlaySearch
             mode={mode}
@@ -430,7 +450,11 @@ export default function PlayerProfilePage() {
             />
           )}
           <div>
-            <ProfileHistoryTable entries={historyDescending} showRole={showRole} />
+            <ProfileHistoryTable
+              entries={historyDescending}
+              showRole={showRole}
+              highlightedMatchKey={selectedMatchKey}
+            />
           </div>
         </main>
       </div>

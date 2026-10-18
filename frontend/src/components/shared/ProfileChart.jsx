@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getRankTier } from "../../utils/format";
 
-export default function ProfileChart({ history }) {
+export default function ProfileChart({ history, onSelectMatch }) {
   const scrollRef = useRef(null);
   const wrapRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -58,6 +58,7 @@ export default function ProfileChart({ history }) {
 
   const points = history.map((h, i) => ({
     x: i + 1,
+    matchKey: h.matchKey,
     trueskill: h.conservativeRating,
     mu: h.mu,
     sigma: h.sigma,
@@ -128,7 +129,24 @@ export default function ProfileChart({ history }) {
           ))}
           <path d={trueskillPath} fill="none" stroke="#2b6cb0" strokeWidth={2} />
           {points.map((p, i) => (
-            <circle key={i} cx={xScale(p.x)} cy={yScale(p.trueskill)} r={3.5} fill={outcomeColor[p.outcome] || "#888"}>
+            <circle
+              key={i}
+              cx={xScale(p.x)}
+              cy={yScale(p.trueskill)}
+              r={3.5}
+              fill={outcomeColor[p.outcome] || "#888"}
+              className={p.matchKey ? "profile-chart-point" : undefined}
+              role={p.matchKey ? "button" : undefined}
+              tabIndex={p.matchKey ? 0 : undefined}
+              aria-label={p.matchKey ? `${p.year} ${p.tournament} vs ${p.opponent}: ${p.outcome}. Show in match history.` : undefined}
+              onClick={p.matchKey ? () => onSelectMatch(p.matchKey) : undefined}
+              onKeyDown={p.matchKey ? (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelectMatch(p.matchKey);
+                }
+              } : undefined}
+            >
               <title>
                 {p.year} {p.tournament}
                 {p.matchStage ? ` (${p.matchStage})` : ""} vs {p.opponent}: {p.outcome} (TrueSkill = {p.trueskill}, {"\u03bc"}={p.mu}, {"\u03c3"}={p.sigma})

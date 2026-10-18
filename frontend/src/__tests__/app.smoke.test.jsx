@@ -205,6 +205,11 @@ describe("App smoke test against real data", () => {
     expect(roleBreakdown.querySelector(".role-bar-loss")).toBeInTheDocument();
     const championsSection = screen.getByRole("heading", { name: "Champions" }).closest("section");
     expect(championsSection.querySelector("a.champion-link")).toHaveAttribute("href", expect.stringMatching(/^\/champion\//));
+    const graphPoint = screen.getAllByRole("button", { name: /show in match history/i })[0];
+    await userEvent.setup().click(graphPoint);
+    await waitFor(() => {
+      expect(document.querySelectorAll(".profile-history-table .history-row-flash")).toHaveLength(1);
+    });
     // The player's expanded roster tables keep their TrueSkill column.
     await userEvent.setup().click(document.querySelector(".profile-history-table button.roster-toggle"));
     const rosterHeaders = [...document.querySelectorAll(".match-details-table")].map((t) => [...t.querySelectorAll("th")].map((th) => th.textContent));
