@@ -15,6 +15,7 @@ import { defineConfig } from "vite";
 //      filesystem rather than this one.)
 export default defineConfig({
   plugins: [react()],
+  cacheDir: ".vite",
   server: {
     port: 5173,
     proxy: {

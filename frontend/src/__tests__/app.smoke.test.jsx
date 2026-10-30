@@ -240,7 +240,8 @@ describe("App smoke test against real data", () => {
     renderApp(path);
 
     await screen.findByRole("heading", { name: "Tournaments" }, { timeout: 10000 });
-    const winterLink = within(document.querySelector(".profile-sidebar")).getByRole("link", { name: "Winter 2026" });
+    const tournamentsSection = screen.getByRole("heading", { name: "Tournaments" }).closest("section");
+    const winterLink = within(tournamentsSection).getByRole("link", { name: "Winter 2026" });
     expect(winterLink).toHaveAttribute("href", "/?tab=tournaments&tournament=2026-winter");
     await user.click(winterLink);
 
@@ -383,4 +384,3 @@ describe("App smoke test against real data", () => {
     expect(await screen.findByText("SomeRandomName#NA1")).toBeInTheDocument();
   });
 });
-
