@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { PlayerLink, ChampionLink, BanList, RoleIcon, TrueSkillValue } from "./Cells";
 import { sortByRole, ROLE_LABELS } from "../../utils/format";
 import { tournamentRouteId } from "../../utils/profileCompute";
+import MatchDetailEditor from "./MatchDetailEditor";
+import { useAuth } from "../../context/AuthContext";
 
 const kdaText = (d) => `${d.kills ?? "\u2013"}/${d.deaths ?? "\u2013"}/${d.assists ?? "\u2013"}`;
 
@@ -59,8 +61,10 @@ function RosterTable({ team, name, bans, gameHasBans, gameHasRoles, hasDetails, 
   );
 }
 
-function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey }) {
+function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey, onSaved }) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const { canEdit } = useAuth();
   const rowClass = entry.outcome === "win" ? "row-win" : entry.outcome === "loss" ? "row-loss" : "row-draw";
   const playerDetail = entry.playerDetails?.[0];
   const normalizePlayer = (v) => String(v || "").trim().toLowerCase();
@@ -157,29 +161,36 @@ function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey }) {
       {open && (
         <tr className="roster-detail-row">
           <td colSpan={columnCount}>
+            {canEdit && entry.matchKey && (
+              <div className="match-editor-launch">
+                <button type="button" className="columns-btn" onClick={() => setEditing(true)}>
+                  Edit match details
+                </button>
+              </div>
+            )}
             <div className="match-rosters">
-            <div className="roster-detail match-rosters-grid">
-              <RosterTable
-                team={entry.ownTeam}
-                name={entry.ownTeam?.name || "Your team"}
-                bans={entry.bans?.own}
-                gameHasBans={gameHasBans}
-                gameHasRoles={gameHasRoles}
-                hasDetails={hasDetails}
-                detailsByPlayer={detailsByPlayer}
-                showTrueSkill={!showPlayer}
-              />
-              <RosterTable
-                team={entry.opponentTeam}
-                name={entry.opponentName || "Opponent"}
-                bans={entry.bans?.opponent}
-                gameHasBans={gameHasBans}
-                gameHasRoles={gameHasRoles}
-                hasDetails={hasDetails}
-                detailsByPlayer={detailsByPlayer}
-                showTrueSkill={!showPlayer}
-              />
-            </div>
+              <div className="roster-detail match-rosters-grid">
+                <RosterTable
+                  team={entry.ownTeam}
+                  name={entry.ownTeam?.name || "Your team"}
+                  bans={entry.bans?.own}
+                  gameHasBans={gameHasBans}
+                  gameHasRoles={gameHasRoles}
+                  hasDetails={hasDetails}
+                  detailsByPlayer={detailsByPlayer}
+                  showTrueSkill={!showPlayer}
+                />
+                <RosterTable
+                  team={entry.opponentTeam}
+                  name={entry.opponentName || "Opponent"}
+                  bans={entry.bans?.opponent}
+                  gameHasBans={gameHasBans}
+                  gameHasRoles={gameHasRoles}
+                  hasDetails={hasDetails}
+                  detailsByPlayer={detailsByPlayer}
+                  showTrueSkill={!showPlayer}
+                />
+              </div>
             </div>
             <div className="match-extra-stats">
               {showRole && playerDetail?.role && (
@@ -235,6 +246,14 @@ function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey }) {
                 </>
               )}
             </div>
+            {editing && (
+              <MatchDetailEditor
+                matchKey={entry.matchKey}
+                title={`${entry.ownTeam?.name || "Your team"} vs ${entry.opponentName || entry.opponent || "Opponent"} \u00b7 ${entry.tournament || ""} ${entry.year ?? ""} \u00b7 ${entry.matchStage || "Match"}`}
+                onClose={() => setEditing(false)}
+                onSaved={onSaved}
+              />
+            )}
           </td>
         </tr>
       )}
@@ -249,7 +268,7 @@ function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey }) {
 // TrueSkill / rating display -- history columns, roster tables, and the phone
 // extra-stats grid, all of which describe the picker, not the champion -- is
 // dropped.
-export default function ProfileHistoryTable({ entries, showRole, showPlayer = false, highlightedMatchKey }) {
+export default function ProfileHistoryTable({ entries, showRole, showPlayer = false, highlightedMatchKey, onSaved }) {
   if (!entries.length) return <p>No matching games.</p>;
   return (
     <div className="table-section profile-history-section">
@@ -287,6 +306,7 @@ export default function ProfileHistoryTable({ entries, showRole, showPlayer = fa
               showRole={showRole}
               showPlayer={showPlayer}
               highlightedMatchKey={highlightedMatchKey}
+              onSaved={onSaved}
               key={entry.matchKey || i}
             />
           ))}

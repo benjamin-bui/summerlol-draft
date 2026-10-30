@@ -123,6 +123,7 @@ export default function ChampionProfilePage() {
   const [champion, setChampion] = useState(null);
   const [error, setError] = useState(null);
   const [tournamentFilter, setTournamentFilter] = useState(null);
+  const [historyRefreshError, setHistoryRefreshError] = useState(null);
 
   // Player names link to profiles and TrueSkill cells need the rank tiers, so
   // make sure the shared TrueSkill data is loaded (same as the player page).
@@ -156,6 +157,16 @@ export default function ChampionProfilePage() {
       stale = true;
     };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function refreshChampionHistory() {
+    try {
+      const data = await api.champion(key);
+      setChampion(data);
+      setHistoryRefreshError(null);
+    } catch (err) {
+      setHistoryRefreshError(`Match was saved, but the champion history could not refresh: ${err.message}`);
+    }
+  }
 
   const history = useMemo(() => champion?.history || [], [champion]);
   const tournaments = useMemo(() => computeChampionTournaments(history), [history]);
@@ -230,7 +241,8 @@ export default function ChampionProfilePage() {
         </aside>
         <main className="profile-main">
           <div id="profileHistoryTableWrap">
-            <ProfileHistoryTable entries={historyDescending} showRole={showRole} showPlayer />
+            <ProfileHistoryTable entries={historyDescending} showRole={showRole} showPlayer onSaved={refreshChampionHistory} />
+            {historyRefreshError && <p className="match-editor-error" role="alert">{historyRefreshError}</p>}
           </div>
         </main>
       </div>

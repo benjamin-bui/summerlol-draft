@@ -2,8 +2,10 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { useAppData } from "../context/AppDataContext";
 import { PlayerLink, ChampionLink, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
+import MatchDetailEditor from "../components/shared/MatchDetailEditor";
 import TournamentFunFacts from "../components/shared/TournamentFunFacts";
 import { ordinal, pct, pctOrLessThanOne, sortByRole } from "../utils/format";
+import { useAuth } from "../context/AuthContext";
 
 function playerLinkProps(displayName, identityKey) {
   return { fullName: displayName || identityKey || "\u2013", identityKey };
@@ -444,7 +446,8 @@ function matchHasChampion(m, key) {
   );
 }
 
-function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onToggleExpand, flashKey }) {
+function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onToggleExpand, flashKey, canEdit, onSaved }) {
+  const [editingMatch, setEditingMatch] = useState(null);
   if (!t.matches.length) {
     return (
       <section className="profile-block tournament-matches" id="tournamentMatches">
@@ -536,25 +539,40 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                       <tr key={`${m.matchKey || i}-detail`} className="roster-detail-row">
                         <td colSpan={7}>
                           <div className="match-rosters">
-                          <div className="roster-detail match-rosters-grid">
-                            <MatchRosterTable
-                              side={m.team1}
-                              won={m.winner === "draw" ? null : t1Won}
-                              hasDetails={m.hasDetails}
-                              showBans={m.hasBans}
-                              hasRoles={matchHasRoles}
-                              championFilterKey={championFilterKey}
-                            />
-                            <MatchRosterTable
-                              side={m.team2}
-                              won={m.winner === "draw" ? null : t2Won}
-                              hasDetails={m.hasDetails}
-                              showBans={m.hasBans}
-                              hasRoles={matchHasRoles}
-                              championFilterKey={championFilterKey}
-                            />
+                            {canEdit && m.matchKey && (
+                              <div className="match-editor-launch">
+                                <button type="button" className="columns-btn" onClick={() => setEditingMatch(m)}>
+                                  Edit match details
+                                </button>
+                              </div>
+                            )}
+                            <div className="roster-detail match-rosters-grid">
+                              <MatchRosterTable
+                                side={m.team1}
+                                won={m.winner === "draw" ? null : t1Won}
+                                hasDetails={m.hasDetails}
+                                showBans={m.hasBans}
+                                hasRoles={matchHasRoles}
+                                championFilterKey={championFilterKey}
+                              />
+                              <MatchRosterTable
+                                side={m.team2}
+                                won={m.winner === "draw" ? null : t2Won}
+                                hasDetails={m.hasDetails}
+                                showBans={m.hasBans}
+                                hasRoles={matchHasRoles}
+                                championFilterKey={championFilterKey}
+                              />
+                            </div>
                           </div>
-                          </div>
+                          {editingMatch?.matchKey === m.matchKey && (
+                            <MatchDetailEditor
+                              matchKey={m.matchKey}
+                              title={`${m.team1.name} vs ${m.team2.name} \u00b7 ${t.label} \u00b7 ${m.stage || `Match ${m.order ?? ""}`}`}
+                              onClose={() => setEditingMatch(null)}
+                              onSaved={onSaved}
+                            />
+                          )}
                         </td>
                       </tr>
                     )}
@@ -573,8 +591,10 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
 
 export default function TournamentsTab({ active, selectedTournamentId, selectedMatchKey, onSelectionChange }) {
   const { loadTrueskill } = useAppData();
+  const { canEdit } = useAuth();
   const [tournaments, setTournaments] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [refreshError, setRefreshError] = useState(null);
   const [championFilterKey, setChampionFilterKey] = useState(null);
   const [championSort, setChampionSort] = useState({ column: null, dir: "desc" });
   const [flashKey, setFlashKey] = useState(null);
@@ -611,6 +631,16 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
   }
 
   const t = tournaments.find((x) => x.id === effectiveId);
+
+  async function refreshTournaments() {
+    try {
+      const data = await api.tournaments();
+      setTournaments(data.tournaments || []);
+      setRefreshError(null);
+    } catch (error) {
+      setRefreshError(`Match was saved, but the tournament view could not refresh: ${error.message}`);
+    }
+  }
 
   useEffect(() => {
     if (!active) {
@@ -691,6 +721,7 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
       </section>
 
       {loaded && tournaments.length === 0 && <p className="stat-formula">No tournaments have been played yet.</p>}
+      {refreshError && <p className="match-editor-error" role="alert">{refreshError}</p>}
 
       {t && (
         <div className={`profile-layout tournament-layout${hasBanData(t) ? " has-bans" : ""}`}>
@@ -713,6 +744,8 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
               expandedKeys={expandedKeys}
               onToggleExpand={toggleExpand}
               flashKey={flashKey}
+              canEdit={canEdit}
+              onSaved={refreshTournaments}
             />
           </main>
         </div>

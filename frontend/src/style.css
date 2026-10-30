@@ -2858,6 +2858,13 @@ th[data-champion-sort]:focus-visible {
 }
 .match-editor .match-editor-stat {
   width: 4.2em;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.match-editor .match-editor-stat::-webkit-inner-spin-button,
+.match-editor .match-editor-stat::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
 }
 .match-editor-bans {
   display: flex;

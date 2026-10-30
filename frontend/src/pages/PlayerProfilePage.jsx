@@ -292,6 +292,7 @@ export default function PlayerProfilePage() {
   const [selectedKey, setSelectedKey] = useState(null);
   const [selectedMatchKey, setSelectedMatchKey] = useState(null);
   const [historyScrollRequest, setHistoryScrollRequest] = useState(0);
+  const [historyRefreshError, setHistoryRefreshError] = useState(null);
   const [championSort, setChampionSort] = useState({ column: null, dir: "desc" });
   const [placements, setPlacements] = useState({});
 
@@ -325,6 +326,16 @@ export default function PlayerProfilePage() {
       })
       .catch((err) => setError(err.message || "Unable to load player profile"));
   }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function refreshPlayerHistory() {
+    try {
+      const data = await api.player(slug);
+      setPlayer(data);
+      setHistoryRefreshError(null);
+    } catch (err) {
+      setHistoryRefreshError(`Match was saved, but the player history could not refresh: ${err.message}`);
+    }
+  }
 
   useEffect(() => {
     if (selectedKey) api.placements().then(setPlacements);
@@ -456,7 +467,9 @@ export default function PlayerProfilePage() {
               entries={historyDescending}
               showRole={showRole}
               highlightedMatchKey={selectedMatchKey}
+              onSaved={refreshPlayerHistory}
             />
+            {historyRefreshError && <p className="match-editor-error" role="alert">{historyRefreshError}</p>}
           </div>
         </main>
       </div>
