@@ -21,6 +21,9 @@ const {
 const { ensureRowsIdColumn } = require("./src/lib/rows-schema");
 const { championKey } = require("./src/lib/champion-releases");
 const { buildChampionProfile } = require("./src/lib/champion-profile");
+const { loadAuthConfig } = require("./src/lib/auth/config");
+const { createAuth } = require("./src/lib/auth/oidc-auth");
+const { createEditorRouter } = require("./src/lib/editor-routes");
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -346,6 +349,22 @@ function round3(x) {
 }
 
 app.use(express.static(path.join(__dirname, "public")));
+
+// OIDC login + the match-details editor. Mounted before the global JSON
+// parser: the editor router authenticates a request first and only then reads
+// its body. With no OIDC_* settings (or no editor allowlist) none of this does
+// anything -- /api/editor/* answers 403 and no login route exists.
+const auth = createAuth({ config: loadAuthConfig(), db });
+console.log(`[auth] ${auth.describe()}`);
+app.use(auth.router);
+app.use(
+  createEditorRouter({
+    db,
+    requireEditor: auth.requireEditor,
+    loadIdentityMap,
+  }),
+);
+
 app.use(express.json());
 
 // Discrete player-profile pages (formerly a modal) live at these client-side

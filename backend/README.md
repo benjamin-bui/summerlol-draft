@@ -91,6 +91,88 @@ player names, and runs Riot identity sync when `RIOT_API_KEY` is set. To
 manually resolve names, use `npm run export-pending-tags`, edit the exported
 tag data, then use `npm run import-pending-tags` and `npm run sync-riot`.
 
+## Editor Login and the Match Editor
+
+Approved people can sign in with any OpenID Connect provider (Forgejo,
+Authentik, Keycloak, Google, ...) and edit a match's champions, K/D/A, roles
+and bans from the **Match History** tab (expand a match, then *Edit match
+details*). Everyone else -- signed in or not -- stays read-only. With no
+`OIDC_*` settings the whole feature is off: no login route exists and
+`/api/editor/*` answers 403.
+
+Setup, in `backend/.env` (see `.env.example` for every option):
+
+1. Register the app with your provider. Redirect URI:
+   `<PUBLIC_URL>/auth/callback`; scopes `openid profile email`.
+2. Set `PUBLIC_URL`, `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`.
+3. Say **who may edit** with at least one of `OIDC_EDITOR_SUBS`,
+   `OIDC_EDITOR_EMAILS` (counted only if the provider marks the address
+   verified) or `OIDC_EDITOR_GROUPS` (read from `OIDC_GROUPS_CLAIM`). Signing in
+   is not enough: anyone not matching a rule is turned away with no session, and
+   with no rules nobody can edit.
+
+How access is enforced (all server-side; hiding buttons is only cosmetic):
+
+- Every route under `/api/editor` sits behind `requireEditor`, mounted before
+  any handler or body parser. It checks the session *and* the allowlist on each
+  request, so removing someone from the allowlist (and restarting) locks out
+  their still-open session.
+- Sessions are opaque random ids in an HttpOnly, SameSite=Lax cookie (`Secure`
+  and `__Host-` prefixed on https). SQLite stores only a hash of the id.
+  Sessions last `SESSION_TTL_HOURS` (default 8).
+- Writes also need a per-session `X-CSRF-Token` header and a same-origin
+  request. Login uses the authorization-code flow with PKCE, `state` and
+  `nonce`; the redirect URI comes from `PUBLIC_URL`, never from request headers.
+- The server derives each team's roster itself and validates every field
+  (known players, roles, 0-99 stats, champion names, at most 5 bans per team).
+  Two editors saving over each other get a 409 instead of a silent overwrite.
+
+Data behavior worth knowing:
+
+- Each save is recorded in `match_detail_audit` (who, when, full before/after).
+- A match that was edited in the app is listed in `match_detail_edits`, and a
+  CSV re-ingest (`ingest-match-details`, the entrypoint, `refresh-all`) leaves
+  it alone so a hand edit is never silently overwritten. To make the CSV win
+  again: `node src/scripts/ingest-match-details.js <csv> --overwrite-edited`.
+- Other tabs (Tournaments, player pages) show an edit after a page reload.
+- Behind a reverse proxy, set `PUBLIC_URL` to the public https address. For
+  local development with `npm run dev`, use `PUBLIC_URL=http://localhost:5173`
+  (Vite proxies `/auth`).
+
+### Importing a replay (.rofl)
+
+Signed-in editors can fill a match's champions, K/D/A and roles from a League
+replay instead of typing them:
+
+- **Match History tab -> Import replay (.rofl)**: shows everyone in the replay,
+  then you pick the match. Captain 1 narrows Captain 2 to captains they have
+  faced; both narrow the Match list to their meetings. Rosters that fit the
+  replay are offered as a one-click suggestion.
+- **Inside a match's editor -> Import from replay**: the replay is assumed to
+  belong to that match.
+
+Either way the editor opens pre-filled and nothing is saved until you press
+*Save changes*, so it goes through the same sign-in, CSRF, validation, conflict
+and audit checks as a typed edit. The file is read **in the browser** (only its
+trailing metadata block, ~100 KB of a ~20 MB file) and is never uploaded.
+
+What it can and can't do:
+
+- Works for ROFL2 replays (patch 14.11 and later). Replays from 14.9-14.10 carry
+  no match summary, and pre-14.9 files use an older format; both are refused
+  with a message. Only standard two-team games are accepted (not Arena).
+- Players are paired to roster slots by Riot ID, then by game name (accents and
+  case ignored). Newer replays include the full `Name#Tag`; older ones only the
+  game name. Unmatched players are left for you to assign by hand, and a lone
+  leftover pair is matched but flagged "check".
+- Replay teams are mapped to Team 1 / Team 2 by name overlap, then by the
+  recorded winner. If the replay's winner contradicts the match's recorded
+  result, a warning is shown.
+- Bans are **not** in replays and must still be entered by hand. Neither are
+  pick order or a timeline (the game data inside the file is binary packets).
+- Some replays have blank player names (the data then has to be assigned by
+  hand) or no roles (ARAM/non-draft games); both are handled.
+
 ## Code Map
 
 - `server.js` registers the API routes and serves `public/`.

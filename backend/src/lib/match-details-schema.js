@@ -23,7 +23,8 @@ function tableColumns(db, table) {
   return db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
 }
 
-// Creates whatever is missing and adds `role` to a match_details table that
+// Creates whatever is missing (including the editor's edit-lock and audit
+// tables) and adds `role` to a match_details table that
 // predates it. Safe to call on every start: it never drops or rewrites data.
 function ensureMatchDetailsSchema(db) {
   db.exec(`
@@ -48,6 +49,30 @@ function ensureMatchDetailsSchema(db) {
       side INTEGER NOT NULL CHECK (side IN (1, 2)),
       champion TEXT NOT NULL,
       UNIQUE (match_key, side, champion)
+    )
+  `);
+  // Matches whose details were last changed through the in-app editor. A CSV
+  // re-ingest leaves these matches alone so a hand edit is never silently
+  // overwritten (see ingest-match-details.js).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS match_detail_edits (
+      match_key TEXT PRIMARY KEY,
+      edited_by_sub TEXT NOT NULL,
+      edited_by_email TEXT,
+      edited_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  // Append-only history of every editor save: who, when, and the full
+  // before/after of the match's details and bans.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS match_detail_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_key TEXT NOT NULL,
+      edited_by_sub TEXT NOT NULL,
+      edited_by_email TEXT,
+      edited_at TEXT NOT NULL DEFAULT (datetime('now')),
+      before_json TEXT NOT NULL,
+      after_json TEXT NOT NULL
     )
   `);
 }

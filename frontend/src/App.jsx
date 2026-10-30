@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Route, Routes, useSearchParams } from "react-router-dom";
 import { AppDataProvider, useAppData } from "./context/AppDataContext";
+import { AuthProvider } from "./context/AuthContext";
+import AuthControls from "./components/shared/AuthControls";
 import { useTheme } from "./hooks/useTheme";
 import { routeState } from "./utils/routeState";
 import TrueSkillTab from "./pages/TrueSkillTab";
@@ -70,7 +72,10 @@ function MainTabs({ theme, toggleTheme }) {
         <div>
           <h1>Williams College Player Rankings</h1>
         </div>
-        <ThemeToggle theme={theme} toggle={toggleTheme} />
+        <div className="header-actions">
+          <AuthControls />
+          <ThemeToggle theme={theme} toggle={toggleTheme} />
+        </div>
       </header>
 
       <section className="notes-section">
@@ -117,18 +122,20 @@ function MainTabs({ theme, toggleTheme }) {
 export default function App() {
   const [theme, toggleTheme] = useTheme();
   return (
-    <AppDataProvider>
-      <Routes>
-        <Route path="/" element={<MainTabs theme={theme} toggleTheme={toggleTheme} />} />
-        <Route path="/player/:slug" element={<PlayerProfilePage />} />
-        <Route path="/player/simple/:slug" element={<SimpleProfilePage />} />
-        <Route path="/champion/:key" element={<ChampionProfilePage />} />
-      </Routes>
-      <footer>
-        <a href="https://github.com/benjamin-bui/summerlol-draft" target="_blank" rel="noopener noreferrer">
-          Source on GitHub
-        </a>
-      </footer>
-    </AppDataProvider>
+    <AuthProvider>
+      <AppDataProvider>
+        <Routes>
+          <Route path="/" element={<MainTabs theme={theme} toggleTheme={toggleTheme} />} />
+          <Route path="/player/:slug" element={<PlayerProfilePage />} />
+          <Route path="/player/simple/:slug" element={<SimpleProfilePage />} />
+          <Route path="/champion/:key" element={<ChampionProfilePage />} />
+        </Routes>
+        <footer>
+          <a href="https://github.com/benjamin-bui/summerlol-draft" target="_blank" rel="noopener noreferrer">
+            Source on GitHub
+          </a>
+        </footer>
+      </AppDataProvider>
+    </AuthProvider>
   );
 }

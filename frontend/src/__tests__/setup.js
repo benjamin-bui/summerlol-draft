@@ -37,6 +37,9 @@ global.fetch = vi.fn((url) => {
   const u = String(url);
   const json = (data, status = 200) =>
     Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(data) });
+  // Signed-out visitor on a server with login switched off (the default).
+  if (u.startsWith("/api/auth/me"))
+    return json({ enabled: false, authenticated: false, canEdit: false, user: null, csrfToken: null });
   if (u.startsWith("/api/trueskill")) return json(trueskill);
   if (u.startsWith("/api/draft-analysis")) return json(draftAnalysis);
   if (u.startsWith("/api/tournaments")) return json(tournaments);

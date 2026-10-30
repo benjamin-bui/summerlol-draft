@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, downloadUrl } from "../api/client";
 import DataTable from "../components/table/DataTable";
 import { coerceNumericColumns } from "../components/table/tableLogic";
 import { ChampionLink, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
+import MatchDetailEditor from "../components/shared/MatchDetailEditor";
+import ReplayImportDialog from "../components/shared/ReplayImportDialog";
+import { ReplayError, readReplayFile } from "../utils/roflReplay";
+import { useAuth } from "../context/AuthContext";
 import { sortByRole } from "../utils/format";
 
 const MATCH_DATA_COLUMNS = [
@@ -29,7 +33,7 @@ const MATCH_DATA_COLUMNS = [
   { key: "csv_row_index", label: "CSV Row", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0, defaultHidden: true },
 ];
 
-function MatchRosterDetail({ row }) {
+function MatchRosterDetail({ row, onEdit }) {
   const normalizePlayer = (value) => String(value || "").trim().toLowerCase();
   const detailsByPlayer = new Map((row.match_details || []).map((detail) => [normalizePlayer(detail.player), detail]));
   const matchHasRoles = (row.match_details || []).some((d) => d.role);
@@ -88,6 +92,13 @@ function MatchRosterDetail({ row }) {
 
   return (
     <div className="match-rosters">
+      {onEdit && (
+        <div className="match-editor-launch">
+          <button type="button" className="columns-btn" onClick={() => onEdit(row)}>
+            Edit match details
+          </button>
+        </div>
+      )}
       <div className="roster-detail match-rosters-grid">
         {teamTable(row._team1Roster, row._team1Roster?.name || row.team1, row.bans?.team1)}
         {teamTable(row._team2Roster, row._team2Roster?.name || row.team2, row.bans?.team2)}
@@ -98,6 +109,24 @@ function MatchRosterDetail({ row }) {
 
 export default function MatchDataTab({ active }) {
   const [rows, setRows] = useState(null);
+  // { row, replay }: the match being edited, and a replay to pull details from (or null).
+  const [editing, setEditing] = useState(null);
+  const [pendingReplay, setPendingReplay] = useState(null);
+  const [replayError, setReplayError] = useState(null);
+  const replayInput = useRef(null);
+  const { canEdit } = useAuth();
+
+  async function chooseReplayFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setReplayError(null);
+    try {
+      setPendingReplay(await readReplayFile(file));
+    } catch (error) {
+      setReplayError(error instanceof ReplayError ? error.message : "Could not read that replay file.");
+    }
+  }
 
   useEffect(() => {
     if (active && !rows) {
@@ -110,6 +139,22 @@ export default function MatchDataTab({ active }) {
 
   return (
     <section className={`tab-panel${active ? " active" : ""}`}>
+      {canEdit && rows && (
+        <div className="replay-import-bar">
+          <input ref={replayInput} type="file" accept=".rofl" hidden aria-label="Replay file to import" onChange={chooseReplayFile} />
+          <button type="button" className="columns-btn" onClick={() => replayInput.current?.click()}>
+            Import replay (.rofl){"\u2026"}
+          </button>
+          <span className="replay-upload-hint">
+            Fills in champions, K/D/A and roles from a replay. Read in your browser; nothing is uploaded.
+          </span>
+          {replayError && (
+            <p className="match-editor-error" role="alert">
+              {replayError}
+            </p>
+          )}
+        </div>
+      )}
       {rows ? (
         <DataTable
           columns={MATCH_DATA_COLUMNS}
@@ -117,7 +162,7 @@ export default function MatchDataTab({ active }) {
           ownerKey="matchdata"
           defaultSortColumn="year"
           emptyMessage="No rows match the active filters"
-          expandable={{ getDetail: (row) => <MatchRosterDetail row={row} /> }}
+          expandable={{ getDetail: (row) => <MatchRosterDetail row={row} onEdit={canEdit ? (row) => setEditing({ row, replay: null }) : null} /> }}
           extraControls={
             <button className="download-btn" onClick={() => downloadUrl("/api/raw-matches.csv", "match-data.csv")}>
               Download CSV
@@ -126,6 +171,32 @@ export default function MatchDataTab({ active }) {
         />
       ) : (
         <p>Loading{"\u2026"}</p>
+      )}
+      {canEdit && pendingReplay && (
+        <ReplayImportDialog
+          replay={pendingReplay}
+          rows={rows}
+          onCancel={() => setPendingReplay(null)}
+          onContinue={(row) => {
+            setEditing({ row, replay: pendingReplay });
+            setPendingReplay(null);
+          }}
+        />
+      )}
+      {canEdit && editing && (
+        <MatchDetailEditor
+          matchKey={editing.row.match_key}
+          replay={editing.replay}
+          title={`${editing.row.team1} vs ${editing.row.team2} \u00b7 ${editing.row.tournament} ${editing.row.year} \u00b7 ${editing.row.match_stage}`}
+          onClose={() => setEditing(null)}
+          onSaved={(saved) =>
+            setRows((current) =>
+              current.map((r) =>
+                r.match_key === saved.matchKey ? { ...r, match_details: saved.matchDetails, bans: saved.bans } : r,
+              ),
+            )
+          }
+        />
       )}
     </section>
   );

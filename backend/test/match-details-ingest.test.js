@@ -267,3 +267,43 @@ test("normalizeRole / parseBanList", () => {
   assert.deepEqual(parseBanList("Dr. Mundo"), ["Dr. Mundo"]);
   assert.deepEqual(parseBanList(undefined), []);
 });
+
+test("a match edited in the app is left alone by a CSV re-ingest, unless overwriting is requested", () => {
+  const { dir, dbPath, keys } = makeFixture();
+  const csv = writeCsv(dir, "d.csv", `${BASE_HEADER},Role,Ban`, [
+    "2026,Summer,Groups,1,A1,Ahri,1,2,3,Mid,Yasuo",
+    "2026,Summer,Groups,2,A1,Ahri,7,7,7,Mid,Zed",
+  ]);
+  ingestMatchDetailsDetailed(csv, { dbPath });
+
+  // Simulate an in-app edit of game 1.
+  let db = new Database(dbPath);
+  db.prepare("UPDATE match_details SET champion = 'Lux', kills = 9 WHERE match_key = ?").run(keys[1]);
+  db.prepare("DELETE FROM match_bans WHERE match_key = ?").run(keys[1]);
+  db.prepare("INSERT INTO match_detail_edits (match_key, edited_by_sub) VALUES (?, 'editor-1')").run(keys[1]);
+  db.close();
+
+  // The CSV changes game 1 and game 2, and is re-ingested.
+  const changed = writeCsv(dir, "d2.csv", `${BASE_HEADER},Role,Ban`, [
+    "2026,Summer,Groups,1,A1,Ahri,100,2,3,Mid,Yasuo",
+    "2026,Summer,Groups,2,A1,Jinx,8,8,8,Bot,Ezreal",
+  ]);
+  ingestMatchDetailsDetailed(changed, { dbPath });
+  db = new Database(dbPath, { readonly: true });
+  const detail = (key) =>
+    db.prepare("SELECT champion, kills FROM match_details WHERE match_key = ?").all(key);
+  assert.deepEqual(detail(keys[1]), [{ champion: "Lux", kills: 9 }], "edited game keeps the app's version");
+  assert.deepEqual(detail(keys[2]), [{ champion: "Jinx", kills: 8 }], "untouched game follows the CSV");
+  assert.deepEqual(
+    db.prepare("SELECT match_key FROM match_bans ORDER BY id").all(),
+    [{ match_key: keys[2] }],
+    "bans removed in the app are not resurrected",
+  );
+  db.close();
+
+  ingestMatchDetailsDetailed(changed, { dbPath, overwriteEdited: true });
+  db = new Database(dbPath, { readonly: true });
+  assert.deepEqual(detail(keys[1]), [{ champion: "Ahri", kills: 100 }], "overwrite lets the CSV win again");
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM match_detail_edits").get().n, 0);
+  db.close();
+});

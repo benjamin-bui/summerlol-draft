@@ -7,6 +7,7 @@ const { loadIdentityMap } = require("../lib/player-identity");
 const { ensureMatchDetailsSchema } = require("../lib/match-details-schema");
 const { normalizeRole, parseBanList } = require("../lib/match-detail-fields");
 const { championKey } = require("../lib/champion-releases");
+const { playersMatch, sidesForPlayer } = require("../lib/match-roster");
 
 const DB_PATH = path.join(__dirname, "..", "..", "data", "app.db");
 const REQUIRED_COLUMNS = [
@@ -40,45 +41,6 @@ function nullableInteger(value, column, rowNumber) {
   return Number(value.trim());
 }
 
-function normalizePlayerId(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
-}
-
-function playersMatch(left, right, identityMap) {
-  if (normalizePlayerId(left) === normalizePlayerId(right)) return true;
-  const leftIdentity = identityMap.get(String(left || "").trim());
-  const rightIdentity = identityMap.get(String(right || "").trim());
-  if (
-    leftIdentity &&
-    rightIdentity &&
-    leftIdentity.identityKey === rightIdentity.identityKey
-  ) {
-    return true;
-  }
-  return false;
-}
-
-// Which side of `match` (1 = Team 1, 2 = Team 2) a player was on, as a Set of
-// the sides they match. A player is on a side if they are that side's
-// captain, or were drafted onto that captain's team for the tournament.
-function sidesForPlayer(player, match, rosterRows, identityMap) {
-  const sides = new Set();
-  [match.team1, match.team2].forEach((captain, i) => {
-    const members = [captain];
-    for (const rosterRow of rosterRows) {
-      if (playersMatch(rosterRow.captain, captain, identityMap)) {
-        members.push(rosterRow.player);
-      }
-    }
-    if (members.some((member) => playersMatch(player, member, identityMap))) {
-      sides.add(i + 1);
-    }
-  });
-  return sides;
-}
-
 // Returns { details, rolesRecorded, bans, gamesWithBans, roleConflicts }.
 // Everything is replaced wholesale on each run (same as before), so the DB
 // always mirrors the CSV -- including bans and roles that were deleted from it.
@@ -94,9 +56,14 @@ function sidesForPlayer(player, match, rosterRows, identityMap) {
 // it adds `records`: one entry per row that resolved to a game, saying which
 // game and which team it was filed under. Same resolution code either way, so
 // the checker sees exactly what a real ingest would.
+//
+// Matches that were edited in the app (see match_detail_edits) are skipped, in
+// both directions: their stored details and bans are kept, and the CSV's rows
+// for them are ignored. Pass `overwriteEdited: true` (CLI: --overwrite-edited)
+// to discard the in-app edits and make the CSV win again.
 function ingestMatchDetailsDetailed(
   csvPath,
-  { dbPath = DB_PATH, collect = false } = {},
+  { dbPath = DB_PATH, collect = false, overwriteEdited = false } = {},
 ) {
   const [header, ...rows] = parseCsv(fs.readFileSync(csvPath, "utf8"));
   const indexes = Object.fromEntries(
@@ -118,8 +85,19 @@ function ingestMatchDetailsDetailed(
   try {
     const importDetails = db.transaction(() => {
       ensureMatchDetailsSchema(db);
-      db.exec("DELETE FROM match_details");
-      db.exec("DELETE FROM match_bans");
+      if (overwriteEdited) db.exec("DELETE FROM match_detail_edits");
+      const editedKeys = new Set(
+        db
+          .prepare("SELECT match_key FROM match_detail_edits")
+          .all()
+          .map((edit) => edit.match_key),
+      );
+      db.exec(
+        "DELETE FROM match_details WHERE match_key NOT IN (SELECT match_key FROM match_detail_edits)",
+      );
+      db.exec(
+        "DELETE FROM match_bans WHERE match_key NOT IN (SELECT match_key FROM match_detail_edits)",
+      );
       const insert = db.prepare(`
         INSERT INTO match_details (match_key, player, champion, kills, deaths, assists, role)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -193,6 +171,8 @@ function ingestMatchDetailsDetailed(
           );
         }
         const { match, sides } = candidates[0];
+        // Edited in the app: the stored version wins, so this row is not loaded.
+        const skipEdited = editedKeys.has(match.match_key);
 
         const role = normalizeRole(optionalCell(row, "Role"), rowNumber);
         const bans = parseBanList(optionalCell(row, "Ban"));
@@ -200,7 +180,7 @@ function ingestMatchDetailsDetailed(
         const kills = nullableInteger(row[indexes.K], "K", rowNumber);
         const deaths = nullableInteger(row[indexes.D], "D", rowNumber);
         const assists = nullableInteger(row[indexes.A], "A", rowNumber);
-        if (bans.length) {
+        if (bans.length && !skipEdited) {
           // Only a problem if there are bans to file: a player who somehow
           // matched both teams still ingests fine as a plain detail row.
           if (sides.size !== 1) {
@@ -224,8 +204,10 @@ function ingestMatchDetailsDetailed(
         }
 
         const champion = row[indexes.Champion]?.trim() || null;
-        insert.run(match.match_key, player, champion, kills, deaths, assists, role);
-        if (role) {
+        if (!skipEdited) {
+          insert.run(match.match_key, player, champion, kills, deaths, assists, role);
+        }
+        if (role && !skipEdited) {
           rolesRecorded += 1;
           if (sides.size === 1) {
             const [side] = sides;
@@ -347,15 +329,17 @@ function formatRoleConflicts(conflicts, limit) {
 }
 
 if (require.main === module) {
-  const csvPath = process.argv[2];
+  const args = process.argv.slice(2);
+  const overwriteEdited = args.includes("--overwrite-edited");
+  const csvPath = args.find((arg) => !arg.startsWith("--"));
   if (!csvPath) {
     console.error(
-      "Usage: node src/scripts/ingest-match-details.js <path-to-details-csv>",
+      "Usage: node src/scripts/ingest-match-details.js <path-to-details-csv> [--overwrite-edited]",
     );
     process.exit(1);
   }
   const { details, rolesRecorded, bans, gamesWithBans, roleConflicts } =
-    ingestMatchDetailsDetailed(csvPath);
+    ingestMatchDetailsDetailed(csvPath, { overwriteEdited });
   console.log(`Loaded ${details} match details into ${DB_PATH}`);
   console.log(
     `  ${rolesRecorded} with a role; ${bans} bans across ${gamesWithBans} games`,
