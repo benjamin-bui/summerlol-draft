@@ -451,8 +451,17 @@ function buildTeams({
   return out;
 }
 
-function buildMatches(tournamentGames, matchOrderByKey, resolve) {
+function buildMatches(tournamentGames, matchOrderByKey, matchByKey, resolve) {
+  const seriesGameNumber = new Map();
+  for (const game of tournamentGames) {
+    const source = matchByKey.get(game.matchKey);
+    if (!source?.seriesId) continue;
+    const nextNumber = (seriesGameNumber.get(source.seriesId) || 0) + 1;
+    seriesGameNumber.set(source.seriesId, nextNumber);
+    source.gameNumber = nextNumber;
+  }
   return tournamentGames.map((g) => {
+    const source = matchByKey.get(g.matchKey) || {};
     const detailByKey = new Map();
     for (const d of g.details || []) detailByKey.set(resolve(d.player), d);
 
@@ -485,6 +494,14 @@ function buildMatches(tournamentGames, matchOrderByKey, resolve) {
       matchKey: g.matchKey,
       order: matchOrderByKey.get(g.matchKey) ?? null,
       stage: g.matchStage,
+      stageId: source.stageId || null,
+      stageName: source.stage?.stageName || null,
+      stageFormat: source.stage?.stageFormat || null,
+      stageOrder: source.stage?.stageOrder || null,
+      seriesId: source.seriesId || null,
+      seriesRound: source.series?.roundLabel || null,
+      bestOf: source.series?.bestOf || null,
+      gameNumber: source.gameNumber || null,
       winner: g.winner,
       predictedWinProbTeam1: g.predictedWinProbTeam1,
       hasDetails: (g.details || []).length > 0,
@@ -531,7 +548,11 @@ function buildTournamentSummaries({
     reverseIdentity.get(key)?.displayName || fallback || key;
 
   const matchOrderByKey = new Map();
-  for (const m of matches || []) matchOrderByKey.set(m.matchKey, m.matchOrder);
+  const matchByKey = new Map();
+  for (const m of matches || []) {
+    matchOrderByKey.set(m.matchKey, m.matchOrder);
+    matchByKey.set(m.matchKey, { ...m });
+  }
 
   const gamesByTournament = new Map();
   for (const g of games) {
@@ -596,6 +617,51 @@ function buildTournamentSummaries({
     const unrecognizedChampions = stats
       .filter((c) => releaseYearOf(c.key) === null)
       .map((c) => c.champion);
+
+    const tournamentMatches = buildMatches(
+      tournamentGames,
+      matchOrderByKey,
+      matchByKey,
+      resolve,
+    );
+    const stageGroups = new Map();
+    for (const game of tournamentMatches) {
+      const stageId = game.stageId || "stage-unassigned";
+      if (!stageGroups.has(stageId)) {
+        stageGroups.set(stageId, {
+          stageId: game.stageId,
+          name: game.stageName || "Tournament",
+          format: game.stageFormat || "custom",
+          order: game.stageOrder || 1,
+          groups: new Map(),
+        });
+      }
+      const stage = stageGroups.get(stageId);
+      const groupId = game.seriesId || `standalone:${game.matchKey}`;
+      if (!stage.groups.has(groupId)) {
+        stage.groups.set(groupId, {
+          seriesId: game.seriesId,
+          roundLabel: game.seriesRound,
+          bestOf: game.bestOf,
+          games: [],
+        });
+      }
+      stage.groups.get(groupId).games.push(game);
+    }
+    const stages = [...stageGroups.values()]
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+      .map((stage) => ({
+        stageId: stage.stageId,
+        name: stage.name,
+        format: stage.format,
+        order: stage.order,
+        groups: [...stage.groups.values()]
+          .map((group) => ({
+            ...group,
+            games: group.games.sort((a, b) => a.order - b.order),
+          }))
+          .sort((a, b) => a.games[0].order - b.games[0].order),
+      }));
 
     summaries.push({
       id: tournamentId(year, tournament),
@@ -673,7 +739,8 @@ function buildTournamentSummaries({
         diversity: computeChampionDiversity(stats, gamesWithChampionData, year),
         biggestUpset: findBiggestUpset(tournamentGames, matchOrderByKey),
       },
-      matches: buildMatches(tournamentGames, matchOrderByKey, resolve),
+      matches: tournamentMatches,
+      stages,
     });
   }
 

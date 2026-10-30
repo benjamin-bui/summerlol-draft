@@ -70,6 +70,31 @@ export const editorApi = {
   getMatch: (matchKey) => sendJson(`/api/editor/matches/${encodeURIComponent(matchKey)}`),
   saveMatch: (matchKey, body, csrfToken) =>
     sendJson(`/api/editor/matches/${encodeURIComponent(matchKey)}`, { method: "PUT", csrfToken, body }),
+  getTournamentStructure: (year, tournament) =>
+    sendJson(`/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/structure`),
+  saveTournamentStages: (year, tournament, stages, csrfToken) =>
+    sendJson(`/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/stages`, {
+      method: "PUT",
+      csrfToken,
+      body: { stages },
+    }),
+  createSeries: (year, tournament, body, csrfToken) =>
+    sendJson(`/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/series`, {
+      method: "POST",
+      csrfToken,
+      body,
+    }),
+  updateGameStructure: (year, tournament, assignments, csrfToken) =>
+    sendJson(`/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/games`, {
+      method: "PUT",
+      csrfToken,
+      body: { assignments },
+    }),
+  addSeriesGame: (year, tournament, seriesId, body, csrfToken) =>
+    sendJson(
+      `/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/series/${encodeURIComponent(seriesId)}/games`,
+      { method: "POST", csrfToken, body },
+    ),
 };
 
 export function downloadUrl(path, filename) {

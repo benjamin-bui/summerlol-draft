@@ -5,6 +5,7 @@ import { coerceNumericColumns } from "../components/table/tableLogic";
 import { ChampionLink, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
 import MatchDetailEditor from "../components/shared/MatchDetailEditor";
 import ReplayImportDialog from "../components/shared/ReplayImportDialog";
+import TournamentStructureEditor from "../components/shared/TournamentStructureEditor";
 import { ReplayError, readReplayFile } from "../utils/roflReplay";
 import { useAuth } from "../context/AuthContext";
 import { sortByRole } from "../utils/format";
@@ -30,6 +31,10 @@ const MATCH_DATA_COLUMNS = [
   { key: "result", label: "Result", sortable: true, hideable: true, filterable: true, type: "string" },
   { key: "match_order", label: "Match Order", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
   { key: "match_stage", label: "Match Stage", sortable: true, hideable: true, filterable: true, type: "string" },
+  { key: "stage_name", label: "Tournament Stage", sortable: true, hideable: true, filterable: true, type: "string" },
+  { key: "series_round", label: "Series / Round", sortable: true, hideable: true, filterable: true, type: "string" },
+  { key: "best_of", label: "Best Of", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
+  { key: "game_number", label: "Game In Series", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
   { key: "csv_row_index", label: "CSV Row", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0, defaultHidden: true },
 ];
 
@@ -111,6 +116,7 @@ export default function MatchDataTab({ active }) {
   const [rows, setRows] = useState(null);
   // { row, replay }: the match being edited, and a replay to pull details from (or null).
   const [editing, setEditing] = useState(null);
+  const [editingStructure, setEditingStructure] = useState(false);
   const [pendingReplay, setPendingReplay] = useState(null);
   const [replayError, setReplayError] = useState(null);
   const replayInput = useRef(null);
@@ -144,6 +150,9 @@ export default function MatchDataTab({ active }) {
           <input ref={replayInput} type="file" accept=".rofl" hidden aria-label="Replay file to import" onChange={chooseReplayFile} />
           <button type="button" className="columns-btn" onClick={() => replayInput.current?.click()}>
             Import replay (.rofl){"\u2026"}
+          </button>
+          <button type="button" className="columns-btn" onClick={() => setEditingStructure(true)}>
+            Manage tournament structure
           </button>
           <span className="replay-upload-hint">
             Fills in champions, K/D/A and roles from a replay. Read in your browser; nothing is uploaded.
@@ -196,6 +205,17 @@ export default function MatchDataTab({ active }) {
               ),
             )
           }
+        />
+      )}
+      {canEdit && editingStructure && rows && (
+        <TournamentStructureEditor
+          rows={rows}
+          onClose={() => setEditingStructure(false)}
+          onChanged={async () => {
+            const data = await api.rawMatches();
+            coerceNumericColumns(MATCH_DATA_COLUMNS.map((column) => column.key), data.rows);
+            setRows(data.rows);
+          }}
         />
       )}
     </section>

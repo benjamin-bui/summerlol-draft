@@ -105,7 +105,7 @@ describe("App smoke test against real data", () => {
       ["Team Balance", () => activePanel().findByRole("columnheader", { name: /Captain/ }, { timeout: 10000 })],
       ["Mock Draft", () => activePanel().findByRole("heading", { name: "Mock Draft" }, { timeout: 10000 })],
       ["Draft Data", () => activePanel().findByRole("columnheader", { name: /Player/ }, { timeout: 10000 })],
-      ["Match History", () => activePanel().findByRole("columnheader", { name: /Tournament/ }, { timeout: 10000 })],
+      ["Match History", () => within(activePanel().getByRole("table")).findByText("Tournament", { exact: true }, { timeout: 10000 })],
     ];
     for (const [label, check] of tabChecks) {
       const btn = screen.getByRole("button", { name: label });

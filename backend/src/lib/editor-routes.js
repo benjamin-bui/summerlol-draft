@@ -11,6 +11,15 @@ const {
   readMatchState,
   saveMatchEdit,
 } = require("./match-detail-editor");
+const {
+  StructureNotFoundError,
+  StructureValidationError,
+  addGameToSeries,
+  createSeries,
+  readTournamentStructure,
+  saveStages,
+  updateGameStructure,
+} = require("./tournament-structure");
 
 function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
   const router = express.Router();
@@ -36,6 +45,85 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
       res.json(state);
     } catch (error) {
       sendError(res, error, db, req.params.matchKey, identities);
+    }
+  });
+
+  router.get(`${prefix}/tournaments/:year/:tournament/structure`, (req, res) => {
+    try {
+      res.json(
+        readTournamentStructure(
+          db,
+          Number(req.params.year),
+          req.params.tournament,
+        ),
+      );
+    } catch (error) {
+      sendStructureError(res, error);
+    }
+  });
+
+  router.put(`${prefix}/tournaments/:year/:tournament/stages`, (req, res) => {
+    try {
+      res.json(
+        saveStages(
+          db,
+          Number(req.params.year),
+          req.params.tournament,
+          req.body,
+          req.editor,
+        ),
+      );
+    } catch (error) {
+      sendStructureError(res, error);
+    }
+  });
+
+  router.post(`${prefix}/tournaments/:year/:tournament/series`, (req, res) => {
+    try {
+      res.status(201).json(
+        createSeries(
+          db,
+          Number(req.params.year),
+          req.params.tournament,
+          req.body,
+          req.editor,
+        ),
+      );
+    } catch (error) {
+      sendStructureError(res, error);
+    }
+  });
+
+  router.put(`${prefix}/tournaments/:year/:tournament/games`, (req, res) => {
+    try {
+      res.json(
+        updateGameStructure(
+          db,
+          Number(req.params.year),
+          req.params.tournament,
+          req.body,
+          req.editor,
+        ),
+      );
+    } catch (error) {
+      sendStructureError(res, error);
+    }
+  });
+
+  router.post(`${prefix}/tournaments/:year/:tournament/series/:seriesId/games`, (req, res) => {
+    try {
+      res.status(201).json(
+        addGameToSeries(
+          db,
+          Number(req.params.year),
+          req.params.tournament,
+          req.params.seriesId,
+          req.body,
+          req.editor,
+        ),
+      );
+    } catch (error) {
+      sendStructureError(res, error);
     }
   });
 
@@ -68,6 +156,17 @@ function sendError(res, error, db, matchKey, identities) {
   }
   console.error("[editor] unexpected error:", error);
   return res.status(500).json({ error: "Could not save match details" });
+}
+
+function sendStructureError(res, error) {
+  if (error instanceof StructureValidationError) {
+    return res.status(400).json({ error: error.message });
+  }
+  if (error instanceof StructureNotFoundError) {
+    return res.status(404).json({ error: error.message });
+  }
+  console.error("[editor] unexpected tournament structure error:", error);
+  return res.status(500).json({ error: "Could not update tournament structure" });
 }
 
 module.exports = { createEditorRouter };

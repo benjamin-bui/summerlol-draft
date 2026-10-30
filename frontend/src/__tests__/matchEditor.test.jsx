@@ -86,6 +86,7 @@ describe("match editor visibility", () => {
     mockServer({ me: { ...SIGNED_OUT, enabled: false }, editorGet: () => json({}, 500), editorPut: () => json({}, 500) });
     await openFirstMatch();
     expect(screen.queryByRole("button", { name: /edit match details/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /manage tournament structure/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/editor sign-in/i)).not.toBeInTheDocument();
     expect(calls.some((c) => c.url.startsWith("/api/editor/"))).toBe(false);
   });
@@ -96,7 +97,44 @@ describe("match editor visibility", () => {
     const link = await screen.findByRole("link", { name: /editor sign-in/i });
     expect(link.getAttribute("href")).toBe(`/auth/login?returnTo=${encodeURIComponent("/?tab=matchdata")}`);
     expect(screen.queryByRole("button", { name: /edit match details/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /manage tournament structure/i })).not.toBeInTheDocument();
     expect(calls.some((c) => c.url.startsWith("/api/editor/"))).toBe(false);
+  });
+
+  it("opens tournament structure management for an authorized editor", async () => {
+    mockServer({
+      me: EDITOR,
+      editorGet: (url) =>
+        url.endsWith("/structure")
+          ? json({ stages: [], series: [], games: [] })
+          : json(editorState(decodeURIComponent(url.split("/").pop()))),
+      editorPut: () => json({}),
+    });
+    await openFirstMatch();
+    await userEvent.click(screen.getByRole("button", { name: /manage tournament structure/i }));
+    expect(await screen.findByRole("dialog", { name: /tournament structure/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Stages" })).toBeInTheDocument();
+    expect(calls.some((call) => call.url.includes("/structure"))).toBe(true);
+  });
+
+  it("offers tournament structure management from the Tournaments tab", async () => {
+    mockServer({
+      me: EDITOR,
+      editorGet: (url) =>
+        url.endsWith("/structure")
+          ? json({ stages: [], series: [], games: [] })
+          : json(editorState(decodeURIComponent(url.split("/").pop()))),
+      editorPut: () => json({}),
+    });
+    render(
+      <MemoryRouter initialEntries={["/?tab=tournaments"]}>
+        <App />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(document.querySelector("#tab-tournaments .tournament-picker select")?.value).toBeTruthy());
+    await userEvent.click(screen.getByRole("button", { name: /manage tournament structure/i }));
+    expect(await screen.findByRole("dialog", { name: /tournament structure/i })).toBeInTheDocument();
+    expect(calls.some((call) => call.url.includes("/structure"))).toBe(true);
   });
 
   it("explains a refused sign-in without granting anything", async () => {

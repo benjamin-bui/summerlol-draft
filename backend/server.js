@@ -24,6 +24,11 @@ const { buildChampionProfile } = require("./src/lib/champion-profile");
 const { loadAuthConfig } = require("./src/lib/auth/config");
 const { createAuth } = require("./src/lib/auth/oidc-auth");
 const { createEditorRouter } = require("./src/lib/editor-routes");
+const {
+  ensureDefaultStages,
+  ensureTournamentStructureSchema,
+  structureForMatches,
+} = require("./src/lib/tournament-structure");
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -107,6 +112,16 @@ if (matchColumns.length) {
   db.exec("CREATE UNIQUE INDEX matches_match_key_unique ON matches(match_key)");
 }
 ensureMatchDetailsSchema(db); // (re)creates match_details and creates match_bans if missing
+ensureTournamentStructureSchema(db);
+ensureDefaultStages(
+  db,
+  db
+    .prepare(
+      `SELECT match_key AS matchKey, year, tournament, match_order AS matchOrder
+       FROM matches`,
+    )
+    .all(),
+);
 const restoreDetail = db.prepare(
   "INSERT INTO match_details (match_key, player, champion, kills, deaths, assists, role) VALUES (?, ?, ?, ?, ?, ?, ?)",
 );
@@ -454,12 +469,28 @@ const noBans = () => ({ team1: [], team2: [] });
 function getMatches() {
   const matches = db
     .prepare(
-      "SELECT year, tournament, team1, team2, result, csv_row_index AS rowIndex, match_order AS matchOrder, match_stage AS matchStage, match_key AS matchKey FROM matches",
+      "SELECT year, tournament, team1, team2, result, csv_row_index AS rowIndex, match_order AS matchOrder, match_stage AS matchStage, match_key AS matchKey FROM matches ORDER BY match_order, csv_row_index",
     )
     .all();
   const { detailsByKey, bansByKey } = loadMatchDetailsAndBans();
+  const structure = structureForMatches(db, matches);
+  const seriesById = new Map();
+  for (const match of matches) {
+    const seriesId = structure.get(match.matchKey)?.seriesId;
+    if (!seriesId) continue;
+    if (!seriesById.has(seriesId)) seriesById.set(seriesId, []);
+    seriesById.get(seriesId).push(match);
+  }
+  const gameNumberByKey = new Map();
+  for (const games of seriesById.values()) {
+    games
+      .sort((a, b) => a.matchOrder - b.matchOrder)
+      .forEach((game, index) => gameNumberByKey.set(game.matchKey, index + 1));
+  }
   return matches.map((match) => ({
     ...match,
+    ...structure.get(match.matchKey),
+    gameNumber: gameNumberByKey.get(match.matchKey) || null,
     details: detailsByKey.get(match.matchKey) || [],
     bans: bansByKey.get(match.matchKey) || noBans(),
   }));
@@ -1424,19 +1455,65 @@ app.get("/api/upcoming-roster", async (req, res) => {
 });
 // Match data endpoint
 function getRawMatchColumns() {
-  return db
+  const columns = db
     .prepare("PRAGMA table_info(matches)")
     .all()
     .map((c) => c.name)
     .filter((name) => name !== "id"); // only the autoincrement key excluded; csv_row_index stays
+  return [
+    ...columns,
+    "stage_id",
+    "stage_name",
+    "stage_format",
+    "stage_order",
+    "series_id",
+    "series_round",
+    "best_of",
+    "game_number",
+  ];
 }
 
 function getRawMatchRows() {
   const columns = getRawMatchColumns();
-  const selectCols = columns.map(q).join(", ");
-  const rows = db.prepare(`SELECT ${selectCols} FROM matches`).all();
+  const physicalColumns = columns.filter(
+    (column) =>
+      ![
+        "stage_id",
+        "stage_name",
+        "stage_format",
+        "stage_order",
+        "series_id",
+        "series_round",
+        "best_of",
+        "game_number",
+      ].includes(column),
+  );
+  const selectCols = physicalColumns.map(q).join(", ");
+  const rows = db.prepare(`SELECT ${selectCols} FROM matches ORDER BY match_order, csv_row_index`).all();
   const { detailsByKey, bansByKey } = loadMatchDetailsAndBans();
+  const structure = structureForMatches(
+    db,
+    rows.map((row) => ({ matchKey: row.match_key })),
+  );
+  const seriesGameNumber = new Map();
+  const seriesCounts = new Map();
+  for (const row of rows) {
+    const seriesId = structure.get(row.match_key)?.seriesId;
+    if (!seriesId) continue;
+    const gameNumber = (seriesCounts.get(seriesId) || 0) + 1;
+    seriesCounts.set(seriesId, gameNumber);
+    seriesGameNumber.set(row.match_key, gameNumber);
+  }
   rows.forEach((row) => {
+    const gameStructure = structure.get(row.match_key);
+    row.stage_id = gameStructure?.stageId || null;
+    row.stage_name = gameStructure?.stage?.stageName || null;
+    row.stage_format = gameStructure?.stage?.stageFormat || null;
+    row.stage_order = gameStructure?.stage?.stageOrder || null;
+    row.series_id = gameStructure?.seriesId || null;
+    row.series_round = gameStructure?.series?.roundLabel || null;
+    row.best_of = gameStructure?.series?.bestOf || null;
+    row.game_number = seriesGameNumber.get(row.match_key) || null;
     row.match_details = detailsByKey.get(row.match_key) || [];
     row.bans = bansByKey.get(row.match_key) || noBans();
   });
@@ -1451,6 +1528,14 @@ const MATCH_COLUMN_DISPLAY_NAMES = {
   result: "Result",
   match_order: "Match Order",
   match_stage: "Match Stage",
+  stage_id: "Stage ID",
+  stage_name: "Stage Name",
+  stage_format: "Stage Format",
+  stage_order: "Stage Order",
+  series_id: "Series ID",
+  series_round: "Series Round",
+  best_of: "Best Of",
+  game_number: "Game Number",
   csv_row_index: "CSV Row Index", // internal-ish, but included for completeness if ever un-hidden
   match_key: "Match Key",
 };

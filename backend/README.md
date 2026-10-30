@@ -55,9 +55,15 @@ Tournament,Year,Captain,Player,Pick Order,Rank
 
 Match CSV requires `Year,Tournament,Team 1,Team 2,Result,Match Order`;
 `Match Stage` is optional. Match order must be an integer and determines
-chronological order within a tournament.
+chronological order within a tournament. Optional structure columns are
+`Stage ID,Stage Name,Stage Format,Stage Order,Series ID,Series Round,Best Of`.
+Use stable IDs for stages and series across rows. Supported stage formats are
+`round-robin`, `swiss`, `single-elimination`, `double-elimination`, and
+`custom`. Games sharing a Series ID are displayed together; they must belong to
+the same two teams and use a consistent stage/round/best-of definition.
+If a tournament has multiple stages, set `Stage ID` on every row in each
+stage; omitting it assigns those rows to the tournament's default stage.
 
-year, tournament, stage, and match order; draft and match data must be present
 Match-details CSV requires these exact headers:
 
 ```text
@@ -82,8 +88,10 @@ npm test
 
 Draft ingestion synchronizes rows by ID and removes rows no longer present in
 an ID-bearing CSV. Pass `--fresh` to `ingest-csv` to recreate the draft table.
-Match ingestion replaces the matches table. Match-details ingestion replaces
-the details and bans tables. `check-data` uses a temporary database copy and
+Match ingestion rebuilds the imported match list, while retaining games added
+in the editor and details/bans with match keys that still exist. Match-details
+ingestion replaces the details and bans tables, except details explicitly
+protected by an editor save. `check-data` uses a temporary database copy and
 reports source CSV row numbers; it does not modify the real database.
 
 `npm run refresh-all -- <draft.csv>` ingests the draft, queues newly seen
@@ -135,6 +143,16 @@ Data behavior worth knowing:
   it alone so a hand edit is never silently overwritten. To make the CSV win
   again: `node src/scripts/ingest-match-details.js <csv> --overwrite-edited`.
 - Other tabs (Tournaments, player pages) show an edit after a page reload.
+- **Match History -> Manage tournament structure** lets authorized editors
+  order and format stages, assign games to stages, group selected games into a
+  series, ungroup them, and append a game with a selected result to an existing
+  series. The Tournaments tab displays stages, series, and per-series game
+  numbers; player/champion histories show the same context. This organization
+  is display-only: TrueSkill still processes every game independently, and
+  stages do not calculate standings, pairings, or bracket advancement.
+- Stage edits and game assignments are stored as editor overrides, so
+  re-ingesting the match CSV does not silently erase them. A series must already
+  contain a game before the editor can append another one.
 - Behind a reverse proxy, set `PUBLIC_URL` to the public https address. For
   local development with `npm run dev`, use `PUBLIC_URL=http://localhost:5173`
   (Vite proxies `/auth`).

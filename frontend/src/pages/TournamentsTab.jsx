@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { useAppData } from "../context/AppDataContext";
 import { PlayerLink, ChampionLink, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
 import MatchDetailEditor from "../components/shared/MatchDetailEditor";
+import TournamentStructureEditor from "../components/shared/TournamentStructureEditor";
 import TournamentFunFacts from "../components/shared/TournamentFunFacts";
 import { ordinal, pct, pctOrLessThanOne, sortByRole } from "../utils/format";
 import { useAuth } from "../context/AuthContext";
@@ -446,6 +447,42 @@ function matchHasChampion(m, key) {
   );
 }
 
+function groupMatchesByStructure(shown) {
+  const stages = new Map();
+  for (const match of shown) {
+    const stageId = match.m.stageId || `stage:${match.m.stageName || "Tournament"}`;
+    if (!stages.has(stageId)) {
+      stages.set(stageId, {
+        id: stageId,
+        name: match.m.stageName || "Tournament",
+        format: match.m.stageFormat,
+        order: match.m.stageOrder || 1,
+        groups: new Map(),
+      });
+    }
+    const stage = stages.get(stageId);
+    const groupId = match.m.seriesId || `game:${match.m.matchKey || match.i}`;
+    if (!stage.groups.has(groupId)) {
+      stage.groups.set(groupId, {
+        id: groupId,
+        seriesId: match.m.seriesId,
+        roundLabel: match.m.seriesRound,
+        bestOf: match.m.bestOf,
+        matches: [],
+      });
+    }
+    stage.groups.get(groupId).matches.push(match);
+  }
+  return [...stages.values()]
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+    .map((stage) => ({
+      ...stage,
+      groups: [...stage.groups.values()].sort(
+        (a, b) => (a.matches[0].m.order ?? 0) - (b.matches[0].m.order ?? 0),
+      ),
+    }));
+}
+
 function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onToggleExpand, flashKey, canEdit, onSaved }) {
   const [editingMatch, setEditingMatch] = useState(null);
   if (!t.matches.length) {
@@ -458,6 +495,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
   }
   const upsetKey = t.summary.biggestUpset?.matchKey;
   const shown = t.matches.map((m, i) => ({ m, i })).filter(({ m }) => !championFilterKey || matchHasChampion(m, championFilterKey));
+  const groupedMatches = groupMatchesByStructure(shown);
   const filterChampion = championFilterKey ? t.championStats.find((c) => c.key === championFilterKey) : null;
   const count = championFilterKey ? `${shown.length} of ${t.matches.length}, in play order` : `${t.matches.length}, in play order`;
 
@@ -498,87 +536,115 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
               </tr>
             </thead>
             <tbody>
-              {shown.map(({ m, i }) => {
-                const matchHasRoles = [...m.team1.roster, ...m.team2.roster].some((p) => p.role);
-                const t1Won = m.winner === "team1";
-                const t2Won = m.winner === "team2";
-                const winnerSide = t1Won ? m.team1 : t2Won ? m.team2 : null;
-                const winProb = t1Won ? m.predictedWinProbTeam1 : t2Won ? 1 - m.predictedWinProbTeam1 : null;
-                const isUpset = upsetKey && m.matchKey === upsetKey;
-                const isOpen = expandedKeys.has(m.matchKey || i);
-                const isFlashing = flashKey === (m.matchKey || i);
-                return (
-                  <Fragment key={m.matchKey || i}>
-                    <tr
-                      data-match-key={m.matchKey || i}
-                      className={`${isUpset ? "tournament-upset-row" : ""}${isFlashing ? " tournament-row-flash" : ""}`}
-                      title={isUpset ? "Biggest upset of the tournament" : undefined}
-                    >
-                      <td className="col-toggle">
-                        <button
-                          className="roster-toggle"
-                          aria-expanded={isOpen}
-                          aria-label="Show match details"
-                          onClick={() => onToggleExpand(m.matchKey || i)}
-                        >
-                          {isOpen ? "\u25bc" : "\u25b6"}
-                        </button>
-                      </td>
-                      <td className="col-narrow">{m.order ?? "\u2013"}</td>
-                      <td className="col-narrow">{m.stage || "\u2013"}</td>
-                      <td className={t1Won ? "tournament-winner" : ""}>
-                        <PlayerLink {...playerLinkProps(m.team1.name, m.team1.key)} />
-                      </td>
-                      <td className={t2Won ? "tournament-winner" : ""}>
-                        <PlayerLink {...playerLinkProps(m.team2.name, m.team2.key)} />
-                      </td>
-                      <td>{winnerSide ? <PlayerLink {...playerLinkProps(winnerSide.name, winnerSide.key)} /> : "Draw"}</td>
-                      <td className="col-narrow">{winProb != null ? pctOrLessThanOne(winProb) : "\u2013"}</td>
-                    </tr>
-                    {isOpen && (
-                      <tr key={`${m.matchKey || i}-detail`} className="roster-detail-row">
-                        <td colSpan={7}>
-                          <div className="match-rosters">
-                            {canEdit && m.matchKey && (
-                              <div className="match-editor-launch">
-                                <button type="button" className="columns-btn" onClick={() => setEditingMatch(m)}>
-                                  Edit match details
+              {groupedMatches.map((stage) => (
+                <Fragment key={stage.id}>
+                  <tr className="tournament-stage-heading">
+                    <th colSpan={7} scope="rowgroup">
+                      {stage.name}
+                      {stage.format && <span className="stat-formula">{" \u00b7 "}{stage.format.replaceAll("-", " ")}</span>}
+                    </th>
+                  </tr>
+                  {stage.groups.map((group) => (
+                    <Fragment key={group.id}>
+                      {group.seriesId && (
+                        <tr className="tournament-series-heading">
+                          <th colSpan={7} scope="rowgroup">
+                            {group.roundLabel || "Series"}
+                            {group.bestOf ? <span className="stat-formula">{" \u00b7 "}Best of {group.bestOf}</span> : null}
+                            <span className="stat-formula">
+                              {" \u00b7 "}
+                              {group.matches[0].m.team1.name} vs {group.matches[0].m.team2.name}
+                              {" \u00b7 "}
+                              {group.matches.length} {group.matches.length === 1 ? "game" : "games"}
+                            </span>
+                          </th>
+                        </tr>
+                      )}
+                      {group.matches.map(({ m, i }) => {
+                        const matchHasRoles = [...m.team1.roster, ...m.team2.roster].some((p) => p.role);
+                        const t1Won = m.winner === "team1";
+                        const t2Won = m.winner === "team2";
+                        const winnerSide = t1Won ? m.team1 : t2Won ? m.team2 : null;
+                        const winProb = t1Won ? m.predictedWinProbTeam1 : t2Won ? 1 - m.predictedWinProbTeam1 : null;
+                        const isUpset = upsetKey && m.matchKey === upsetKey;
+                        const isOpen = expandedKeys.has(m.matchKey || i);
+                        const isFlashing = flashKey === (m.matchKey || i);
+                        return (
+                          <Fragment key={m.matchKey || i}>
+                            <tr
+                              data-match-key={m.matchKey || i}
+                              className={`${isUpset ? "tournament-upset-row" : ""}${isFlashing ? " tournament-row-flash" : ""}`}
+                              title={isUpset ? "Biggest upset of the tournament" : undefined}
+                            >
+                              <td className="col-toggle">
+                                <button
+                                  className="roster-toggle"
+                                  aria-expanded={isOpen}
+                                  aria-label="Show match details"
+                                  onClick={() => onToggleExpand(m.matchKey || i)}
+                                >
+                                  {isOpen ? "\u25bc" : "\u25b6"}
                                 </button>
-                              </div>
+                              </td>
+                              <td className="col-narrow">{m.order ?? "\u2013"}</td>
+                              <td className="col-narrow">{m.gameNumber ? `Game ${m.gameNumber}` : m.stage || "\u2013"}</td>
+                              <td className={t1Won ? "tournament-winner" : ""}>
+                                <PlayerLink {...playerLinkProps(m.team1.name, m.team1.key)} />
+                              </td>
+                              <td className={t2Won ? "tournament-winner" : ""}>
+                                <PlayerLink {...playerLinkProps(m.team2.name, m.team2.key)} />
+                              </td>
+                              <td>{winnerSide ? <PlayerLink {...playerLinkProps(winnerSide.name, winnerSide.key)} /> : "Draw"}</td>
+                              <td className="col-narrow">{winProb != null ? pctOrLessThanOne(winProb) : "\u2013"}</td>
+                            </tr>
+                            {isOpen && (
+                              <tr key={`${m.matchKey || i}-detail`} className="roster-detail-row">
+                                <td colSpan={7}>
+                                  <div className="match-rosters">
+                                    {canEdit && m.matchKey && (
+                                      <div className="match-editor-launch">
+                                        <button type="button" className="columns-btn" onClick={() => setEditingMatch(m)}>
+                                          Edit match details
+                                        </button>
+                                      </div>
+                                    )}
+                                    <div className="roster-detail match-rosters-grid">
+                                      <MatchRosterTable
+                                        side={m.team1}
+                                        won={m.winner === "draw" ? null : t1Won}
+                                        hasDetails={m.hasDetails}
+                                        showBans={m.hasBans}
+                                        hasRoles={matchHasRoles}
+                                        championFilterKey={championFilterKey}
+                                      />
+                                      <MatchRosterTable
+                                        side={m.team2}
+                                        won={m.winner === "draw" ? null : t2Won}
+                                        hasDetails={m.hasDetails}
+                                        showBans={m.hasBans}
+                                        hasRoles={matchHasRoles}
+                                        championFilterKey={championFilterKey}
+                                      />
+                                    </div>
+                                  </div>
+                                  {editingMatch?.matchKey === m.matchKey && (
+                                    <MatchDetailEditor
+                                      matchKey={m.matchKey}
+                                      title={`${m.team1.name} vs ${m.team2.name} \u00b7 ${t.label} \u00b7 ${m.stage || `Match ${m.order ?? ""}`}`}
+                                      onClose={() => setEditingMatch(null)}
+                                      onSaved={onSaved}
+                                    />
+                                  )}
+                                </td>
+                              </tr>
                             )}
-                            <div className="roster-detail match-rosters-grid">
-                              <MatchRosterTable
-                                side={m.team1}
-                                won={m.winner === "draw" ? null : t1Won}
-                                hasDetails={m.hasDetails}
-                                showBans={m.hasBans}
-                                hasRoles={matchHasRoles}
-                                championFilterKey={championFilterKey}
-                              />
-                              <MatchRosterTable
-                                side={m.team2}
-                                won={m.winner === "draw" ? null : t2Won}
-                                hasDetails={m.hasDetails}
-                                showBans={m.hasBans}
-                                hasRoles={matchHasRoles}
-                                championFilterKey={championFilterKey}
-                              />
-                            </div>
-                          </div>
-                          {editingMatch?.matchKey === m.matchKey && (
-                            <MatchDetailEditor
-                              matchKey={m.matchKey}
-                              title={`${m.team1.name} vs ${m.team2.name} \u00b7 ${t.label} \u00b7 ${m.stage || `Match ${m.order ?? ""}`}`}
-                              onClose={() => setEditingMatch(null)}
-                              onSaved={onSaved}
-                            />
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
+                          </Fragment>
+                        );
+                      })}
+                    </Fragment>
+                  ))}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         </div>
@@ -599,6 +665,7 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
   const [championSort, setChampionSort] = useState({ column: null, dir: "desc" });
   const [flashKey, setFlashKey] = useState(null);
   const [expandedKeys, setExpandedKeys] = useState(() => new Set());
+  const [editingStructure, setEditingStructure] = useState(false);
   const lastExternalMatchKey = useRef(null);
 
   useEffect(() => {
@@ -717,6 +784,11 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
               {t.gamesPlayed} games {"\u00b7"} {t.teamCount} teams
             </span>
           )}
+          {canEdit && t && (
+            <button type="button" className="columns-btn" onClick={() => setEditingStructure(true)}>
+              Manage tournament structure
+            </button>
+          )}
         </div>
       </section>
 
@@ -749,6 +821,20 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
             />
           </main>
         </div>
+      )}
+      {canEdit && editingStructure && t && (
+        <TournamentStructureEditor
+          rows={t.matches.map((match) => ({
+            year: t.year,
+            tournament: t.tournament,
+            match_key: match.matchKey,
+            match_order: match.order,
+            team1: match.team1.name,
+            team2: match.team2.name,
+          }))}
+          onClose={() => setEditingStructure(false)}
+          onChanged={refreshTournaments}
+        />
       )}
     </section>
   );

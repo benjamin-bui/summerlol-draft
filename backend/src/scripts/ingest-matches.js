@@ -7,6 +7,12 @@ const fs = require("fs");
 const path = require("path");
 const Database = require("better-sqlite3");
 const { buildMatchKey } = require("../lib/match-identity");
+const {
+  defaultStageId,
+  ensureDefaultStages,
+  ensureTournamentStructureSchema,
+} = require("../lib/tournament-structure");
+const { ensureMatchDetailsSchema, tableColumns } = require("../lib/match-details-schema");
 const DB_PATH = path.join(__dirname, "..", "..", "data", "app.db");
 
 // Minimal RFC4180-ish line parser (handles quoted fields defensively even
@@ -72,11 +78,36 @@ function ingestMatches(csvPath, { dbPath = DB_PATH } = {}) {
   // the columns above, rating correctness never depends on it, so a CSV
   // that doesn't have this column yet just gets NULLs there instead of
   // failing ingestion entirely.
-  const matchStageIdx = header.indexOf("Match Stage");
+  const optionalIndexes = Object.fromEntries(
+    ["Match Stage", "Stage ID", "Stage Name", "Stage Format", "Stage Order", "Series ID", "Series Round", "Best Of"].map(
+      (column) => [column, header.indexOf(column)],
+    ),
+  );
+  const optionalCell = (row, column) => {
+    const index = optionalIndexes[column];
+    return index === -1 ? "" : String(row[index] ?? "").trim();
+  };
 
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = OFF");
+  ensureTournamentStructureSchema(db);
+  const editorCreatedMatches = db.prepare("SELECT * FROM editor_created_matches").all();
+  const savedDetails =
+    db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'match_details'").get()
+      ? db
+          .prepare(
+            `SELECT match_key, player, champion, kills, deaths, assists, ${
+              tableColumns(db, "match_details").includes("role") ? "role" : "NULL AS role"
+            } FROM match_details`,
+          )
+          .all()
+      : [];
+  const savedBans =
+    db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'match_bans'").get()
+      ? db.prepare("SELECT match_key, side, champion FROM match_bans").all()
+      : [];
+  db.exec("DELETE FROM csv_game_structure");
   db.exec("DROP TABLE IF EXISTS match_details");
   db.exec("DROP TABLE IF EXISTS match_bans"); // keyed by match_key, same as match_details
   db.exec("DROP TABLE IF EXISTS matches");
@@ -119,7 +150,7 @@ function ingestMatches(csvPath, { dbPath = DB_PATH } = {}) {
         team1: r[idx.team1],
         team2: r[idx.team2],
         result: r[idx.result],
-        matchStage: matchStageIdx === -1 ? null : r[matchStageIdx] || null,
+        matchStage: optionalCell(r, "Match Stage") || null,
         matchOrder: matchOrderVal,
       };
       const matchKey = buildMatchKey(values);
@@ -160,6 +191,178 @@ function ingestMatches(csvPath, { dbPath = DB_PATH } = {}) {
     });
   });
   insertMany(rows);
+
+  const importedMatches = db
+    .prepare(
+      `SELECT match_key AS matchKey, csv_row_index AS csvRowIndex, year, tournament, team1, team2, match_order AS matchOrder
+       FROM matches ORDER BY match_order, csv_row_index`,
+    )
+    .all();
+  const importedByRow = new Map(importedMatches.map((match) => [match.csvRowIndex, match]));
+  const insertStage = db.prepare(
+    `INSERT INTO tournament_stages
+       (stage_id, year, tournament, name, format, stage_order)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(stage_id) DO UPDATE SET
+       name = excluded.name, format = excluded.format, stage_order = excluded.stage_order,
+       updated_at = datetime('now')`,
+  );
+  const insertSeries = db.prepare(
+    `INSERT INTO tournament_series
+       (series_id, year, tournament, stage_id, round_label, best_of)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(series_id) DO UPDATE SET
+       stage_id = excluded.stage_id, round_label = excluded.round_label,
+       best_of = excluded.best_of, updated_at = datetime('now')`,
+  );
+  const assignStructure = db.prepare(
+    `INSERT INTO csv_game_structure (match_key, stage_id, series_id)
+     VALUES (?, ?, ?)
+     ON CONFLICT(match_key) DO UPDATE SET stage_id = excluded.stage_id, series_id = excluded.series_id`,
+  );
+  const importStructure = db.transaction(() => {
+    ensureDefaultStages(
+      db,
+      importedMatches.filter((match) => !optionalCell(rows[match.csvRowIndex] || [], "Stage ID")),
+    );
+    const seenStages = new Map();
+    const seenSeries = new Map();
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row[idx.year]) continue;
+      const match = importedByRow.get(i);
+      if (!match) continue;
+      const stageId = optionalCell(row, "Stage ID") || defaultStageId(match.year, match.tournament || "");
+      const stageName = optionalCell(row, "Stage Name") || "Tournament";
+      const stageFormat = optionalCell(row, "Stage Format") || "custom";
+      if (stageName.length > 80) throw new Error(`Row ${i + 2}: "Stage Name" must be at most 80 characters`);
+      const stageOrderText = optionalCell(row, "Stage Order");
+      const stageOrder = stageOrderText ? Number(stageOrderText) : 1;
+      if (!Number.isInteger(stageOrder) || stageOrder < 1) {
+        throw new Error(`Row ${i + 2}: "Stage Order" must be a positive integer`);
+      }
+      const knownFormat = ["round-robin", "swiss", "single-elimination", "double-elimination", "custom"].includes(stageFormat);
+      if (!knownFormat) throw new Error(`Row ${i + 2}: unsupported "Stage Format" value "${stageFormat}"`);
+      const tournament = match.tournament || "";
+      const stageData = { year: match.year, tournament, name: stageName, format: stageFormat, order: stageOrder };
+      const priorStage = seenStages.get(stageId);
+      if (priorStage && JSON.stringify(priorStage) !== JSON.stringify(stageData)) {
+        throw new Error(`Row ${i + 2}: rows sharing Stage ID "${stageId}" must use identical stage metadata`);
+      }
+      seenStages.set(stageId, stageData);
+      const stageOwner = db
+        .prepare("SELECT year, tournament FROM tournament_stages WHERE stage_id = ?")
+        .get(stageId);
+      if (stageOwner && (stageOwner.year !== match.year || stageOwner.tournament !== tournament)) {
+        throw new Error(`Row ${i + 2}: Stage ID "${stageId}" is already used by another tournament`);
+      }
+      insertStage.run(stageId, match.year, match.tournament || "", stageName, stageFormat, stageOrder);
+
+      const seriesId = optionalCell(row, "Series ID") || null;
+      const bestOfText = optionalCell(row, "Best Of");
+      const bestOf = bestOfText ? Number(bestOfText) : null;
+      const roundLabel = optionalCell(row, "Series Round") || null;
+      if (roundLabel?.length > 80) throw new Error(`Row ${i + 2}: "Series Round" must be at most 80 characters`);
+      if (bestOf != null && ![1, 3, 5, 7].includes(bestOf)) {
+        throw new Error(`Row ${i + 2}: "Best Of" must be 1, 3, 5, or 7`);
+      }
+      if (seriesId) {
+        const teamPair = [match.team1.toLowerCase(), match.team2.toLowerCase()].sort();
+        const seriesData = {
+          year: match.year,
+          tournament,
+          stageId,
+          roundLabel,
+          bestOf,
+          teamPair,
+        };
+        const priorSeries = seenSeries.get(seriesId);
+        if (priorSeries && JSON.stringify(priorSeries) !== JSON.stringify(seriesData)) {
+          throw new Error(`Row ${i + 2}: rows sharing Series ID "${seriesId}" must use identical stage, round, best-of, and teams`);
+        }
+        seenSeries.set(seriesId, seriesData);
+        const seriesOwner = db
+          .prepare("SELECT year, tournament FROM tournament_series WHERE series_id = ?")
+          .get(seriesId);
+        if (seriesOwner && (seriesOwner.year !== match.year || seriesOwner.tournament !== tournament)) {
+          throw new Error(`Row ${i + 2}: Series ID "${seriesId}" is already used by another tournament`);
+        }
+        insertSeries.run(
+          seriesId,
+          match.year,
+          tournament,
+          stageId,
+          roundLabel,
+          bestOf,
+        );
+      }
+      assignStructure.run(match.matchKey, stageId, seriesId);
+    }
+
+    let nextEditorRowIndex =
+      db.prepare("SELECT COALESCE(MAX(csv_row_index), -1) + 1 AS n FROM matches").get().n;
+    const restoreEditorMatch = db.prepare(
+      `INSERT OR IGNORE INTO matches
+       (year, tournament, team1, team2, result, csv_row_index, match_order, match_stage, match_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const updateEditorRowIndex = db.prepare(
+      "UPDATE editor_created_matches SET csv_row_index = ? WHERE match_key = ?",
+    );
+    for (const match of [...editorCreatedMatches].sort((a, b) => a.match_order - b.match_order)) {
+      const rowIndex = nextEditorRowIndex++;
+      const restored = restoreEditorMatch.run(
+        match.year,
+        match.tournament,
+        match.team1,
+        match.team2,
+        match.result,
+        rowIndex,
+        match.match_order,
+        match.match_stage,
+        match.match_key,
+      );
+      if (restored.changes) updateEditorRowIndex.run(rowIndex, match.match_key);
+    }
+    ensureDefaultStages(
+      db,
+      db
+        .prepare(
+          `SELECT match_key AS matchKey, year, tournament, match_order AS matchOrder
+           FROM matches ORDER BY match_order`,
+        )
+        .all(),
+    );
+  });
+  importStructure();
+
+  ensureMatchDetailsSchema(db);
+  const importedKeys = new Set(
+    db.prepare("SELECT match_key FROM matches").all().map((row) => row.match_key),
+  );
+  const restoreDetail = db.prepare(
+    `INSERT INTO match_details
+     (match_key, player, champion, kills, deaths, assists, role)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const detail of savedDetails) {
+    if (!importedKeys.has(detail.match_key)) continue;
+    restoreDetail.run(
+      detail.match_key,
+      detail.player,
+      detail.champion,
+      detail.kills,
+      detail.deaths,
+      detail.assists,
+      detail.role,
+    );
+  }
+  const restoreBan = db.prepare(
+    "INSERT OR IGNORE INTO match_bans (match_key, side, champion) VALUES (?, ?, ?)",
+  );
+  for (const ban of savedBans) {
+    if (importedKeys.has(ban.match_key)) restoreBan.run(ban.match_key, ban.side, ban.champion);
+  }
 
   const { n } = db.prepare("SELECT COUNT(*) AS n FROM matches").get();
   db.close();

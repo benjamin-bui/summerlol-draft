@@ -2886,6 +2886,102 @@ th[data-champion-sort]:focus-visible {
   opacity: 0.5;
   cursor: not-allowed;
 }
+.structure-editor {
+  width: min(980px, 100%);
+}
+.structure-tournament-select,
+.structure-series-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.structure-tournament-select {
+  max-width: 420px;
+  margin-top: 14px;
+}
+.structure-section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.structure-section h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+.structure-stage-row,
+.structure-series-form {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(145px, 1fr) 90px auto;
+  align-items: end;
+  gap: 8px;
+  margin: 8px 0;
+}
+.structure-stage-row .columns-btn {
+  white-space: nowrap;
+}
+.structure-stage-row input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.structure-stage-row input[type="number"]::-webkit-inner-spin-button,
+.structure-stage-row input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.structure-series-form {
+  grid-template-columns: repeat(3, minmax(120px, 1fr)) auto;
+}
+.structure-game-list {
+  max-height: 260px;
+  overflow: auto;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.structure-game-row {
+  display: grid;
+  grid-template-columns: 22px minmax(180px, 1fr) minmax(150px, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.structure-game-row:last-child {
+  border-bottom: 0;
+}
+.tournament-matches-table .tournament-stage-heading th {
+  padding: 10px 8px 6px;
+  border-top: 2px solid var(--border);
+  color: var(--text);
+  background: var(--panel);
+  text-align: left;
+  text-transform: capitalize;
+}
+.tournament-matches-table .tournament-series-heading th {
+  padding: 7px 8px 5px 22px;
+  color: var(--text);
+  background: var(--bg);
+  text-align: left;
+  font-weight: 600;
+}
+.structure-game-row > input {
+  margin: 0;
+}
+@media (max-width: 700px) {
+  .structure-stage-row,
+  .structure-series-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .structure-game-row {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+  .structure-game-row .stat-formula {
+    grid-column: 2;
+  }
+}
 .match-editor-error {
   margin: 12px 0 0;
   padding: 8px 12px 8px 28px;

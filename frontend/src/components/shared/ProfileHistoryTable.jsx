@@ -102,6 +102,14 @@ function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey, onSaved 
             )}
           </span>
           {entry.matchStage && <span className="cell-secondary">{entry.matchStage}</span>}
+          {entry.stageName && <span className="cell-secondary">{entry.stageName}</span>}
+          {entry.seriesId && (
+            <span className="cell-secondary">
+              {entry.seriesRound || "Series"}
+              {entry.gameNumber ? ` \u00b7 Game ${entry.gameNumber}` : ""}
+              {entry.bestOf ? ` of ${entry.bestOf}` : ""}
+            </span>
+          )}
         </td>
         <td className="col-secondary col-matchup">
           <span className="cell-primary">{entry.ownTeam?.name || "\u2013"}</span>
