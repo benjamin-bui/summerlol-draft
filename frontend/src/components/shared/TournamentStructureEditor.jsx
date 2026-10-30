@@ -14,6 +14,24 @@ function scopeKey(row) {
   return `${row.year}::${row.tournament || ""}`;
 }
 
+function getSeriesSides(series) {
+  const firstGame = series?.games[0];
+  if (!firstGame) return null;
+  const team1 = firstGame.team1;
+  const team2 = firstGame.team2;
+  const wins = { team1: 0, team2: 0 };
+  const normalized = (name) => String(name || "").trim().toLowerCase();
+  for (const game of series.games) {
+    const winner = normalized(game.result);
+    if (winner === normalized(game.team1)) {
+      wins[normalized(game.team1) === normalized(team1) ? "team1" : "team2"] += 1;
+    } else if (winner === normalized(game.team2)) {
+      wins[normalized(game.team2) === normalized(team1) ? "team1" : "team2"] += 1;
+    }
+  }
+  return { team1, team2, wins };
+}
+
 export default function TournamentStructureEditor({ rows, onClose, onChanged }) {
   const { csrfToken, refresh } = useAuth();
   const tournaments = useMemo(() => {
@@ -35,6 +53,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const [structure, setStructure] = useState(null);
   const [stages, setStages] = useState([]);
   const [selectedGames, setSelectedGames] = useState([]);
+  const [gameStageFilter, setGameStageFilter] = useState("all");
   const [groupStageId, setGroupStageId] = useState("");
   const [roundLabel, setRoundLabel] = useState("");
   const [bestOf, setBestOf] = useState("3");
@@ -54,6 +73,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
       setStructure(next);
       setStages(next.stages.map((stage) => ({ ...stage, order: stage.stageOrder })));
       setSelectedGames([]);
+      setGameStageFilter("all");
       setGroupStageId(next.stages[0]?.stageId || "");
       setAddSeriesId(next.series.find((series) => series.games.length)?.seriesId || "");
     } catch (err) {
@@ -72,6 +92,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
       setStructure(next);
       setStages(next.stages.map((stage) => ({ ...stage, order: stage.stageOrder })));
       setSelectedGames([]);
+      setGameStageFilter("all");
       setGroupStageId(next.stages[0]?.stageId || "");
       setAddSeriesId(next.series.find((series) => series.games.length)?.seriesId || "");
     }).catch((err) => {
@@ -84,7 +105,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
     };
   }, [selectedYear, selectedTournament, refresh]);
 
-  async function run(action) {
+  async function run(action, { clearSelection = false } = {}) {
     if (!selected) return;
     setBusy(true);
     setError(null);
@@ -98,6 +119,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
       } else {
         await loadStructure(selected);
       }
+      if (clearSelection) setSelectedGames([]);
       await onChanged();
     } catch (err) {
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) refresh();
@@ -141,7 +163,14 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   }
 
   const activeSeries = (structure?.series || []).filter((series) => series.games.length);
+  const selectedSeries = activeSeries.find((series) => series.seriesId === addSeriesId);
+  const seriesSides = getSeriesSides(selectedSeries);
   const gameByKey = new Map((structure?.games || []).map((game) => [game.matchKey, game]));
+  const visibleGames = (structure?.games || []).filter(
+    (game) =>
+      gameStageFilter === "all" ||
+      (gameStageFilter === "unassigned" ? !game.stageId : game.stageId === gameStageFilter),
+  );
   const currentLabel = (game) => {
     const series = game.seriesId ? structure?.series.find((item) => item.seriesId === game.seriesId) : null;
     return series
@@ -237,14 +266,54 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                     stageId: groupStageId,
                     roundLabel,
                     bestOf: bestOf ? Number(bestOf) : null,
-                  }, csrfToken))}
+                  }, csrfToken), { clearSelection: true })}
                 >
                   Group selected games
                 </button>
               </div>
               <p className="stat-formula">Select two or more games between the same teams. Grouping changes display only, not game ratings.</p>
+              <div className="structure-selection-toolbar">
+                <label>
+                  Show games
+                  <select
+                    value={gameStageFilter}
+                    onChange={(event) => {
+                      setGameStageFilter(event.target.value);
+                      setSelectedGames([]);
+                    }}
+                  >
+                    <option value="all">All stages</option>
+                    {structure.stages.map((stage) => (
+                      <option key={stage.stageId} value={stage.stageId}>{stage.name}</option>
+                    ))}
+                    <option value="unassigned">No stage</option>
+                  </select>
+                </label>
+                <span className="stat-formula">
+                  {selectedGames.length} selected
+                  {visibleGames.length !== structure.games.length ? ` · ${visibleGames.length} shown` : ""}
+                </span>
+                <button
+                  type="button"
+                  className="columns-btn"
+                  disabled={!visibleGames.length || visibleGames.every((game) => selectedGames.includes(game.matchKey))}
+                  onClick={() => setSelectedGames((current) => [
+                    ...new Set([...current, ...visibleGames.map((game) => game.matchKey)]),
+                  ])}
+                >
+                  Select all shown
+                </button>
+                <button
+                  type="button"
+                  className="columns-btn"
+                  disabled={!selectedGames.length}
+                  onClick={() => setSelectedGames([])}
+                >
+                  Clear selection
+                </button>
+              </div>
               <div className="structure-game-list">
-                {(structure.games || []).map((game) => (
+                {visibleGames.map((game) => (
                   <label className="structure-game-row" key={game.matchKey}>
                     <input type="checkbox" checked={selectedGames.includes(game.matchKey)} onChange={() => toggleGame(game.matchKey)} />
                     <span>#{game.matchOrder} {game.team1} vs {game.team2}</span>
@@ -260,7 +329,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                   matchKey,
                   stageId: groupStageId,
                   seriesId: null,
-                })), csrfToken))}
+                })), csrfToken), { clearSelection: true })}
               >
                 Move selected games to stage (ungroup series)
               </button>{" "}
@@ -271,7 +340,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                 onClick={() => run(() => editorApi.updateGameStructure(selected.year, selected.tournament, selectedGames.map((matchKey) => {
                   const game = gameByKey.get(matchKey);
                   return { matchKey, stageId: game?.stageId || null, seriesId: null };
-                }), csrfToken))}
+                }), csrfToken), { clearSelection: true })}
               >
                 Ungroup selected games
               </button>
@@ -284,21 +353,31 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                   <label>Series
                     <select value={addSeriesId} onChange={(event) => setAddSeriesId(event.target.value)}>
                       {activeSeries.map((series) => {
-                        const first = series.games[0];
                         const stage = structure.stages.find((item) => item.stageId === series.stageId);
+                        const sides = getSeriesSides(series);
+                        const score = `${sides.team1} ${sides.wins.team1}\u2013${sides.wins.team2} ${sides.team2}`;
                         return <option key={series.seriesId} value={series.seriesId}>
-                          {stage?.name || "Stage"} · {series.roundLabel || `${first.team1} vs ${first.team2}`} {series.bestOf ? `(Bo${series.bestOf})` : ""}
+                          {stage?.name || "Stage"} · {series.roundLabel || "Series"} · {score} {series.bestOf ? `(Bo${series.bestOf})` : ""}
                         </option>;
                       })}
                     </select>
                   </label>
                   <label>Result
                     <select value={addResult} onChange={(event) => setAddResult(event.target.value)}>
-                      <option value="team1">Team 1 wins</option>
-                      <option value="team2">Team 2 wins</option>
+                      <option value="team1">
+                        {seriesSides?.team1 || "Team 1"} wins ({seriesSides?.wins.team1 || 0} {seriesSides?.wins.team1 === 1 ? "win" : "wins"})
+                      </option>
+                      <option value="team2">
+                        {seriesSides?.team2 || "Team 2"} wins ({seriesSides?.wins.team2 || 0} {seriesSides?.wins.team2 === 1 ? "win" : "wins"})
+                      </option>
                       <option value="draw">Draw</option>
                     </select>
                   </label>
+                  {seriesSides && (
+                    <p className="stat-formula structure-series-score">
+                      Current score: {seriesSides.team1} {seriesSides.wins.team1}{"\u2013"}{seriesSides.wins.team2} {seriesSides.team2}
+                    </p>
+                  )}
                   <button
                     type="button"
                     className="columns-btn"
@@ -306,7 +385,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                     onClick={() => run(async () => {
                       await editorApi.addSeriesGame(selected.year, selected.tournament, addSeriesId, { result: addResult }, csrfToken);
                       return editorApi.getTournamentStructure(selected.year, selected.tournament);
-                    })}
+                    }, { clearSelection: true })}
                   >
                     Add next game
                   </button>
