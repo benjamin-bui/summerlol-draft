@@ -387,6 +387,252 @@ function TeamsBlock({ t }) {
   );
 }
 
+function resultStages(t) {
+  if (Array.isArray(t.stages) && t.stages.length) return t.stages;
+
+  const stages = new Map();
+  for (const match of t.matches) {
+    const name = match.stageName || match.stage || "Tournament";
+    const id = match.stageId || `legacy:${name}`;
+    if (!stages.has(id)) {
+      stages.set(id, {
+        stageId: id,
+        name,
+        format: match.stageFormat || "custom",
+        order: match.stageOrder || match.order || 1,
+        groups: new Map(),
+      });
+    }
+    const stage = stages.get(id);
+    const groupId = match.seriesId || `game:${match.matchKey}`;
+    if (!stage.groups.has(groupId)) {
+      stage.groups.set(groupId, {
+        seriesId: match.seriesId || null,
+        roundLabel: match.seriesRound || null,
+        bestOf: match.bestOf || null,
+        games: [],
+      });
+    }
+    stage.groups.get(groupId).games.push(match);
+  }
+  return [...stages.values()].map((stage) => ({
+    ...stage,
+    groups: [...stage.groups.values()],
+  }));
+}
+
+function formatStageFormat(format) {
+  return format
+    ?.replaceAll("-", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function resultTeamKey(team) {
+  return team.key || team.name;
+}
+
+function swissRoundResults(groups, records) {
+  const outcomes = groups.map((entry) => {
+    const { group } = entry;
+    const games = [...group.games].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const first = games[0];
+    if (!first) return null;
+
+    const teams = [first.team1, first.team2];
+    const wins = [0, 0];
+    for (const game of games) {
+      if (game.winner === "team1" || game.winner === "team2") {
+        const winner = game.winner === "team1" ? game.team1 : game.team2;
+        const side = teams.findIndex((team) => resultTeamKey(team) === resultTeamKey(winner));
+        if (side >= 0) wins[side] += 1;
+      }
+    }
+
+    return {
+      ...entry,
+      teams,
+      winner: wins[0] === wins[1] ? null : wins[0] > wins[1] ? 0 : 1,
+    };
+  });
+
+  for (const outcome of outcomes) {
+    if (!outcome) continue;
+    outcome.teams.forEach((team, side) => {
+      const key = resultTeamKey(team);
+      const record = records.get(key) || { wins: 0, losses: 0 };
+      if (outcome.winner !== null) {
+        records.set(key, {
+          wins: record.wins + (outcome.winner === side ? 1 : 0),
+          losses: record.losses + (outcome.winner === side ? 0 : 1),
+        });
+      } else if (!records.has(key)) {
+        records.set(key, record);
+      }
+    });
+  }
+
+  const teamStanding = (team) => {
+    const record = records.get(resultTeamKey(team)) || { wins: 0, losses: 0 };
+    return {
+      wins: record.wins,
+      losses: record.losses,
+      strength: team.avg ?? team.avgMu ?? 0,
+    };
+  };
+  const sortedGroups = outcomes
+    .filter(Boolean)
+    .sort((a, b) => {
+      const aStandings = a.teams.map(teamStanding).sort((x, y) => y.wins - x.wins || x.losses - y.losses || y.strength - x.strength);
+      const bStandings = b.teams.map(teamStanding).sort((x, y) => y.wins - x.wins || x.losses - y.losses || y.strength - x.strength);
+      for (let side = 0; side < aStandings.length; side += 1) {
+        const difference =
+          bStandings[side].wins - aStandings[side].wins ||
+          aStandings[side].losses - bStandings[side].losses ||
+          bStandings[side].strength - aStandings[side].strength;
+        if (difference) return difference;
+      }
+      return a.groupIndex - b.groupIndex;
+    });
+
+  return { records: new Map(records), groups: sortedGroups };
+}
+
+function SeriesResultCard({ group, index, records, onJump }) {
+  const games = [...group.games].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const first = games[0];
+  if (!first) return null;
+  const teams = [
+    { key: first.team1.key, name: first.team1.name },
+    { key: first.team2.key, name: first.team2.name },
+  ];
+  const wins = [0, 0];
+  let draws = 0;
+  for (const game of games) {
+    if (game.winner === "draw") {
+      draws += 1;
+    } else if (game.winner === "team1") {
+      const winnerKey = game.team1.key || game.team1.name;
+      wins[winnerKey === (teams[0].key || teams[0].name) ? 0 : 1] += 1;
+    } else if (game.winner === "team2") {
+      const winnerKey = game.team2.key || game.team2.name;
+      wins[winnerKey === (teams[0].key || teams[0].name) ? 0 : 1] += 1;
+    }
+  }
+  const label = group.roundLabel || (group.seriesId ? `Series ${index + 1}` : `Game ${first.order ?? index + 1}`);
+
+  return (
+    <article className="tournament-result-card">
+      <header className="tournament-result-card-head">
+        <strong>{label}</strong>
+        {group.bestOf && <span className="stat-formula">Bo{group.bestOf}</span>}
+      </header>
+      <div className="tournament-result-teams">
+        {teams.map((team, side) => (
+          <div
+            className={`tournament-result-team${wins[side] > wins[1 - side] ? " is-series-winner" : ""}`}
+            key={team.key || team.name}
+          >
+            <PlayerLink {...playerLinkProps(team.name, team.key)} />
+            {records?.has(team.key || team.name) && (
+              <span className="stat-formula">
+                {" "}({records.get(team.key || team.name).wins}W-{records.get(team.key || team.name).losses}L)
+              </span>
+            )}
+            <strong>{wins[side]}</strong>
+          </div>
+        ))}
+      </div>
+      {draws > 0 && <div className="stat-formula tournament-result-draws">{draws} drawn {draws === 1 ? "game" : "games"}</div>}
+      <div className="tournament-result-games">
+        {games.map((game, gameIndex) => {
+          const winner = game.winner === "team1" ? game.team1.name : game.winner === "team2" ? game.team2.name : "Draw";
+          return (
+            <button
+              type="button"
+              className="tournament-result-game"
+              key={game.matchKey || gameIndex}
+              onClick={() => onJump(game.matchKey)}
+              disabled={!game.matchKey}
+              title={`View match ${game.order ?? ""}`}
+            >
+              {games.length > 1 ? `Game ${game.gameNumber || gameIndex + 1}: ` : ""}
+              {winner}
+            </button>
+          );
+        })}
+      </div>
+    </article>
+  );
+}
+
+function TournamentResultsBracket({ t, onJump }) {
+  const stages = resultStages(t);
+  if (!stages.length) {
+    return (
+      <section className="profile-block tournament-results">
+        <h3>Tournament results</h3>
+        <p className="stat-formula">No structured results are available.</p>
+      </section>
+    );
+  }
+  return (
+    <section className="profile-block tournament-results">
+      <h3>Tournament results</h3>
+      <p className="stat-formula tournament-note">
+        Results are grouped by the recorded stage and series. Click a game to see its roster and details below.
+      </p>
+      <div className="tournament-results-stages">
+        {stages.map((stage, stageIndex) => {
+          const rounds = new Map();
+          const records = new Map();
+          const isSwiss = /swiss/i.test(`${stage.format || ""} ${stage.name || ""}`);
+          stage.groups.forEach((group, groupIndex) => {
+            const first = group.games[0];
+            const roundName =
+              group.roundLabel ||
+              first?.stage ||
+              (group.seriesId ? `Series ${groupIndex + 1}` : "Games");
+            if (!rounds.has(roundName)) rounds.set(roundName, []);
+            rounds.get(roundName).push({ group, groupIndex });
+          });
+          const roundsWithRecords = [...rounds.entries()].map(([roundName, groups]) => {
+            if (!isSwiss) return { roundName, groups, records: null };
+            const result = swissRoundResults(groups, records);
+            return { roundName, groups: result.groups, records: result.records };
+          });
+          return (
+            <section className="tournament-results-stage" key={stage.stageId || stageIndex}>
+              <header className="tournament-results-stage-head">
+                <h4>{stage.name || "Tournament"}</h4>
+                {stage.format && <span className="stat-formula">{formatStageFormat(stage.format)}</span>}
+              </header>
+              <div className="tournament-results-rounds">
+                {roundsWithRecords.map(({ roundName, groups, records: roundRecords }) => (
+                  <section className="tournament-results-round" key={roundName}>
+                    <h5>{roundName}</h5>
+                    <div className="tournament-results-round-games">
+                      {groups.map(({ group, groupIndex }) => (
+                        <SeriesResultCard
+                          key={group.seriesId || group.games[0]?.matchKey || groupIndex}
+                          group={group}
+                          index={groupIndex}
+                          records={roundRecords}
+                          onJump={onJump}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function MatchRosterTable({ side, won, hasDetails, showBans, hasRoles, championFilterKey }) {
   const rows = sortByRole(side.roster, (p) => p.role);
   const result = won === null ? null : won ? <span className="outcome-win">Win</span> : <span className="outcome-loss">Loss</span>;
@@ -541,7 +787,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                   <tr className="tournament-stage-heading">
                     <th colSpan={7} scope="rowgroup">
                       {stage.name}
-                      {stage.format && <span className="stat-formula">{" \u00b7 "}{stage.format.replaceAll("-", " ")}</span>}
+                      {stage.format && <span className="stat-formula">{" \u00b7 "}{formatStageFormat(stage.format)}</span>}
                     </th>
                   </tr>
                   {stage.groups.map((group) => (
@@ -666,6 +912,7 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
   const [flashKey, setFlashKey] = useState(null);
   const [expandedKeys, setExpandedKeys] = useState(() => new Set());
   const [editingStructure, setEditingStructure] = useState(false);
+  const [mainTab, setMainTab] = useState("teams");
   const lastExternalMatchKey = useRef(null);
 
   useEffect(() => {
@@ -695,6 +942,7 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
     setPrevEffectiveId(effectiveId);
     setChampionFilterKey(null);
     setExpandedKeys(new Set());
+    setMainTab("teams");
   }
 
   const t = tournaments.find((x) => x.id === effectiveId);
@@ -718,6 +966,7 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
     const selectionKey = `${t.id}::${selectedMatchKey}`;
     if (lastExternalMatchKey.current === selectionKey) return;
     lastExternalMatchKey.current = selectionKey;
+    setMainTab("results");
     setExpandedKeys((previous) => new Set(previous).add(selectedMatchKey));
     setFlashKey(selectedMatchKey);
     const scrollTimer = setTimeout(() => {
@@ -747,6 +996,7 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
 
   function jumpToMatch(matchKey) {
     setChampionFilterKey(null);
+    setMainTab("results");
     setExpandedKeys((prev) => new Set(prev).add(matchKey));
     setFlashKey(matchKey);
     setTimeout(() => {
@@ -808,7 +1058,39 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
             />
           </aside>
           <main className="profile-main">
-            <TeamsBlock t={t} />
+            <div className="tournament-main-tabs" role="tablist" aria-label="Tournament overview">
+              <button
+                type="button"
+                role="tab"
+                id="tournament-teams-tab"
+                aria-selected={mainTab === "teams"}
+                aria-controls="tournament-teams-panel"
+                className={mainTab === "teams" ? "active" : ""}
+                onClick={() => setMainTab("teams")}
+              >
+                Teams
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="tournament-results-tab"
+                aria-selected={mainTab === "results"}
+                aria-controls="tournament-results-panel"
+                className={mainTab === "results" ? "active" : ""}
+                onClick={() => setMainTab("results")}
+              >
+                Results
+              </button>
+            </div>
+            {mainTab === "teams" ? (
+              <div role="tabpanel" id="tournament-teams-panel" aria-labelledby="tournament-teams-tab">
+                <TeamsBlock t={t} />
+              </div>
+            ) : (
+              <div role="tabpanel" id="tournament-results-panel" aria-labelledby="tournament-results-tab">
+                <TournamentResultsBracket t={t} onJump={jumpToMatch} />
+              </div>
+            )}
             <MatchesBlock
               t={t}
               championFilterKey={championFilterKey}

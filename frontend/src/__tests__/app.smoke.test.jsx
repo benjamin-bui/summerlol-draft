@@ -116,15 +116,105 @@ describe("App smoke test against real data", () => {
     errSpy.mockRestore();
   }, 30000);
 
-  it("Tournaments tab renders the selected tournament's teams and matches", async () => {
+  it("Tournaments tab separates team rosters from structured results", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = userEvent.setup();
     renderApp("/?tab=tournaments");
-    // Summary block heading always present once a tournament loads.
     await screen.findByText("Summary", {}, { timeout: 10000 });
     expect(screen.getByText("Team rosters")).toBeInTheDocument();
-    expect(screen.getByText(/Matches/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Matches/ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Tournament results" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Results" }));
+    expect(await screen.findByRole("heading", { name: "Tournament results" })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Swiss Round 1" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: /Matches/ })).toBeInTheDocument();
+    expect(screen.queryByText("Team rosters")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Teams" }));
+    expect(screen.getByText("Team rosters")).toBeInTheDocument();
     expect(errSpy).not.toHaveBeenCalled();
     errSpy.mockRestore();
+  });
+
+  it("shows cumulative Swiss records and title-cased formats in tournament results", async () => {
+    const baseFetch = global.fetch.getMockImplementation();
+    vi.spyOn(global, "fetch").mockImplementation(async (url, options) => {
+      const response = await baseFetch(url, options);
+      if (!String(url).startsWith("/api/tournaments")) return response;
+
+      const data = JSON.parse(JSON.stringify(await response.json()));
+      const tournament = data.tournaments.find((item) => item.id === "2026-summer");
+      const source = tournament.matches[0];
+      const teams = {
+        Alpha: { ...source.team1, key: "alpha", name: "Alpha", avg: 1100 },
+        Beta: { ...source.team2, key: "beta", name: "Beta", avg: 800 },
+        Gamma: { ...source.team1, key: "gamma", name: "Gamma", avg: 1300 },
+        Delta: { ...source.team2, key: "delta", name: "Delta", avg: 900 },
+      };
+      const makeGame = (round, order, team1, team2, winner) => ({
+        ...source,
+        matchKey: `swiss-${order}-${team1.key}-${team2.key}`,
+        order,
+        stage: round,
+        team1,
+        team2,
+        winner,
+      });
+      const firstRoundGames = [
+        makeGame("Swiss Round 1", 1, teams.Alpha, teams.Beta, "team1"),
+        makeGame("Swiss Round 1", 2, teams.Gamma, teams.Delta, "team1"),
+      ];
+      const secondRoundGames = [
+        makeGame("Swiss Round 2", 3, teams.Alpha, teams.Gamma, "team1"),
+        makeGame("Swiss Round 2", 4, teams.Beta, teams.Delta, "team2"),
+      ];
+      const playoff = makeGame("Final", 5, teams.Alpha, teams.Delta, "team1");
+      const makeGroup = (roundLabel, game) => ({
+        seriesId: null,
+        roundLabel,
+        bestOf: null,
+        games: [game],
+      });
+      tournament.stages = [
+        {
+          stageId: "swiss",
+          name: "Swiss",
+          format: "swiss",
+          order: 1,
+          groups: firstRoundGames
+            .map((game) => makeGroup(game.stage, game))
+            .concat(secondRoundGames.map((game) => makeGroup(game.stage, game))),
+        },
+        {
+          stageId: "playoffs",
+          name: "Playoffs",
+          format: "single-elimination",
+          order: 2,
+          groups: [makeGroup("Final", playoff)],
+        },
+      ];
+      return {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(data),
+      };
+    });
+
+    const user = userEvent.setup();
+    renderApp("/?tab=tournaments");
+    await screen.findByText("Team rosters", {}, { timeout: 10000 });
+    await user.click(screen.getByRole("tab", { name: "Results" }));
+
+    expect((await screen.findAllByText("(1W-0L)")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("(2W-0L)")).toBeInTheDocument();
+    expect(screen.getAllByText("(1W-1L)").length).toBeGreaterThan(0);
+    expect(
+      [...document.querySelectorAll(".tournament-results-stage-head .stat-formula")].map((node) => node.textContent),
+    ).toEqual(["Swiss", "Single Elimination"]);
+    const roundOne = screen.getByRole("heading", { name: "Swiss Round 1" }).closest(".tournament-results-round");
+    expect(roundOne.querySelector(".tournament-result-card").textContent).toContain("Gamma");
+    const roundTwo = screen.getByRole("heading", { name: "Swiss Round 2" }).closest(".tournament-results-round");
+    expect(roundTwo.querySelector(".tournament-result-card").textContent).toContain("Alpha");
+    expect(screen.getByRole("heading", { name: /Matches/ })).toBeInTheDocument();
   });
 
   it("selects only the clicked tournament on the first click from all selected", async () => {

@@ -2160,6 +2160,7 @@ td:has(.pick-detail) {
    ever unusually short. */
 .tournament-layout {
   align-items: stretch;
+  grid-template-columns: minmax(320px, 0.8fr) minmax(0, 2fr);
 }
 .tournament-layout .profile-main {
   display: flex;
@@ -2168,6 +2169,142 @@ td:has(.pick-detail) {
 }
 .tournament-layout .profile-main > .profile-block {
   flex: 0 0 auto;
+}
+.tournament-layout .profile-main > [role="tabpanel"] {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.tournament-main-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.tournament-main-tabs button {
+  padding: 9px 14px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tournament-main-tabs button:hover {
+  color: var(--text);
+}
+.tournament-main-tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+.tournament-results {
+  min-width: 0;
+}
+.tournament-results-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tournament-results-stage {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.tournament-results-stage-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.tournament-results-stage-head h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.tournament-results-rounds {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 12px;
+  align-items: flex-start;
+}
+.tournament-results-round {
+  flex: 1 0 240px;
+  min-width: 240px;
+  max-width: 340px;
+}
+.tournament-results-round h5 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.tournament-results-round-games {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tournament-result-card {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 2px 6px var(--shadow);
+}
+.tournament-result-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 0.8rem;
+}
+.tournament-result-teams {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.tournament-result-team {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg);
+  font-size: 0.82rem;
+}
+.tournament-result-team + .tournament-result-team {
+  border-top: 1px solid var(--border);
+}
+.tournament-result-team.is-series-winner {
+  background: var(--accent-glow);
+  font-weight: 600;
+}
+.tournament-result-draws {
+  margin-top: 5px;
+}
+.tournament-result-games {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.tournament-result-game {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.tournament-result-game:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tournament-result-game:disabled {
+  cursor: default;
 }
 /* Matches soak up any leftover height so its bottom edge meets the
    sidebar's even in the (rare) case the sidebar is the taller one. */
@@ -2366,17 +2503,21 @@ th[data-champion-sort]:focus-visible {
   vertical-align: bottom;
 }
 
-/* The Bans + Contest columns need more room than the default 400px sidebar.
-   Only tournaments with ban data get the wider sidebar, and only while the
-   layout is still two columns (it stacks at 900px and below). */
+/* The Bans + Contest columns need a wider sidebar than the default tournament
+   layout. Keep it proportional so the main panel still receives more space. */
 @media (min-width: 901px) {
   .tournament-layout.has-bans {
-    grid-template-columns: 480px minmax(0, 1fr);
+    grid-template-columns: minmax(380px, 1fr) minmax(0, 2fr);
   }
 }
 @media (min-width: 1800px) {
   .tournament-layout.has-bans {
-    grid-template-columns: 540px minmax(0, 1fr);
+    grid-template-columns: minmax(420px, 1fr) minmax(0, 2fr);
+  }
+}
+@media (max-width: 900px) {
+  .tournament-layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
