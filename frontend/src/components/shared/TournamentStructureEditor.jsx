@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, editorApi } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
+import {
+  MAX_GROUPS,
+  assignTeam,
+  groupIndexOfTeam,
+  groupsPayload,
+  resizeGroups,
+  suggestGroups,
+  tournamentTeams,
+} from "../../utils/roundRobinGroups";
 
 const STAGE_FORMATS = [
   ["round-robin", "Round robin"],
@@ -9,6 +18,14 @@ const STAGE_FORMATS = [
   ["double-elimination", "Double elimination"],
   ["custom", "Custom"],
 ];
+
+function editableStages(stages) {
+  return stages.map((stage) => ({
+    ...stage,
+    order: stage.stageOrder,
+    groups: (stage.groups || []).map((group) => ({ ...group, teams: [...(group.teams || [])] })),
+  }));
+}
 
 function scopeKey(row) {
   return `${row.year}::${row.tournament || ""}`;
@@ -30,6 +47,83 @@ function getSeriesSides(series) {
     }
   }
   return { team1, team2, wins };
+}
+
+
+// Group count, names and team allocation for one round-robin stage. Allocation
+// is per team (a select each) so a team can never sit in two groups.
+function RoundRobinGroupsEditor({ label, groups, teams, stageGames, onChange }) {
+  const suggestion = suggestGroups(stageGames);
+  const unassigned = teams.filter((team) => groupIndexOfTeam(groups, team) === -1);
+  return (
+    <div className="structure-groups" role="group" aria-label={`${label} groups`}>
+      <div className="structure-groups-head">
+        <label>
+          Number of groups
+          <input
+            type="number"
+            min="0"
+            max={MAX_GROUPS}
+            aria-label={`${label} number of groups`}
+            value={groups.length}
+            onChange={(event) => onChange(resizeGroups(groups, event.target.value))}
+          />
+        </label>
+        <button
+          type="button"
+          className="columns-btn"
+          disabled={!suggestion.length}
+          title={suggestion.length ? "Group teams that play each other in this stage's games" : "Assign games to this stage and save first"}
+          onClick={() => onChange(suggestion.map((group, index) => ({ ...group, groupId: groups[index]?.groupId })))}
+        >
+          Suggest from games
+        </button>
+      </div>
+      {groups.length === 0 ? (
+        <p className="stat-formula">No groups: results show as one list of matches.</p>
+      ) : (
+        <>
+          <div className="structure-group-names">
+            {groups.map((group, groupIndex) => (
+              <label key={group.groupId || `new-${groupIndex}`}>
+                Group {groupIndex + 1} name
+                <input
+                  type="text"
+                  aria-label={`${label} group ${groupIndex + 1} name`}
+                  value={group.name}
+                  maxLength={40}
+                  onChange={(event) => onChange(groups.map((item, i) => (i === groupIndex ? { ...item, name: event.target.value } : item)))}
+                />
+              </label>
+            ))}
+          </div>
+          <div className="structure-group-teams">
+            {teams.map((team) => (
+              <label key={team} className="structure-group-team">
+                <span>{team}</span>
+                <select
+                  aria-label={`${label} group for ${team}`}
+                  value={groupIndexOfTeam(groups, team)}
+                  onChange={(event) => onChange(assignTeam(groups, team, Number(event.target.value)))}
+                >
+                  <option value={-1}>Unassigned</option>
+                  {groups.map((group, groupIndex) => (
+                    <option key={groupIndex} value={groupIndex}>{group.name || `Group ${groupIndex + 1}`}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          <p className="stat-formula">
+            {unassigned.length
+              ? `${unassigned.length} unassigned: ${unassigned.join(", ")}. `
+              : ""}
+            Games between two teams of one group appear in that group; any others are listed separately.
+          </p>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function TournamentStructureEditor({ rows, onClose, onChanged }) {
@@ -71,7 +165,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
     try {
       const next = await editorApi.getTournamentStructure(scope.year, scope.tournament);
       setStructure(next);
-      setStages(next.stages.map((stage) => ({ ...stage, order: stage.stageOrder })));
+      setStages(editableStages(next.stages));
       setSelectedGames([]);
       setGameStageFilter("all");
       setGroupStageId(next.stages[0]?.stageId || "");
@@ -90,7 +184,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
     editorApi.getTournamentStructure(selectedYear, selectedTournament).then((next) => {
       if (cancelled) return;
       setStructure(next);
-      setStages(next.stages.map((stage) => ({ ...stage, order: stage.stageOrder })));
+      setStages(editableStages(next.stages));
       setSelectedGames([]);
       setGameStageFilter("all");
       setGroupStageId(next.stages[0]?.stageId || "");
@@ -113,7 +207,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
       const next = await action();
       if (next?.stages && next?.games) {
         setStructure(next);
-        setStages(next.stages.map((stage) => ({ ...stage, order: stage.stageOrder })));
+        setStages(editableStages(next.stages));
         setGroupStageId(next.stages[0]?.stageId || "");
         setAddSeriesId(next.series.find((series) => series.games.length)?.seriesId || "");
       } else {
@@ -143,8 +237,13 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
         name: `Stage ${current.length + 1}`,
         format: "custom",
         order: current.length + 1,
+        groups: [],
       },
     ]);
+  }
+
+  function updateStage(index, change) {
+    setStages((current) => current.map((item, i) => (i === index ? { ...item, ...change } : item)));
   }
 
   if (!selected) {
@@ -166,6 +265,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const selectedSeries = activeSeries.find((series) => series.seriesId === addSeriesId);
   const seriesSides = getSeriesSides(selectedSeries);
   const gameByKey = new Map((structure?.games || []).map((game) => [game.matchKey, game]));
+  const teams = tournamentTeams(structure?.games);
   const visibleGames = (structure?.games || []).filter(
     (game) =>
       gameStageFilter === "all" ||
@@ -207,9 +307,10 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
           <>
             <section className="structure-section">
               <h3>Stages</h3>
-              <p className="stat-formula">Order stages as they were played. Format is descriptive; advancement is not calculated.</p>
+              <p className="stat-formula">Order stages as they were played. Format is descriptive; advancement is not calculated. Round-robin stages can be split into named groups, which the results page shows as standings tables.</p>
               {stages.map((stage, index) => (
-                <div className="structure-stage-row" key={stage.stageId || `new-${index}`}>
+                <div className="structure-stage" key={stage.stageId || `new-${index}`}>
+                <div className="structure-stage-row">
                   <input
                     type="text"
                     aria-label={`Stage ${index + 1} name`}
@@ -233,10 +334,20 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                   />
                   {stages.length > 1 && <button type="button" className="columns-btn" onClick={() => setStages((current) => current.filter((_, i) => i !== index))}>Remove</button>}
                 </div>
+                {stage.format === "round-robin" && (
+                  <RoundRobinGroupsEditor
+                    label={`Stage ${index + 1}`}
+                    groups={stage.groups || []}
+                    teams={teams}
+                    stageGames={structure.games.filter((game) => stage.stageId && game.stageId === stage.stageId)}
+                    onChange={(groups) => updateStage(index, { groups })}
+                  />
+                )}
+                </div>
               ))}
               <div className="structure-actions">
                 <button type="button" className="columns-btn" onClick={addStage}>Add stage</button>
-                <button type="button" className="columns-btn" disabled={busy} onClick={() => run(() => editorApi.saveTournamentStages(selected.year, selected.tournament, stages, csrfToken))}>Save stages</button>
+                <button type="button" className="columns-btn" disabled={busy} onClick={() => run(() => editorApi.saveTournamentStages(selected.year, selected.tournament, stages.map((stage) => ({ ...stage, groups: groupsPayload(stage) })), csrfToken))}>Save stages</button>
               </div>
             </section>
 

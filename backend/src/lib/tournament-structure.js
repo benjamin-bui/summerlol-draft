@@ -9,6 +9,9 @@ const STAGE_FORMATS = new Set([
   "custom",
 ]);
 
+const MAX_GROUPS_PER_STAGE = 16;
+const MAX_GROUP_NAME_LENGTH = 40;
+
 class StructureValidationError extends Error {
   constructor(message) {
     super(message);
@@ -95,6 +98,23 @@ function ensureTournamentStructureSchema(db) {
       csv_row_index INTEGER NOT NULL,
       match_order INTEGER NOT NULL,
       match_stage TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS tournament_stage_groups (
+      group_id TEXT PRIMARY KEY,
+      stage_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      group_order INTEGER NOT NULL,
+      edited_by_sub TEXT,
+      edited_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS tournament_stage_groups_stage
+      ON tournament_stage_groups(stage_id, group_order);
+    CREATE TABLE IF NOT EXISTS tournament_stage_group_teams (
+      group_id TEXT NOT NULL,
+      team TEXT NOT NULL,
+      team_order INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (group_id, team)
     );
 
     CREATE TABLE IF NOT EXISTS tournament_structure_audit (
@@ -193,6 +213,133 @@ function defaultStageId(year, tournament) {
   return `stage-${year}-${slug || "tournament"}-${suffix}-default`;
 }
 
+
+// Round-robin groups are editor-defined only (never imported from CSV), so they
+// live in plain tables rather than base + override pairs. A group is a name, an
+// order and a list of team names exactly as they appear in the matches table;
+// a game belongs to a group when both of its teams do.
+function readStageGroups(db, stageIds) {
+  const ids = [...new Set(stageIds)];
+  const byStage = new Map(ids.map((id) => [id, []]));
+  if (!ids.length) return byStage;
+  const placeholders = ids.map(() => "?").join(",");
+  const groups = db
+    .prepare(
+      `SELECT group_id AS groupId, stage_id AS stageId, name, group_order AS "order"
+       FROM tournament_stage_groups
+       WHERE stage_id IN (${placeholders})
+       ORDER BY group_order, name`,
+    )
+    .all(...ids);
+  if (!groups.length) return byStage;
+  const teamsByGroup = new Map();
+  const teamRows = db
+    .prepare(
+      `SELECT group_id AS groupId, team FROM tournament_stage_group_teams
+       WHERE group_id IN (${groups.map(() => "?").join(",")})
+       ORDER BY team_order, team`,
+    )
+    .all(...groups.map((group) => group.groupId));
+  for (const row of teamRows) {
+    if (!teamsByGroup.has(row.groupId)) teamsByGroup.set(row.groupId, []);
+    teamsByGroup.get(row.groupId).push(row.team);
+  }
+  for (const group of groups) {
+    byStage.get(group.stageId).push({ ...group, teams: teamsByGroup.get(group.groupId) || [] });
+  }
+  return byStage;
+}
+
+// Every stage's groups for the public tournaments summary, keyed by stage ID.
+function readAllStageGroups(db) {
+  const stageIds = db.prepare("SELECT DISTINCT stage_id AS stageId FROM tournament_stage_groups").all().map((row) => row.stageId);
+  return readStageGroups(db, stageIds);
+}
+
+function tournamentTeamNames(db, year, tournament) {
+  const rows = db
+    .prepare(
+      `SELECT team1, team2 FROM matches
+       WHERE year = ? AND COALESCE(tournament, '') = ?
+       ORDER BY match_order, csv_row_index`,
+    )
+    .all(year, tournament);
+  const canonical = new Map();
+  for (const row of rows) {
+    for (const team of [row.team1, row.team2]) {
+      const key = String(team || "").trim().toLowerCase();
+      if (key && !canonical.has(key)) canonical.set(key, team);
+    }
+  }
+  return canonical;
+}
+
+// Checks a stage's group list against the tournament and returns it in a
+// normalised shape (trimmed names, teams spelled as the matches table spells
+// them). Throws StructureValidationError for anything the display could not
+// make sense of: duplicate names, a team in two groups, an unknown team.
+function normalizeGroups(stageName, format, groups, teamNames, existingGroupIds) {
+  if (groups == null) return null;
+  if (!Array.isArray(groups)) throw new StructureValidationError("Stage groups must be a list");
+  if (groups.length && format !== "round-robin") {
+    throw new StructureValidationError(`Groups can only be defined on round-robin stages (${stageName})`);
+  }
+  if (groups.length > MAX_GROUPS_PER_STAGE) {
+    throw new StructureValidationError(`A stage can have at most ${MAX_GROUPS_PER_STAGE} groups`);
+  }
+  const names = new Set();
+  const groupIds = new Set();
+  const assigned = new Map();
+  return groups.map((group, index) => {
+    if (!group || typeof group !== "object" || Array.isArray(group)) {
+      throw new StructureValidationError("Each group must be an object");
+    }
+    const name = typeof group.name === "string" ? group.name.trim() : "";
+    if (!name || name.length > MAX_GROUP_NAME_LENGTH) {
+      throw new StructureValidationError(`Group names must be 1 to ${MAX_GROUP_NAME_LENGTH} characters`);
+    }
+    if (names.has(name.toLowerCase())) throw new StructureValidationError(`Duplicate group name: ${name}`);
+    names.add(name.toLowerCase());
+    if (!Array.isArray(group.teams)) throw new StructureValidationError(`Group ${name} must list its teams`);
+    const teams = group.teams.map((team) => {
+      const canonical = teamNames.get(String(team ?? "").trim().toLowerCase());
+      if (!canonical) throw new StructureValidationError(`Unknown team in group ${name}: ${team}`);
+      const owner = assigned.get(canonical.toLowerCase());
+      if (owner !== undefined) {
+        throw new StructureValidationError(
+          owner === name ? `${canonical} is listed twice in group ${name}` : `${canonical} is in both ${owner} and ${name}`,
+        );
+      }
+      assigned.set(canonical.toLowerCase(), name);
+      return canonical;
+    });
+    // Keep a client-supplied ID only when it already belongs to this stage;
+    // anything else gets a fresh one so IDs can't be claimed across stages.
+    let groupId = typeof group.groupId === "string" && existingGroupIds.has(group.groupId) ? group.groupId : "";
+    if (!groupId || groupIds.has(groupId)) groupId = `group-${crypto.randomUUID()}`;
+    groupIds.add(groupId);
+    return { groupId, name, order: index + 1, teams };
+  });
+}
+
+function replaceStageGroups(db, stageId, groups, editor) {
+  const oldIds = db.prepare("SELECT group_id AS groupId FROM tournament_stage_groups WHERE stage_id = ?").all(stageId);
+  const deleteTeams = db.prepare("DELETE FROM tournament_stage_group_teams WHERE group_id = ?");
+  for (const { groupId } of oldIds) deleteTeams.run(groupId);
+  db.prepare("DELETE FROM tournament_stage_groups WHERE stage_id = ?").run(stageId);
+  const insertGroup = db.prepare(
+    `INSERT INTO tournament_stage_groups (group_id, stage_id, name, group_order, edited_by_sub, edited_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+  );
+  const insertTeam = db.prepare(
+    "INSERT INTO tournament_stage_group_teams (group_id, team, team_order) VALUES (?, ?, ?)",
+  );
+  for (const group of groups) {
+    insertGroup.run(group.groupId, stageId, group.name, group.order, editor.sub);
+    group.teams.forEach((team, teamIndex) => insertTeam.run(group.groupId, team, teamIndex));
+  }
+}
+
 function readTournamentStructure(db, year, tournament) {
   const stages = db
     .prepare(
@@ -206,6 +353,8 @@ function readTournamentStructure(db, year, tournament) {
        ORDER BY COALESCE(o.stage_order, s.stage_order), COALESCE(o.name, s.name)`,
     )
     .all(year, tournament);
+  const groupsByStage = readStageGroups(db, stages.map((stage) => stage.stageId));
+  for (const stage of stages) stage.groups = groupsByStage.get(stage.stageId) || [];
   const matches = db
     .prepare(
       `SELECT match_key AS matchKey, year, tournament, team1, team2, result,
@@ -283,6 +432,7 @@ function saveStages(db, year, tournament, body, editor) {
   }
   const seen = new Set();
   const seenIds = new Set();
+  const teamNames = tournamentTeamNames(db, year, tournament);
   const stages = body.stages.map((stage, index) => {
     if (!stage || typeof stage !== "object" || Array.isArray(stage)) {
       throw new StructureValidationError("Each stage must be an object");
@@ -298,11 +448,16 @@ function saveStages(db, year, tournament, body, editor) {
     const stageId = typeof stage.stageId === "string" && stage.stageId ? stage.stageId : `stage-${crypto.randomUUID()}`;
     if (seenIds.has(stageId)) throw new StructureValidationError("Stage IDs must be unique");
     seenIds.add(stageId);
+    const existingGroupIds = new Set(
+      db.prepare("SELECT group_id AS groupId FROM tournament_stage_groups WHERE stage_id = ?").all(stageId).map((row) => row.groupId),
+    );
     return {
       stageId,
       name,
       format,
       order,
+      // null = the caller did not mention groups, so leave them as they are.
+      groups: normalizeGroups(name, format, stage.groups, teamNames, existingGroupIds),
     };
   });
   const before = snapshotStructure(db, year, tournament);
@@ -334,6 +489,7 @@ function saveStages(db, year, tournament, body, editor) {
            is_deleted = 0, edited_by_sub = excluded.edited_by_sub,
            edited_by_email = excluded.edited_by_email, edited_at = datetime('now')`,
       ).run(stage.stageId, year, tournament, stage.name, stage.format, stage.order, editor.sub, editor.email);
+      if (stage.groups) replaceStageGroups(db, stage.stageId, stage.groups, editor);
     }
     for (const stageId of currentIds) {
       if (nextIds.has(stageId)) continue;
@@ -352,6 +508,7 @@ function saveStages(db, year, tournament, body, editor) {
       for (const game of current.games.filter((item) => item.stageId === stageId)) {
         updateGame.run(game.matchKey, fallbackStageId, editor.sub, editor.email);
       }
+      replaceStageGroups(db, stageId, [], editor);
       const oldStage = current.stages.find((stage) => stage.stageId === stageId);
       db.prepare(
         `INSERT INTO tournament_stage_overrides
@@ -580,6 +737,7 @@ function addGameToSeries(db, year, tournament, seriesId, body, editor) {
 }
 
 module.exports = {
+  MAX_GROUPS_PER_STAGE,
   STAGE_FORMATS,
   StructureNotFoundError,
   StructureValidationError,
@@ -588,6 +746,7 @@ module.exports = {
   defaultStageId,
   ensureDefaultStages,
   ensureTournamentStructureSchema,
+  readAllStageGroups,
   readTournamentStructure,
   saveStages,
   structureForMatches,

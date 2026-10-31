@@ -2306,6 +2306,91 @@ td:has(.pick-detail) {
 .tournament-result-game:disabled {
   cursor: default;
 }
+/* Round-robin stages: one block per group -- a Liquipedia-style standings
+   table with a head-to-head grid, then that group's matches round by round. */
+.tournament-results-rr {
+  display: flex;
+  flex-direction: column;
+}
+.tournament-results-rr-group + .tournament-results-rr-group {
+  border-top: 1px solid var(--border);
+}
+.tournament-results-rr-title {
+  margin: 0;
+  padding: 10px 12px 0;
+  font-size: 0.9rem;
+}
+.tournament-results-empty {
+  margin: 0;
+  padding: 10px 12px;
+}
+.rr-table-wrap {
+  overflow-x: auto;
+  padding: 10px 12px 0;
+}
+.rr-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+.rr-table th,
+.rr-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+  white-space: nowrap;
+}
+.rr-table thead th {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+.rr-table .rr-rank {
+  width: 2rem;
+  color: var(--muted);
+}
+.rr-table td.rr-rank {
+  font-weight: 600;
+}
+.rr-table .rr-team {
+  min-width: 9rem;
+  text-align: left;
+}
+.rr-vs-head {
+  max-width: 5.5rem;
+}
+.rr-vs-head span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rr-table td.rr-vs {
+  min-width: 3rem;
+  border-left: 1px solid var(--border);
+}
+.rr-table td.rr-win {
+  background: var(--win-tint);
+}
+.rr-table td.rr-loss {
+  background: var(--loss-tint);
+}
+.rr-table td.rr-draw {
+  background: rgba(212, 160, 23, 0.16);
+}
+.rr-table td.rr-self {
+  background: repeating-linear-gradient(135deg, transparent 0 4px, var(--border) 4px 5px);
+}
+.rr-table td.rr-unplayed {
+  color: var(--muted);
+}
+.rr-table td.rr-diff-pos {
+  color: var(--win-stripe);
+}
+.rr-table td.rr-diff-neg {
+  color: var(--loss-stripe);
+}
 /* Matches soak up any leftover height so its bottom edge meets the
    sidebar's even in the (rare) case the sidebar is the taller one. */
 .tournament-layout .profile-main > .tournament-matches {
@@ -3059,6 +3144,55 @@ th[data-champion-sort]:focus-visible {
   align-items: end;
   gap: 8px;
   margin: 8px 0;
+}
+.structure-stage + .structure-stage {
+  margin-top: 6px;
+}
+.structure-groups {
+  margin: 0 0 12px 10px;
+  padding: 8px 0 8px 12px;
+  border-left: 2px solid var(--border);
+}
+.structure-groups-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+.structure-groups-head label,
+.structure-group-names label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.structure-groups-head input[type="number"] {
+  width: 90px;
+}
+.structure-group-names {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+.structure-group-teams {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 6px 12px;
+}
+.structure-group-team {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.structure-group-team span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .structure-stage-row .columns-btn {
   white-space: nowrap;

@@ -15,6 +15,7 @@ const {
   releaseYearOf,
 } = require("./champion-releases");
 const { buildReverseIdentityLookup } = require("./player-identity");
+const { buildRoundRobinGroups } = require("./round-robin");
 
 // A champion needs at least this many games in a tournament to be eligible
 // for the "winningest" / "losingest" callouts -- a 1-0 record isn't a trend.
@@ -531,6 +532,11 @@ function buildMatches(tournamentGames, matchOrderByKey, matchByKey, resolve) {
 //          authoritative Match Order, which the rating engine's game
 //          objects don't carry
 // draftRows: identity-resolved draft rows, each with captainIdentityKey
+// stageGroups: optional Map(stageId -> [{ groupId, name, order, teams }]), the
+//          editor-defined round-robin groups (readAllStageGroups). A
+//          round-robin stage with groups gets a `roundRobin` block of ranked
+//          standings per group; its `groups` then hold only the series that
+//          fit no group, because the grouped ones live under `roundRobin`.
 function buildTournamentSummaries({
   games,
   matches,
@@ -538,6 +544,7 @@ function buildTournamentSummaries({
   identityMap,
   tournamentEntryRatings,
   defaultConservativeRating,
+  stageGroups = new Map(),
 }) {
   const resolve = (name) => {
     const identity = identityMap.get(name);
@@ -624,11 +631,11 @@ function buildTournamentSummaries({
       matchByKey,
       resolve,
     );
-    const stageGroups = new Map();
+    const stageBuckets = new Map();
     for (const game of tournamentMatches) {
       const stageId = game.stageId || "stage-unassigned";
-      if (!stageGroups.has(stageId)) {
-        stageGroups.set(stageId, {
+      if (!stageBuckets.has(stageId)) {
+        stageBuckets.set(stageId, {
           stageId: game.stageId,
           name: game.stageName || "Tournament",
           format: game.stageFormat || "custom",
@@ -636,7 +643,7 @@ function buildTournamentSummaries({
           groups: new Map(),
         });
       }
-      const stage = stageGroups.get(stageId);
+      const stage = stageBuckets.get(stageId);
       const groupId = game.seriesId || `standalone:${game.matchKey}`;
       if (!stage.groups.has(groupId)) {
         stage.groups.set(groupId, {
@@ -648,20 +655,33 @@ function buildTournamentSummaries({
       }
       stage.groups.get(groupId).games.push(game);
     }
-    const stages = [...stageGroups.values()]
+    const stages = [...stageBuckets.values()]
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
-      .map((stage) => ({
-        stageId: stage.stageId,
-        name: stage.name,
-        format: stage.format,
-        order: stage.order,
-        groups: [...stage.groups.values()]
+      .map((stage) => {
+        const seriesGroups = [...stage.groups.values()]
           .map((group) => ({
             ...group,
             games: group.games.sort((a, b) => a.order - b.order),
           }))
-          .sort((a, b) => a.games[0].order - b.games[0].order),
-      }));
+          .sort((a, b) => a.games[0].order - b.games[0].order);
+        const definedGroups = stage.format === "round-robin" ? stageGroups.get(stage.stageId) || [] : [];
+        const roundRobin = definedGroups.length
+          ? buildRoundRobinGroups({
+              definedGroups,
+              seriesGroups,
+              resolve,
+              nameOf,
+            })
+          : null;
+        return {
+          stageId: stage.stageId,
+          name: stage.name,
+          format: stage.format,
+          order: stage.order,
+          groups: roundRobin ? roundRobin.ungrouped : seriesGroups,
+          roundRobin: roundRobin ? { groups: roundRobin.groups } : null,
+        };
+      });
 
     summaries.push({
       id: tournamentId(year, tournament),

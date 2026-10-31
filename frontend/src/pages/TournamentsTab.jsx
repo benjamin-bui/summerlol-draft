@@ -432,7 +432,10 @@ function resultTeamKey(team) {
   return team.key || team.name;
 }
 
-function swissRoundResults(groups, records) {
+// Folds one round's results into `records` (the running W-L per team) and
+// returns the round's series. Swiss rounds are re-sorted by the teams'
+// standings; round-robin rounds keep their played order (`sort: false`).
+function swissRoundResults(groups, records, { sort = true } = {}) {
   const outcomes = groups.map((entry) => {
     const { group } = entry;
     const games = [...group.games].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -480,6 +483,7 @@ function swissRoundResults(groups, records) {
       strength: team.avg ?? team.avgMu ?? 0,
     };
   };
+  if (!sort) return { records: new Map(records), groups: outcomes.filter(Boolean) };
   const sortedGroups = outcomes
     .filter(Boolean)
     .sort((a, b) => {
@@ -566,6 +570,116 @@ function SeriesResultCard({ group, index, records, onJump }) {
   );
 }
 
+// A stage's series laid out round by round (rounds are named by the series'
+// round label, falling back to the game's stage text). `mode` decides what the
+// cards show next to each team: "swiss" re-sorts every round by standing and
+// shows each team's running record; "running" keeps played order but still
+// shows the running record (round-robin); null shows no records.
+function ResultRounds({ seriesGroups, mode = null, onJump }) {
+  const rounds = new Map();
+  const records = new Map();
+  seriesGroups.forEach((group, groupIndex) => {
+    const first = group.games[0];
+    const roundName =
+      group.roundLabel ||
+      first?.stage ||
+      (group.seriesId ? `Series ${groupIndex + 1}` : "Games");
+    if (!rounds.has(roundName)) rounds.set(roundName, []);
+    rounds.get(roundName).push({ group, groupIndex });
+  });
+  if (!rounds.size) return <p className="stat-formula tournament-results-empty">No games played yet.</p>;
+  const roundsWithRecords = [...rounds.entries()].map(([roundName, groups]) => {
+    if (!mode) return { roundName, groups, records: null };
+    const result = swissRoundResults(groups, records, { sort: mode === "swiss" });
+    return { roundName, groups: result.groups, records: result.records };
+  });
+  return (
+    <div className="tournament-results-rounds">
+      {roundsWithRecords.map(({ roundName, groups, records: roundRecords }) => (
+        <section className="tournament-results-round" key={roundName}>
+          <h5>{roundName}</h5>
+          <div className="tournament-results-round-games">
+            {groups.map(({ group, groupIndex }) => (
+              <SeriesResultCard
+                key={group.seriesId || group.games[0]?.matchKey || groupIndex}
+                group={group}
+                index={groupIndex}
+                records={roundRecords}
+                onJump={onJump}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function signedDiff(diff) {
+  return diff > 0 ? `+${diff}` : diff < 0 ? `\u2212${Math.abs(diff)}` : "0";
+}
+
+// One round-robin group in the style of a Liquipedia group table: ranked
+// standings (match record, game record, game difference) followed by a
+// head-to-head grid whose cells are the game score against each opponent,
+// tinted for a win, loss or draw. Teams are listed in standings order on both
+// axes, so a team's row reads left to right against everyone else.
+function RoundRobinTable({ group }) {
+  const rows = group.standings;
+  if (!rows.length) return <p className="stat-formula tournament-results-empty">No teams in this group.</p>;
+  const record = (win, draw, loss, showDraw) =>
+    showDraw ? `${win}\u2013${draw}\u2013${loss}` : `${win}\u2013${loss}`;
+  return (
+    <div className="rr-table-wrap">
+      <table className="rr-table" aria-label={`${group.name} standings`}>
+        <thead>
+          <tr>
+            <th className="rr-rank">#</th>
+            <th className="rr-team">Team</th>
+            <th title={group.hasDraws ? "Matches won\u2013drawn\u2013lost" : "Matches won\u2013lost"}>Matches</th>
+            <th title="Games won\u2013lost">Games</th>
+            <th title="Game difference">Diff</th>
+            {rows.map((opponent) => (
+              <th className="rr-vs-head" key={opponent.key} title={opponent.name}>
+                <span>{opponent.name}</span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <td className="rr-rank">{row.rank}</td>
+              <td className="rr-team">
+                <PlayerLink {...playerLinkProps(row.name, row.key)} />
+              </td>
+              <td>{record(row.matchWins, row.matchDraws, row.matchLosses, group.hasDraws)}</td>
+              <td>{record(row.gameWins, row.gameDraws, row.gameLosses, row.gameDraws > 0)}</td>
+              <td className={row.gameDiff > 0 ? "rr-diff-pos" : row.gameDiff < 0 ? "rr-diff-neg" : ""}>
+                {signedDiff(row.gameDiff)}
+              </td>
+              {rows.map((opponent) => {
+                if (opponent.key === row.key) return <td className="rr-vs rr-self" key={opponent.key} aria-label="same team" />;
+                const cell = row.vs[opponent.key];
+                if (!cell) return <td className="rr-vs rr-unplayed" key={opponent.key}>{"\u00b7"}</td>;
+                return (
+                  <td
+                    className={`rr-vs rr-${cell.outcome}`}
+                    key={opponent.key}
+                    title={`${row.name} vs ${opponent.name}: ${cell.gamesFor}\u2013${cell.gamesAgainst}`}
+                  >
+                    {cell.gamesFor}{"\u2013"}{cell.gamesAgainst}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function TournamentResultsBracket({ t, onJump }) {
   const stages = resultStages(t);
   if (!stages.length) {
@@ -584,47 +698,33 @@ function TournamentResultsBracket({ t, onJump }) {
       </p>
       <div className="tournament-results-stages">
         {stages.map((stage, stageIndex) => {
-          const rounds = new Map();
-          const records = new Map();
           const isSwiss = /swiss/i.test(`${stage.format || ""} ${stage.name || ""}`);
-          stage.groups.forEach((group, groupIndex) => {
-            const first = group.games[0];
-            const roundName =
-              group.roundLabel ||
-              first?.stage ||
-              (group.seriesId ? `Series ${groupIndex + 1}` : "Games");
-            if (!rounds.has(roundName)) rounds.set(roundName, []);
-            rounds.get(roundName).push({ group, groupIndex });
-          });
-          const roundsWithRecords = [...rounds.entries()].map(([roundName, groups]) => {
-            if (!isSwiss) return { roundName, groups, records: null };
-            const result = swissRoundResults(groups, records);
-            return { roundName, groups: result.groups, records: result.records };
-          });
+          const roundRobinGroups = stage.roundRobin?.groups || [];
           return (
             <section className="tournament-results-stage" key={stage.stageId || stageIndex}>
               <header className="tournament-results-stage-head">
                 <h4>{stage.name || "Tournament"}</h4>
                 {stage.format && <span className="stat-formula">{formatStageFormat(stage.format)}</span>}
               </header>
-              <div className="tournament-results-rounds">
-                {roundsWithRecords.map(({ roundName, groups, records: roundRecords }) => (
-                  <section className="tournament-results-round" key={roundName}>
-                    <h5>{roundName}</h5>
-                    <div className="tournament-results-round-games">
-                      {groups.map(({ group, groupIndex }) => (
-                        <SeriesResultCard
-                          key={group.seriesId || group.games[0]?.matchKey || groupIndex}
-                          group={group}
-                          index={groupIndex}
-                          records={roundRecords}
-                          onJump={onJump}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                ))}
-              </div>
+              {roundRobinGroups.length > 0 ? (
+                <div className="tournament-results-rr">
+                  {roundRobinGroups.map((group) => (
+                    <section className="tournament-results-rr-group" key={group.groupId}>
+                      <h5 className="tournament-results-rr-title">{group.name}</h5>
+                      <RoundRobinTable group={group} />
+                      <ResultRounds seriesGroups={group.seriesGroups} mode="running" onJump={onJump} />
+                    </section>
+                  ))}
+                  {stage.groups.length > 0 && (
+                    <section className="tournament-results-rr-group">
+                      <h5 className="tournament-results-rr-title">Other matches</h5>
+                      <ResultRounds seriesGroups={stage.groups} onJump={onJump} />
+                    </section>
+                  )}
+                </div>
+              ) : (
+                <ResultRounds seriesGroups={stage.groups} mode={isSwiss ? "swiss" : null} onJump={onJump} />
+              )}
             </section>
           );
         })}

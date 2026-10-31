@@ -129,4 +129,89 @@ describe("TournamentStructureEditor", () => {
     expect(within(dialog).getByText("Current score: Alpha Captain 1–1 Beta Captain")).toBeInTheDocument();
     expect(within(dialog).getByLabelText("Series")).toHaveTextContent("Alpha Captain 1–1 Beta Captain");
   });
+
+  it("defines the number, names and team allocation of round-robin groups and saves them", async () => {
+    const user = userEvent.setup();
+    const rrStructure = {
+      ...structure,
+      stages: [{ stageId: "stage-1", name: "Group Stage", format: "round-robin", stageOrder: 1, groups: [] }],
+      games: [
+        { matchKey: "m1", matchOrder: 1, team1: "Alpha", team2: "Beta", stageId: "stage-1", stage: { stageName: "Group Stage" }, seriesId: null },
+        { matchKey: "m2", matchOrder: 2, team1: "Gamma", team2: "Delta", stageId: "stage-1", stage: { stageName: "Group Stage" }, seriesId: null },
+      ],
+    };
+    vi.spyOn(editorApi, "getTournamentStructure").mockResolvedValue(rrStructure);
+    const save = vi.spyOn(editorApi, "saveTournamentStages").mockResolvedValue(rrStructure);
+    render(
+      <TournamentStructureEditor
+        rows={[{ year: 2026, tournament: "Summer" }]}
+        onChanged={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "Tournament structure" });
+    const groups = await within(dialog).findByRole("group", { name: "Stage 1 groups" });
+    expect(within(groups).getByText(/No groups/)).toBeInTheDocument();
+
+    // Pick the count, then rename and allocate.
+    fireEvent.change(within(groups).getByLabelText("Stage 1 number of groups"), { target: { value: "2" } });
+    fireEvent.change(within(groups).getByLabelText("Stage 1 group 2 name"), { target: { value: "Blue" } });
+    await user.selectOptions(within(groups).getByLabelText("Stage 1 group for Alpha"), "0");
+    await user.selectOptions(within(groups).getByLabelText("Stage 1 group for Beta"), "0");
+    await user.selectOptions(within(groups).getByLabelText("Stage 1 group for Gamma"), "1");
+    expect(within(groups).getByText(/1 unassigned: Delta/)).toBeInTheDocument();
+    // Reassigning moves a team rather than duplicating it.
+    await user.selectOptions(within(groups).getByLabelText("Stage 1 group for Beta"), "1");
+    await user.selectOptions(within(groups).getByLabelText("Stage 1 group for Delta"), "1");
+
+    await user.click(within(dialog).getByRole("button", { name: "Save stages" }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    const sentStage = save.mock.calls[0][2][0];
+    expect(sentStage.stageId).toBe("stage-1");
+    expect(sentStage.groups).toEqual([
+      { name: "Group A", teams: ["Alpha"] },
+      { name: "Blue", teams: ["Gamma", "Beta", "Delta"] },
+    ]);
+  });
+
+  it("suggests groups from the stage's games and hides the groups editor for other formats", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(editorApi, "getTournamentStructure").mockResolvedValue({
+      ...structure,
+      stages: [
+        { stageId: "stage-1", name: "Group Stage", format: "round-robin", stageOrder: 1, groups: [] },
+        { stageId: "stage-2", name: "Playoffs", format: "single-elimination", stageOrder: 2, groups: [] },
+      ],
+      games: [
+        { matchKey: "m1", matchOrder: 1, team1: "Alpha", team2: "Beta", stageId: "stage-1", stage: { stageName: "Group Stage" }, seriesId: null },
+        { matchKey: "m2", matchOrder: 2, team1: "Gamma", team2: "Delta", stageId: "stage-1", stage: { stageName: "Group Stage" }, seriesId: null },
+        { matchKey: "m3", matchOrder: 3, team1: "Alpha", team2: "Gamma", stageId: "stage-2", stage: { stageName: "Playoffs" }, seriesId: null },
+      ],
+    });
+    render(
+      <TournamentStructureEditor
+        rows={[{ year: 2026, tournament: "Summer" }]}
+        onChanged={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "Tournament structure" });
+    const groups = await within(dialog).findByRole("group", { name: "Stage 1 groups" });
+    expect(within(dialog).queryByRole("group", { name: "Stage 2 groups" })).not.toBeInTheDocument();
+
+    // Only the round-robin stage's own games count: the playoff game that
+    // would link the two pairs together is ignored.
+    await user.click(within(groups).getByRole("button", { name: "Suggest from games" }));
+    expect(within(groups).getByLabelText("Stage 1 number of groups")).toHaveValue(2);
+    expect(within(groups).getByLabelText("Stage 1 group for Alpha")).toHaveValue("0");
+    expect(within(groups).getByLabelText("Stage 1 group for Beta")).toHaveValue("0");
+    expect(within(groups).getByLabelText("Stage 1 group for Gamma")).toHaveValue("1");
+    expect(within(groups).getByLabelText("Stage 1 group for Delta")).toHaveValue("1");
+
+    // Switching the stage to another format hides the groups panel.
+    await user.selectOptions(within(dialog).getByLabelText("Stage 1 format"), "swiss");
+    expect(within(dialog).queryByRole("group", { name: "Stage 1 groups" })).not.toBeInTheDocument();
+  });
 });

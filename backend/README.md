@@ -149,7 +149,22 @@ Data behavior worth knowing:
   series. The Tournaments tab displays stages, series, and per-series game
   numbers; player/champion histories show the same context. This organization
   is display-only: TrueSkill still processes every game independently, and
-  stages do not calculate standings, pairings, or bracket advancement.
+  stages do not calculate pairings, advancement, or bracket progression.
+- A **round-robin** stage can also be split into groups: the editor sets how
+  many groups there are, names them, and allocates each team to one (or uses
+  **Suggest from games**, which groups teams that played each other). The
+  Tournaments tab then shows each group as a Liquipedia-style standings table
+  (match record, game record, game difference, and a head-to-head grid)
+  followed by that group's matches round by round. A series counts as a match
+  won by whoever wins more of its games, or drawn if they are level. Groups
+  rank by match wins, then fewer match losses, then game difference, then games
+  won; head-to-head is not used as a tiebreaker. A game belongs to a group when
+  both its teams do; any others are listed under "Other matches". Groups are
+  saved with the stages (`PUT /api/editor/tournaments/:year/:tournament/stages`,
+  each stage taking an optional `groups: [{ groupId?, name, teams }]`; omit it
+  to leave a stage's groups alone, send `[]` to clear them) and live in
+  `tournament_stage_groups` / `tournament_stage_group_teams`, so CSV re-ingest
+  does not touch them.
 - Stage edits and game assignments are stored as editor overrides, so
   re-ingesting the match CSV does not silently erase them. A series must already
   contain a game before the editor can append another one.

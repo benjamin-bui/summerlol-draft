@@ -27,6 +27,7 @@ const { createEditorRouter } = require("./src/lib/editor-routes");
 const {
   ensureDefaultStages,
   ensureTournamentStructureSchema,
+  readAllStageGroups,
   structureForMatches,
 } = require("./src/lib/tournament-structure");
 const app = express();
@@ -815,6 +816,7 @@ app.get("/api/tournaments", async (req, res) => {
       identityMap,
       tournamentEntryRatings: result.tournamentEntryRatings,
       defaultConservativeRating,
+      stageGroups: readAllStageGroups(db),
     });
     res.json({ tournaments });
   } catch (error) {

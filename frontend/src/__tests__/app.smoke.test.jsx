@@ -217,6 +217,117 @@ describe("App smoke test against real data", () => {
     expect(screen.getByRole("heading", { name: /Matches/ })).toBeInTheDocument();
   });
 
+  it("renders round-robin groups as standings tables with a head-to-head grid", async () => {
+    const baseFetch = global.fetch.getMockImplementation();
+    vi.spyOn(global, "fetch").mockImplementation(async (url, options) => {
+      const response = await baseFetch(url, options);
+      if (!String(url).startsWith("/api/tournaments")) return response;
+
+      const data = JSON.parse(JSON.stringify(await response.json()));
+      const tournament = data.tournaments.find((item) => item.id === "2026-summer");
+      const source = tournament.matches[0];
+      const team = (key, name) => ({ ...source.team1, key, name, avg: 1000 });
+      const [alpha, beta, gamma, delta] = [
+        team("alpha", "Alpha"),
+        team("beta", "Beta"),
+        team("gamma", "Gamma"),
+        team("delta", "Delta"),
+      ];
+      const game = (order, round, team1, team2, winner) => ({
+        ...source,
+        matchKey: `rr-${order}`,
+        order,
+        stage: round,
+        team1,
+        team2,
+        winner,
+      });
+      const series = (round, ...games) => ({ seriesId: null, roundLabel: round, bestOf: null, games });
+      const row = (t, rank, record) => ({
+        key: t.key,
+        name: t.name,
+        rank,
+        matchWins: 0,
+        matchDraws: 0,
+        matchLosses: 0,
+        gameWins: 0,
+        gameLosses: 0,
+        gameDraws: 0,
+        gameDiff: 0,
+        vs: {},
+        ...record,
+      });
+      const win = { gamesFor: 1, gamesAgainst: 0, matches: 1, outcome: "win" };
+      const loss = { gamesFor: 0, gamesAgainst: 1, matches: 1, outcome: "loss" };
+      tournament.stages = [
+        {
+          stageId: "rr",
+          name: "Groups",
+          format: "round-robin",
+          order: 1,
+          groups: [series("Other", game(9, "Other", alpha, delta, "team1"))],
+          roundRobin: {
+            groups: [
+              {
+                groupId: "ga",
+                name: "Group A",
+                order: 1,
+                hasDraws: false,
+                standings: [
+                  row(alpha, 1, { matchWins: 1, gameWins: 1, gameDiff: 1, vs: { beta: win } }),
+                  row(beta, 2, { matchLosses: 1, gameLosses: 1, gameDiff: -1, vs: { alpha: loss } }),
+                ],
+                seriesGroups: [series("Round 1", game(1, "Round 1", alpha, beta, "team1"))],
+              },
+              {
+                groupId: "gb",
+                name: "Group B",
+                order: 2,
+                hasDraws: false,
+                standings: [row(gamma, 1, {}), row(delta, 2, {})],
+                seriesGroups: [],
+              },
+            ],
+          },
+        },
+      ];
+      return { ok: true, status: 200, json: () => Promise.resolve(data) };
+    });
+
+    const user = userEvent.setup();
+    renderApp("/?tab=tournaments");
+    await screen.findByText("Team rosters", {}, { timeout: 10000 });
+    await user.click(screen.getByRole("tab", { name: "Results" }));
+
+    const tableA = await screen.findByRole("table", { name: "Group A standings" });
+    const rowsA = within(tableA).getAllByRole("row");
+    // Header + two ranked teams; Alpha leads with a 1-0 match and 1-0 game record.
+    expect(rowsA).toHaveLength(3);
+    const alphaCells = within(rowsA[1]).getAllByRole("cell").map((cell) => cell.textContent);
+    expect(alphaCells.slice(0, 5)).toEqual(["1", "Alpha", "1\u20130", "1\u20130", "+1"]);
+    // Head-to-head grid: Alpha's cell against Beta is a tinted 1-0 win, and the
+    // diagonal is blank.
+    expect(alphaCells[5]).toBe("");
+    expect(alphaCells[6]).toBe("1\u20130");
+    expect(within(rowsA[1]).getAllByRole("cell")[6]).toHaveClass("rr-win");
+    expect(within(rowsA[2]).getAllByRole("cell")[5]).toHaveClass("rr-loss");
+    expect(within(rowsA[2]).getAllByRole("cell")[2].textContent).toBe("0\u20131");
+
+    // A group with no games yet still lists its teams and says nothing was played.
+    const tableB = screen.getByRole("table", { name: "Group B standings" });
+    expect(within(tableB).getAllByRole("row")).toHaveLength(3);
+    expect(within(tableB).getAllByText("\u00b7").length).toBe(2);
+    expect(screen.getByText("No games played yet.")).toBeInTheDocument();
+
+    // Group A's matches still render as round cards with running records, and
+    // series that fit no group are kept under "Other matches".
+    const roundOne = screen.getByRole("heading", { name: "Round 1" }).closest(".tournament-results-round");
+    expect(roundOne.querySelector(".tournament-result-card").textContent).toContain("(1W-0L)");
+    expect(screen.getByRole("heading", { name: "Other matches" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Group A" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Group B" })).toBeInTheDocument();
+  });
+
   it("selects only the clicked tournament on the first click from all selected", async () => {
     const user = userEvent.setup();
     renderApp("/?tab=champions");

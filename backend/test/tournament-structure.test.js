@@ -162,3 +162,131 @@ test("CSV re-ingestion preserves editor-created games, stage overrides, details,
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+function seedRoundRobin(db) {
+  const keys = [
+    insertGame(db, 1, { team1: "Alpha", team2: "Beta", result: "Alpha" }),
+    insertGame(db, 2, { team1: "Gamma", team2: "Delta", result: "Delta" }),
+    insertGame(db, 3, { team1: "Alpha", team2: "Gamma", result: "Gamma" }),
+  ];
+  ensureDefaultStages(db, db.prepare("SELECT match_key AS matchKey, year, tournament FROM matches").all());
+  return { keys, stage: readTournamentStructure(db, 2026, "Summer").stages[0] };
+}
+
+test("round-robin stages store a defined number of named groups with team allocation", () => {
+  const db = createDb();
+  try {
+    const { stage } = seedRoundRobin(db);
+    const saved = saveStages(db, 2026, "Summer", {
+      stages: [{
+        ...stage,
+        format: "round-robin",
+        groups: [
+          { name: "Group A", teams: ["Alpha", "beta"] },
+          { name: " Group B ", teams: ["Gamma", "Delta"] },
+        ],
+      }],
+    }, editor);
+    const groups = saved.stages[0].groups;
+    assert.deepEqual(groups.map((group) => [group.name, group.order]), [["Group A", 1], ["Group B", 2]]);
+    // Teams are stored with the spelling the matches table uses.
+    assert.deepEqual(groups[0].teams, ["Alpha", "Beta"]);
+    assert.deepEqual(groups[1].teams, ["Gamma", "Delta"]);
+
+    // Saving again with the returned IDs keeps them stable; renaming and
+    // reallocating replaces the old rows rather than appending.
+    const resaved = saveStages(db, 2026, "Summer", {
+      stages: [{
+        ...saved.stages[0],
+        groups: [
+          { ...groups[0], name: "Alpha Group", teams: ["Alpha"] },
+          { ...groups[1], teams: ["Gamma", "Delta", "Beta"] },
+        ],
+      }],
+    }, editor);
+    assert.deepEqual(resaved.stages[0].groups.map((group) => group.groupId), groups.map((group) => group.groupId));
+    assert.deepEqual(resaved.stages[0].groups.map((group) => group.name), ["Alpha Group", "Group B"]);
+    assert.deepEqual(resaved.stages[0].groups[1].teams, ["Gamma", "Delta", "Beta"]);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tournament_stage_group_teams").get().n, 4);
+  } finally {
+    db.close();
+  }
+});
+
+test("omitting groups leaves them alone, an empty list clears them, and removing a stage drops them", () => {
+  const db = createDb();
+  try {
+    const { stage } = seedRoundRobin(db);
+    const withGroups = saveStages(db, 2026, "Summer", {
+      stages: [{ ...stage, format: "round-robin", groups: [{ name: "A", teams: ["Alpha", "Beta"] }] }],
+    }, editor);
+    const { groups: _ignored, ...withoutGroupsKey } = withGroups.stages[0];
+    const untouched = saveStages(db, 2026, "Summer", { stages: [{ ...withoutGroupsKey, name: "Renamed" }] }, editor);
+    assert.equal(untouched.stages[0].groups.length, 1);
+
+    const cleared = saveStages(db, 2026, "Summer", { stages: [{ ...untouched.stages[0], groups: [] }] }, editor);
+    assert.deepEqual(cleared.stages[0].groups, []);
+
+    saveStages(db, 2026, "Summer", {
+      stages: [
+        { ...cleared.stages[0], groups: [{ name: "A", teams: ["Alpha"] }] },
+        { stageId: "stage-playoffs", name: "Playoffs", format: "single-elimination", order: 2 },
+      ],
+    }, editor);
+    const current = readTournamentStructure(db, 2026, "Summer");
+    saveStages(db, 2026, "Summer", { stages: [current.stages[1]] }, editor);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tournament_stage_groups").get().n, 0);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tournament_stage_group_teams").get().n, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test("group definitions are validated", () => {
+  const db = createDb();
+  try {
+    const { stage } = seedRoundRobin(db);
+    const save = (groups, format = "round-robin") =>
+      saveStages(db, 2026, "Summer", { stages: [{ ...stage, format, groups }] }, editor);
+    assert.throws(() => save([{ name: "A", teams: ["Alpha", "Nobody"] }]), /Unknown team/);
+    assert.throws(() => save([{ name: "A", teams: ["Alpha"] }, { name: "B", teams: ["alpha"] }]), /both A and B/);
+    assert.throws(() => save([{ name: "A", teams: ["Alpha", "ALPHA"] }]), /listed twice/);
+    assert.throws(() => save([{ name: "A", teams: [] }, { name: "a", teams: [] }]), /Duplicate group name/);
+    assert.throws(() => save([{ name: "  ", teams: [] }]), /Group names/);
+    assert.throws(() => save([{ name: "A" }]), /list its teams/);
+    assert.throws(() => save("nope"), /must be a list/);
+    assert.throws(
+      () => save(Array.from({ length: 17 }, (_, i) => ({ name: `G${i}`, teams: [] }))),
+      /at most 16/,
+    );
+    assert.throws(() => save([{ name: "A", teams: ["Alpha"] }], "swiss"), /only be defined on round-robin/);
+    // Nothing from the failed saves leaked through.
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tournament_stage_groups").get().n, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test("a client cannot reuse a group ID from another stage", () => {
+  const db = createDb();
+  try {
+    const { stage } = seedRoundRobin(db);
+    const first = saveStages(db, 2026, "Summer", {
+      stages: [
+        { ...stage, format: "round-robin", groups: [{ name: "A", teams: ["Alpha"] }] },
+        { stageId: "stage-b", name: "Second", format: "round-robin", order: 2, groups: [] },
+      ],
+    }, editor);
+    const stolenId = first.stages[0].groups[0].groupId;
+    const second = saveStages(db, 2026, "Summer", {
+      stages: [
+        first.stages[0],
+        { ...first.stages[1], groups: [{ groupId: stolenId, name: "B", teams: ["Gamma"] }] },
+      ],
+    }, editor);
+    assert.notEqual(second.stages[1].groups[0].groupId, stolenId);
+    assert.deepEqual(second.stages[0].groups[0].teams, ["Alpha"]);
+  } finally {
+    db.close();
+  }
+});
