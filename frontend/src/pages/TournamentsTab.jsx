@@ -739,9 +739,10 @@ function EliminationBracket({ seriesGroups, onJump }) {
                     key={game.matchKey || gameIndex}
                     onClick={() => onJump(game.matchKey)}
                     disabled={!game.matchKey}
-                    title={`Match ${game.order ?? ""}: ${winner}`}
+                    title={`View match ${game.order ?? ""}`}
                   >
-                    {node.games.length > 1 ? `G${game.gameNumber || gameIndex + 1}` : "Details"}
+                    {node.games.length > 1 ? `Game ${game.gameNumber || gameIndex + 1}: ` : ""}
+                    {winner}
                   </button>
                 );
               })}

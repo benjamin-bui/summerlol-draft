@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_METRICS, layoutBracket } from "../utils/bracketLayout";
+import { DEFAULT_METRICS, bracketCardHeight, layoutBracket } from "../utils/bracketLayout";
 
 const team = (name) => ({ key: name.toLowerCase(), name });
 // One single-game series: `winner` is the winning team's name.
@@ -85,7 +85,7 @@ describe("bracket layout", () => {
     expect(layout.headers.map((header) => header.label)).toEqual(["Opening", "Finals"]);
     for (const col of [0, 1]) {
       const ys = layout.nodes.filter((node) => node.col === col).map((node) => node.y).sort((a, b) => a - b);
-      ys.forEach((y, i) => i && expect(y - ys[i - 1]).toBeGreaterThanOrEqual(DEFAULT_METRICS.cardHeight));
+      ys.forEach((y, i) => i && expect(y - ys[i - 1]).toBeGreaterThanOrEqual(layout.nodes[0].h));
     }
   });
 
@@ -153,6 +153,53 @@ describe("bracket layout", () => {
       const ys = idsAbove(semi).map((id) => layout.nodes.find((node) => node.id === id).y);
       expect(semi.y).toBe((ys[0] + ys[1]) / 2);
     });
-    quarters.forEach((node, i) => i && expect(node.y - quarters[i - 1].y).toBeGreaterThanOrEqual(DEFAULT_METRICS.cardHeight));
+    quarters.forEach((node, i) => i && expect(node.y - quarters[i - 1].y).toBeGreaterThanOrEqual(node.h));
+  });
+
+  it("sizes each card for its own series and still centres and separates cards by their real heights", () => {
+    const bo3 = (order, a, b, winner) => ({
+      seriesId: `s${order}`, roundLabel: null, bestOf: 3,
+      games: [1, 2, 3].map((n) => ({
+        matchKey: `s${order}g${n}`, order: order + n / 10, stage: null, round: order === 3 ? "Final" : "Semifinals",
+        team1: team(a), team2: team(b), winner: n === 2 ? "team2" : winner === a ? "team1" : "team2",
+      })),
+    });
+    const single = (order, a, b, winner) => match(order, a, b, winner, { round: "Semifinals" });
+    const small = bracketCardHeight(single(1, "Alpha", "Beta", "Alpha"));
+    const tall = bracketCardHeight(bo3(3, "Alpha", "Gamma", "Alpha"));
+    // Two team rows + padding + (one button) vs (three buttons + the Bo3 line).
+    expect([small, tall]).toEqual([28 * 2 + 8 + 24, 28 * 2 + 8 + 24 * 4]);
+
+    // Two short semifinals feed a tall Bo3 final.
+    const layout = layoutBracket([
+      single(1, "Alpha", "Beta", "Alpha"),
+      single(2, "Gamma", "Delta", "Gamma"),
+      bo3(3, "Alpha", "Gamma", "Alpha"),
+    ]);
+    const [semi1, semi2, final] = layout.nodes;
+    expect([semi1.h, semi2.h, final.h]).toEqual([small, small, tall]);
+    // The tall card is centred on the midpoint of its feeders' centres...
+    const feederMid = ((semi1.y + semi1.h / 2) + (semi2.y + semi2.h / 2)) / 2;
+    expect(final.y + final.h / 2).toBeCloseTo(feederMid);
+    expect(Math.min(semi1.y, semi2.y, final.y)).toBeGreaterThanOrEqual(DEFAULT_METRICS.headerHeight);
+    expect(semi2.y).toBeGreaterThanOrEqual(semi1.y + semi1.h + DEFAULT_METRICS.rowGap);
+    expect(layout.height).toBe(Math.max(...layout.nodes.map((node) => node.y + node.h)));
+  });
+
+  it("lowers a section instead of letting a tall card centred on one short feeder rise over the header row", () => {
+    const bo3 = {
+      seriesId: "f", roundLabel: null, bestOf: 3,
+      games: [1, 2, 3].map((n) => ({
+        matchKey: `f${n}`, order: 5 + n, stage: null, round: "Final",
+        team1: team("Alpha"), team2: team("Beta"), winner: "team1",
+      })),
+    };
+    const feeder = match(1, "Alpha", "Gamma", "Alpha", { round: "Semifinal" });
+    const layout = layoutBracket([feeder, bo3]);
+    const [semi, final] = layout.nodes;
+    expect(final.h).toBeGreaterThan(semi.h);
+    expect(final.y).toBe(DEFAULT_METRICS.headerHeight);
+    // The connector still runs straight across: both cards share a centre line.
+    expect(final.y + final.h / 2).toBeCloseTo(semi.y + semi.h / 2);
   });
 });

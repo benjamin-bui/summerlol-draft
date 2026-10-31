@@ -19,9 +19,20 @@
 
 export const SECTION_ORDER = ["upper", "lower", "final"];
 
+// A card is two team rows plus a footer of one button per game (and a "Bo3"
+// line for a series), so its height depends on its series. The layout spaces
+// and centres matches by their real heights.
+export const CARD_TEAM_ROW = 28;
+export const CARD_FOOTER_PAD = 8;
+export const CARD_FOOTER_ROW = 24;
+
+export function bracketCardHeight(group) {
+  const rows = group.games.length + (group.bestOf ? 1 : 0);
+  return CARD_TEAM_ROW * 2 + CARD_FOOTER_PAD + CARD_FOOTER_ROW * Math.max(1, rows);
+}
+
 export const DEFAULT_METRICS = {
   cardWidth: 200,
-  cardHeight: 78,
   columnGap: 40,
   rowGap: 14,
   sectionGap: 26,
@@ -60,6 +71,7 @@ export function layoutBracket(seriesGroups, overrides = {}) {
     nodes.push({
       id: group.seriesId || summary.games[0].matchKey || `series-${index}`,
       group,
+      h: bracketCardHeight(group),
       ...summary,
       section,
       roundName: assigned?.round || group.roundLabel || summary.games[0].stage || "Games",
@@ -102,14 +114,12 @@ export function layoutBracket(seriesGroups, overrides = {}) {
   nodes.forEach((node) => {
     node.col = columnOf(node);
     node.w = m.cardWidth;
-    node.h = m.cardHeight;
     node.x = node.col * (m.cardWidth + m.columnGap);
   });
   const columnCount = Math.max(...nodes.map((node) => node.col)) + 1;
 
   // Vertical placement, one section at a time (upper, lower, final).
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const slot = m.cardHeight + m.rowGap;
   const headers = [];
   let top = m.headerHeight;
   let bottom = top;
@@ -121,14 +131,16 @@ export function layoutBracket(seriesGroups, overrides = {}) {
       // whatever feeds it (usually the upper and lower finals, already placed).
       const columns = [...new Set(sectionNodes.map((node) => node.col))].sort((a, b) => a - b);
       for (const col of columns) {
-        let last = null;
+        let lastBottom = null;
         for (const node of sectionNodes.filter((item) => item.col === col)) {
           const feeders = incoming.get(node.id).map((id) => byId.get(id)).filter((feeder) => feeder.y !== undefined);
-          let y = feeders.length ? feeders.reduce((sum, feeder) => sum + feeder.y, 0) / feeders.length : sectionTop;
+          let y = feeders.length
+            ? feeders.reduce((sum, feeder) => sum + feeder.y + feeder.h / 2, 0) / feeders.length - node.h / 2
+            : sectionTop;
           y = Math.max(y, sectionTop);
-          if (last !== null) y = Math.max(y, last + slot);
+          if (lastBottom !== null) y = Math.max(y, lastBottom + m.rowGap);
           node.y = y;
-          last = y;
+          lastBottom = y + node.h;
         }
       }
     } else {
@@ -142,18 +154,29 @@ export function layoutBracket(seriesGroups, overrides = {}) {
         incoming.get(node.id).filter((id) => inSection.has(id)).map((id) => byId.get(id)).sort((x, y) => x.order - y.order);
       const hasOutgoing = new Set(edges.filter((edge) => inSection.has(edge.to)).map((edge) => edge.from));
       const roots = sectionNodes.filter((node) => !hasOutgoing.has(node.id)).sort((x, y) => x.order - y.order);
-      let leaf = 0;
+      let cursor = sectionTop;
       const place = (node) => {
         const kids = feeders(node);
         if (!kids.length) {
-          node.y = sectionTop + leaf * slot;
-          leaf += 1;
+          node.y = cursor;
+          cursor += node.h + m.rowGap;
           return;
         }
         kids.forEach(place);
-        node.y = kids.reduce((sum, kid) => sum + kid.y, 0) / kids.length;
+        node.y = kids.reduce((sum, kid) => sum + kid.y + kid.h / 2, 0) / kids.length - node.h / 2;
       };
       roots.forEach(place);
+      // Centring a tall card on short feeders can poke above the section or
+      // into its neighbour; nudge down just enough, column by column.
+      const lift = sectionTop - Math.min(...sectionNodes.map((node) => node.y));
+      if (lift > 0) sectionNodes.forEach((node) => { node.y += lift; });
+      for (const col of new Set(sectionNodes.map((node) => node.col))) {
+        let lastBottom = null;
+        for (const node of sectionNodes.filter((item) => item.col === col).sort((x, y) => x.y - y.y)) {
+          if (lastBottom !== null) node.y = Math.max(node.y, lastBottom + m.rowGap);
+          lastBottom = node.y + node.h;
+        }
+      }
     }
     const sectionBottom = Math.max(...sectionNodes.map((node) => node.y + node.h));
     bottom = Math.max(bottom, sectionBottom);

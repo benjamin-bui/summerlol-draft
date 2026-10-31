@@ -435,6 +435,11 @@ describe("App smoke test against real data", () => {
     const grandFinal = [...bracket.querySelectorAll(".bracket-match")].at(-1);
     expect(grandFinal.querySelector(".is-series-winner").textContent).toContain("Alpha");
     expect([...grandFinal.querySelectorAll(".bracket-team strong")].map((node) => node.textContent)).toEqual(["1", "0"]);
+    // Like every other result card, the footer names the winner and links to the game.
+    const footerButton = grandFinal.querySelector(".bracket-match-foot button");
+    expect(footerButton.textContent).toBe("Alpha");
+    expect(footerButton).toBeEnabled();
+    expect(bracket.textContent).not.toContain("Details");
     // The flat round columns are not used for elimination stages.
     expect(document.querySelector(".tournament-results-rounds")).toBeNull();
   });
