@@ -6,6 +6,7 @@ import {
   groupIndexOfTeam,
   groupsPayload,
   resizeGroups,
+  roundsFromMatchOrder,
   suggestGroups,
   tournamentTeams,
 } from "../utils/roundRobinGroups";
@@ -68,5 +69,22 @@ describe("round-robin group helpers", () => {
     expect(groupsPayload(stage)).toEqual([{ groupId: "g1", name: "A", teams: ["x"] }, { name: "B", teams: [] }]);
     expect(groupsPayload({ ...stage, format: "swiss" })).toEqual([]);
     expect(groupsPayload({ format: "round-robin" })).toEqual([]);
+  });
+
+  it("numbers rounds from match order, sharing a round between concurrent games and placing a series by its first game", () => {
+    const picked = [
+      { matchKey: "a", matchOrder: 10 },
+      { matchKey: "b", matchOrder: 10 },
+      { matchKey: "c", matchOrder: 20, seriesId: "s1" },
+      { matchKey: "d", matchOrder: 12, seriesId: "s1" },
+      { matchKey: "e", matchOrder: 30 },
+    ];
+    expect(roundsFromMatchOrder(picked)).toEqual([
+      { matchKey: "a", round: "Round 1" },
+      { matchKey: "b", round: "Round 1" },
+      { matchKey: "d", round: "Round 2" },
+      { matchKey: "e", round: "Round 3" },
+    ]);
+    expect(roundsFromMatchOrder([])).toEqual([]);
   });
 });

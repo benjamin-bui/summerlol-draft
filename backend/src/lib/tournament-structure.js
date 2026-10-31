@@ -88,6 +88,16 @@ function ensureTournamentStructureSchema(db) {
       edited_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Which round of a round-robin stage a game was played in. This is
+    -- separate from tournament_series.round_label, which names a series
+    -- (e.g. a bracket round) rather than a round of concurrent games.
+    CREATE TABLE IF NOT EXISTS game_rounds (
+      match_key TEXT PRIMARY KEY,
+      round TEXT NOT NULL,
+      edited_by_sub TEXT,
+      edited_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS editor_created_matches (
       match_key TEXT PRIMARY KEY,
       year INTEGER NOT NULL,
@@ -147,8 +157,10 @@ function structureForMatches(db, matches) {
               CASE WHEN so.is_deleted = 1 THEN NULL
                    WHEN so.stage_id IS NOT NULL THEN so.stage_order ELSE s.stage_order END AS stageOrder,
               CASE WHEN o.match_key IS NOT NULL THEN o.series_id ELSE c.series_id END AS seriesId,
-              ts.round_label AS seriesRound, ts.best_of AS bestOf
+              ts.round_label AS seriesRound, ts.best_of AS bestOf,
+              gr.round AS round
        FROM matches m
+       LEFT JOIN game_rounds gr ON gr.match_key = m.match_key
        LEFT JOIN csv_game_structure c ON c.match_key = m.match_key
        LEFT JOIN game_structure_overrides o ON o.match_key = m.match_key
        LEFT JOIN tournament_stages s
@@ -175,6 +187,7 @@ function structureForMatches(db, matches) {
       series: row.seriesId
         ? { seriesId: row.seriesId, roundLabel: row.seriesRound, bestOf: row.bestOf }
         : null,
+      round: row.round || null,
     });
   }
   return structure;
@@ -661,6 +674,73 @@ function updateGameStructure(db, year, tournament, body, editor) {
   return readTournamentStructure(db, year, tournament);
 }
 
+const MAX_ROUND_LENGTH = 80;
+
+// Sets (or clears, with an empty/null round) the round of each listed game.
+// A series is played as one unit, so a game in a series passes its round to
+// every game of that series.
+function updateGameRounds(db, year, tournament, body, editor) {
+  validateScope(db, year, tournament);
+  if (!body || !Array.isArray(body.rounds)) throw new StructureValidationError("Rounds must be a list");
+  const keys = new Set();
+  const requested = body.rounds.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item) || typeof item.matchKey !== "string" || !item.matchKey) {
+      throw new StructureValidationError("Each round assignment must include a match key");
+    }
+    if (item.round != null && typeof item.round !== "string") {
+      throw new StructureValidationError("Round must be text");
+    }
+    const round = (item.round || "").trim();
+    if (round.length > MAX_ROUND_LENGTH) {
+      throw new StructureValidationError(`Round must be at most ${MAX_ROUND_LENGTH} characters`);
+    }
+    if (keys.has(item.matchKey)) throw new StructureValidationError("Each game may only be assigned once per request");
+    keys.add(item.matchKey);
+    return { matchKey: item.matchKey, round };
+  });
+  const matches = db
+    .prepare(
+      `SELECT match_key AS matchKey FROM matches
+       WHERE year = ? AND COALESCE(tournament, '') = ?`,
+    )
+    .all(year, tournament);
+  const inTournament = new Set(matches.map((match) => match.matchKey));
+  for (const item of requested) {
+    if (!inTournament.has(item.matchKey)) {
+      throw new StructureValidationError(`Game not found in tournament: ${item.matchKey}`);
+    }
+  }
+  const structure = structureForMatches(db, matches);
+  const keysBySeries = new Map();
+  for (const match of matches) {
+    const seriesId = structure.get(match.matchKey)?.seriesId;
+    if (!seriesId) continue;
+    if (!keysBySeries.has(seriesId)) keysBySeries.set(seriesId, []);
+    keysBySeries.get(seriesId).push(match.matchKey);
+  }
+  const targets = new Map();
+  for (const item of requested) {
+    const seriesId = structure.get(item.matchKey)?.seriesId;
+    for (const key of seriesId ? keysBySeries.get(seriesId) : [item.matchKey]) targets.set(key, item.round);
+  }
+  const before = snapshotStructure(db, year, tournament);
+  db.transaction(() => {
+    const upsert = db.prepare(
+      `INSERT INTO game_rounds (match_key, round, edited_by_sub, edited_at)
+       VALUES (?, ?, ?, datetime('now'))
+       ON CONFLICT(match_key) DO UPDATE SET
+         round = excluded.round, edited_by_sub = excluded.edited_by_sub, edited_at = datetime('now')`,
+    );
+    const remove = db.prepare("DELETE FROM game_rounds WHERE match_key = ?");
+    for (const [matchKey, round] of targets) {
+      if (round) upsert.run(matchKey, round, editor.sub);
+      else remove.run(matchKey);
+    }
+    auditStructure(db, year, tournament, editor, before);
+  })();
+  return readTournamentStructure(db, year, tournament);
+}
+
 function addGameToSeries(db, year, tournament, seriesId, body, editor) {
   validateScope(db, year, tournament);
   if (!body || !["team1", "team2", "draw"].includes(body.result)) {
@@ -750,5 +830,6 @@ module.exports = {
   readTournamentStructure,
   saveStages,
   structureForMatches,
+  updateGameRounds,
   updateGameStructure,
 };

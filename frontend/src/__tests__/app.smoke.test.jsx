@@ -238,6 +238,7 @@ describe("App smoke test against real data", () => {
         matchKey: `rr-${order}`,
         order,
         stage: round,
+        round,
         team1,
         team2,
         winner,
@@ -326,6 +327,62 @@ describe("App smoke test against real data", () => {
     expect(screen.getByRole("heading", { name: "Other matches" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Group A" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Group B" })).toBeInTheDocument();
+  });
+
+  it("lays round-robin rounds out as rows, deriving rounds from match order when unlabeled", async () => {
+    const baseFetch = global.fetch.getMockImplementation();
+    vi.spyOn(global, "fetch").mockImplementation(async (url, options) => {
+      const response = await baseFetch(url, options);
+      if (!String(url).startsWith("/api/tournaments")) return response;
+      const data = JSON.parse(JSON.stringify(await response.json()));
+      const tournament = data.tournaments.find((item) => item.id === "2026-summer");
+      const source = tournament.matches[0];
+      const team = (key) => ({ ...source.team1, key, name: key.toUpperCase(), avg: 1000 });
+      const [a, b, c, d] = ["a", "b", "c", "d"].map(team);
+      const series = (order, team1, team2) => ({
+        seriesId: null,
+        roundLabel: null,
+        bestOf: null,
+        games: [{ ...source, matchKey: `rr-${order}-${team1.key}`, order, stage: null, team1, team2, winner: "team1" }],
+      });
+      // A series label ("Quarterfinal") names the series, not a round, and an
+      // explicitly assigned round wins over the match-order fallback.
+      const assigned = series(3, b, d);
+      assigned.roundLabel = "Quarterfinal";
+      assigned.games[0].round = "Playoff Week";
+      const row = (t, rank) => ({
+        key: t.key, name: t.name, rank, matchWins: 0, matchDraws: 0, matchLosses: 0,
+        gameWins: 0, gameLosses: 0, gameDraws: 0, gameDiff: 0, vs: {},
+      });
+      tournament.stages = [{
+        stageId: "rr", name: "Groups", format: "round-robin", order: 1, groups: [],
+        roundRobin: {
+          groups: [{
+            groupId: "ga", name: "Group A", order: 1, hasDraws: false,
+            standings: [row(a, 1), row(b, 2), row(c, 3), row(d, 4)],
+            // A-B and C-D are concurrent (same match order); A-C follows.
+            seriesGroups: [series(1, a, b), series(1, c, d), series(2, a, c), assigned],
+          }],
+        },
+      }];
+      return { ok: true, status: 200, json: () => Promise.resolve(data) };
+    });
+
+    const user = userEvent.setup();
+    renderApp("/?tab=tournaments");
+    await screen.findByText("Team rosters", {}, { timeout: 10000 });
+    await user.click(screen.getByRole("tab", { name: "Results" }));
+
+    const roundOne = (await screen.findByRole("heading", { name: "Round 1" })).closest(".tournament-results-round");
+    const roundTwo = screen.getByRole("heading", { name: "Round 2" }).closest(".tournament-results-round");
+    expect(roundOne.querySelectorAll(".tournament-result-card")).toHaveLength(2);
+    expect(roundTwo.querySelectorAll(".tournament-result-card")).toHaveLength(1);
+    expect(roundOne.closest(".tournament-results-rounds")).toHaveClass("is-rows");
+    expect(screen.queryByRole("heading", { name: "Games" })).not.toBeInTheDocument();
+    const playoff = screen.getByRole("heading", { name: "Playoff Week" }).closest(".tournament-results-round");
+    expect(playoff.querySelectorAll(".tournament-result-card")).toHaveLength(1);
+    expect(screen.queryByRole("heading", { name: "Quarterfinal" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Round 3" })).not.toBeInTheDocument();
   });
 
   it("selects only the clicked tournament on the first click from all selected", async () => {

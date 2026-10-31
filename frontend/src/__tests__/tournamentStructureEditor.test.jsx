@@ -214,4 +214,64 @@ describe("TournamentStructureEditor", () => {
     await user.selectOptions(within(dialog).getByLabelText("Stage 1 format"), "swiss");
     expect(within(dialog).queryByRole("group", { name: "Stage 1 groups" })).not.toBeInTheDocument();
   });
+
+  it("sets, auto-numbers and clears rounds on selected games", async () => {
+    const user = userEvent.setup();
+    const game = (key, order, team1, team2, round = null) => ({
+      matchKey: key, matchOrder: order, team1, team2, stageId: "stage-1",
+      stage: { stageName: "Group Stage" }, seriesId: null, round,
+    });
+    const roundsStructure = {
+      ...structure,
+      stages: [{ stageId: "stage-1", name: "Group Stage", format: "round-robin", stageOrder: 1, groups: [] }],
+      games: [game("m1", 1, "Alpha", "Beta"), game("m2", 1, "Gamma", "Delta"), game("m3", 2, "Alpha", "Gamma", "Week 2")],
+    };
+    vi.spyOn(editorApi, "getTournamentStructure").mockResolvedValue(roundsStructure);
+    const rounds = vi.spyOn(editorApi, "updateGameRounds").mockResolvedValue(roundsStructure);
+    render(
+      <TournamentStructureEditor rows={[{ year: 2026, tournament: "Summer" }]} onChanged={vi.fn()} onClose={vi.fn()} />,
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Tournament structure" });
+    // An assigned round shows on the game's row.
+    expect(await within(dialog).findByText(/Week 2/)).toBeInTheDocument();
+    const pick = (name) => user.click(within(dialog).getByRole("checkbox", { name }));
+    const button = (name) => within(dialog).getByRole("button", { name });
+
+    expect(button("Set round on selected games")).toBeDisabled();
+    expect(button("Clear round")).toBeDisabled();
+
+    // Set one name on two games.
+    await pick(/Alpha vs Beta/);
+    await pick(/Gamma vs Delta/);
+    await user.type(within(dialog).getByLabelText("Round name"), "  Week 1 ");
+    await user.click(button("Set round on selected games"));
+    await waitFor(() => expect(rounds).toHaveBeenCalledTimes(1));
+    expect(rounds.mock.calls[0][2]).toEqual([
+      { matchKey: "m1", round: "Week 1" },
+      { matchKey: "m2", round: "Week 1" },
+    ]);
+
+    // Selection is cleared after a save; auto-number all three from match order.
+    await pick(/Alpha vs Beta/);
+    await pick(/Gamma vs Delta/);
+    await pick(/Alpha vs Gamma/);
+    await user.click(button("Number rounds from match order"));
+    await waitFor(() => expect(rounds).toHaveBeenCalledTimes(2));
+    expect(rounds.mock.calls[1][2]).toEqual([
+      { matchKey: "m1", round: "Round 1" },
+      { matchKey: "m2", round: "Round 1" },
+      { matchKey: "m3", round: "Round 2" },
+    ]);
+
+    // Clearing is only offered for a selection that has a round.
+    await pick(/Alpha vs Beta/);
+    expect(button("Clear round")).toBeDisabled();
+    await pick(/Alpha vs Gamma/);
+    await user.click(button("Clear round"));
+    await waitFor(() => expect(rounds).toHaveBeenCalledTimes(3));
+    expect(rounds.mock.calls[2][2]).toEqual([
+      { matchKey: "m1", round: null },
+      { matchKey: "m3", round: null },
+    ]);
+  });
 });

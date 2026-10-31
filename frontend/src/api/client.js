@@ -90,6 +90,12 @@ export const editorApi = {
       csrfToken,
       body: { assignments },
     }),
+  updateGameRounds: (year, tournament, rounds, csrfToken) =>
+    sendJson(`/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/rounds`, {
+      method: "PUT",
+      csrfToken,
+      body: { rounds },
+    }),
   addSeriesGame: (year, tournament, seriesId, body, csrfToken) =>
     sendJson(
       `/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/series/${encodeURIComponent(seriesId)}/games`,

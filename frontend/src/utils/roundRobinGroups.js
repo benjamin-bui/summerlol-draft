@@ -96,3 +96,21 @@ export function groupsPayload(stage) {
     teams: group.teams,
   }));
 }
+
+// "Round 1", "Round 2", ... for the given games, numbering the distinct match
+// orders in ascending order (games sharing a match order were played at the
+// same time, so they share a round). A series is played as one unit, so it is
+// placed by its earliest game and yields a single entry. Returns
+// [{ matchKey, round }] ready for the rounds API.
+export function roundsFromMatchOrder(games) {
+  const units = new Map();
+  for (const game of games || []) {
+    const id = game.seriesId || game.matchKey;
+    const unit = units.get(id);
+    if (!unit || game.matchOrder < unit.order) units.set(id, { matchKey: game.matchKey, order: game.matchOrder });
+  }
+  const orders = [...new Set([...units.values()].map((unit) => unit.order))].sort((a, b) => a - b);
+  return [...units.values()]
+    .sort((a, b) => a.order - b.order)
+    .map((unit) => ({ matchKey: unit.matchKey, round: `Round ${orders.indexOf(unit.order) + 1}` }));
+}

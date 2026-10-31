@@ -2246,6 +2246,28 @@ td:has(.pick-detail) {
   flex-direction: column;
   gap: 10px;
 }
+/* Round-robin rounds read top to bottom: a subheader per round, with that
+   round's concurrent games side by side (wrapping on narrow screens). */
+.tournament-results-rounds.is-rows {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  overflow-x: visible;
+}
+.tournament-results-rounds.is-rows .tournament-results-round {
+  flex: none;
+  min-width: 0;
+  max-width: none;
+}
+.tournament-results-rounds.is-rows .tournament-results-round h5 {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.tournament-results-rounds.is-rows .tournament-results-round-games {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 300px));
+  align-items: start;
+}
 .tournament-result-card {
   padding: 10px;
   border: 1px solid var(--border);
@@ -3144,6 +3166,20 @@ th[data-champion-sort]:focus-visible {
   align-items: end;
   gap: 8px;
   margin: 8px 0;
+}
+.structure-round-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin-top: 10px;
+}
+.structure-round-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 .structure-stage + .structure-stage {
   margin-top: 6px;

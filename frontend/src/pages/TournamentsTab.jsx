@@ -575,15 +575,27 @@ function SeriesResultCard({ group, index, records, onJump }) {
 // cards show next to each team: "swiss" re-sorts every round by standing and
 // shows each team's running record; "running" keeps played order but still
 // shows the running record (round-robin); null shows no records.
-function ResultRounds({ seriesGroups, mode = null, onJump }) {
+function ResultRounds({ seriesGroups, mode = null, layout = "columns", onJump }) {
+  const rows = layout === "rows";
+  const orderOf = (group) => group.games[0]?.order ?? 0;
+  // Row layout (round-robin) is keyed by the round the editor assigned to the
+  // games -- a series takes its first game's. Series label/stage text are not
+  // used, since those name the series, not a round. Games with no assigned
+  // round fall back to match order: games sharing a match order were played
+  // together, so each distinct order is one "Round N".
+  const explicitRound = (group) => group.games.find((game) => game.round)?.round || null;
+  const unassignedOrders = [
+    ...new Set(seriesGroups.filter((group) => !explicitRound(group)).map(orderOf)),
+  ].sort((a, b) => a - b);
   const rounds = new Map();
   const records = new Map();
-  seriesGroups.forEach((group, groupIndex) => {
+  const entries = seriesGroups.map((group, groupIndex) => ({ group, groupIndex }));
+  if (rows) entries.sort((a, b) => orderOf(a.group) - orderOf(b.group));
+  entries.forEach(({ group, groupIndex }) => {
     const first = group.games[0];
-    const roundName =
-      group.roundLabel ||
-      first?.stage ||
-      (group.seriesId ? `Series ${groupIndex + 1}` : "Games");
+    const roundName = rows
+      ? explicitRound(group) || `Round ${unassignedOrders.indexOf(orderOf(group)) + 1}`
+      : group.roundLabel || first?.stage || (group.seriesId ? `Series ${groupIndex + 1}` : "Games");
     if (!rounds.has(roundName)) rounds.set(roundName, []);
     rounds.get(roundName).push({ group, groupIndex });
   });
@@ -594,7 +606,7 @@ function ResultRounds({ seriesGroups, mode = null, onJump }) {
     return { roundName, groups: result.groups, records: result.records };
   });
   return (
-    <div className="tournament-results-rounds">
+    <div className={`tournament-results-rounds${rows ? " is-rows" : ""}`}>
       {roundsWithRecords.map(({ roundName, groups, records: roundRecords }) => (
         <section className="tournament-results-round" key={roundName}>
           <h5>{roundName}</h5>
@@ -712,7 +724,7 @@ function TournamentResultsBracket({ t, onJump }) {
                     <section className="tournament-results-rr-group" key={group.groupId}>
                       <h5 className="tournament-results-rr-title">{group.name}</h5>
                       <RoundRobinTable group={group} />
-                      <ResultRounds seriesGroups={group.seriesGroups} mode="running" onJump={onJump} />
+                      <ResultRounds seriesGroups={group.seriesGroups} mode="running" layout="rows" onJump={onJump} />
                     </section>
                   ))}
                   {stage.groups.length > 0 && (

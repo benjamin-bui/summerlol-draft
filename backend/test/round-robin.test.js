@@ -110,7 +110,7 @@ test("tournament summaries attach round-robin standings and keep other stages un
     makeGame("k3", "Alpha", "Delta", "team1"),
   ];
   const matches = [
-    { matchKey: "k1", matchOrder: 1, ...rr },
+    { matchKey: "k1", matchOrder: 1, round: "Week 1", ...rr },
     { matchKey: "k2", matchOrder: 2, ...rr },
     { matchKey: "k3", matchOrder: 3, ...po },
   ];
@@ -136,6 +136,8 @@ test("tournament summaries attach round-robin standings and keep other stages un
   assert.deepEqual(groupsStage.roundRobin.groups[1].standings.map((row) => row.name), ["Delta", "Gamma"]);
   // Grouped series are not duplicated under `groups`.
   assert.deepEqual(groupsStage.groups, []);
+  assert.equal(groupsStage.roundRobin.groups[0].seriesGroups[0].games[0].round, "Week 1");
+  assert.equal(groupsStage.roundRobin.groups[1].seriesGroups[0].games[0].round, null);
   assert.equal(playoffs.roundRobin, null);
   assert.equal(playoffs.groups.length, 1);
 });

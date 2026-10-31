@@ -7,6 +7,7 @@ import {
   groupIndexOfTeam,
   groupsPayload,
   resizeGroups,
+  roundsFromMatchOrder,
   suggestGroups,
   tournamentTeams,
 } from "../../utils/roundRobinGroups";
@@ -147,6 +148,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const [structure, setStructure] = useState(null);
   const [stages, setStages] = useState([]);
   const [selectedGames, setSelectedGames] = useState([]);
+  const [roundName, setRoundName] = useState("");
   const [gameStageFilter, setGameStageFilter] = useState("all");
   const [groupStageId, setGroupStageId] = useState("");
   const [roundLabel, setRoundLabel] = useState("");
@@ -428,7 +430,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                   <label className="structure-game-row" key={game.matchKey}>
                     <input type="checkbox" checked={selectedGames.includes(game.matchKey)} onChange={() => toggleGame(game.matchKey)} />
                     <span>#{game.matchOrder} {game.team1} vs {game.team2}</span>
-                    <span className="stat-formula">{game.stage?.stageName || "No stage"} · {currentLabel(game)}</span>
+                    <span className="stat-formula">{game.stage?.stageName || "No stage"} · {currentLabel(game)}{game.round ? ` · ${game.round}` : ""}</span>
                   </label>
                 ))}
               </div>
@@ -455,6 +457,51 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
               >
                 Ungroup selected games
               </button>
+              <div className="structure-round-form">
+                <label>
+                  Round
+                  <input
+                    type="text"
+                    aria-label="Round name"
+                    placeholder="e.g. Round 1"
+                    maxLength={80}
+                    value={roundName}
+                    onChange={(event) => setRoundName(event.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="columns-btn"
+                  disabled={busy || selectedGames.length === 0 || !roundName.trim()}
+                  onClick={() => run(() => editorApi.updateGameRounds(selected.year, selected.tournament, selectedGames.map((matchKey) => ({
+                    matchKey,
+                    round: roundName.trim(),
+                  })), csrfToken), { clearSelection: true })}
+                >
+                  Set round on selected games
+                </button>
+                <button
+                  type="button"
+                  className="columns-btn"
+                  disabled={busy || selectedGames.length === 0}
+                  title="Games played at the same time (same match order) share a round"
+                  onClick={() => run(() => editorApi.updateGameRounds(selected.year, selected.tournament, roundsFromMatchOrder(selectedGames.map((key) => gameByKey.get(key)).filter(Boolean)), csrfToken), { clearSelection: true })}
+                >
+                  Number rounds from match order
+                </button>
+                <button
+                  type="button"
+                  className="columns-btn"
+                  disabled={busy || !selectedGames.some((key) => gameByKey.get(key)?.round)}
+                  onClick={() => run(() => editorApi.updateGameRounds(selected.year, selected.tournament, selectedGames.map((matchKey) => ({
+                    matchKey,
+                    round: null,
+                  })), csrfToken), { clearSelection: true })}
+                >
+                  Clear round
+                </button>
+              </div>
+              <p className="stat-formula">Rounds order a round-robin stage&apos;s matches on the results page. A series keeps one round for all its games; this is separate from the series label.</p>
             </section>
 
             <section className="structure-section">

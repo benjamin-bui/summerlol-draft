@@ -18,6 +18,7 @@ const {
   createSeries,
   readTournamentStructure,
   saveStages,
+  updateGameRounds,
   updateGameStructure,
 } = require("./tournament-structure");
 
@@ -98,6 +99,22 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
     try {
       res.json(
         updateGameStructure(
+          db,
+          Number(req.params.year),
+          req.params.tournament,
+          req.body,
+          req.editor,
+        ),
+      );
+    } catch (error) {
+      sendStructureError(res, error);
+    }
+  });
+
+  router.put(`${prefix}/tournaments/:year/:tournament/rounds`, (req, res) => {
+    try {
+      res.json(
+        updateGameRounds(
           db,
           Number(req.params.year),
           req.params.tournament,

@@ -12,6 +12,7 @@ const {
   ensureTournamentStructureSchema,
   readTournamentStructure,
   saveStages,
+  updateGameRounds,
 } = require("../src/lib/tournament-structure");
 const { ensureMatchDetailsSchema } = require("../src/lib/match-details-schema");
 const { ingestMatches } = require("../src/scripts/ingest-matches");
@@ -286,6 +287,54 @@ test("a client cannot reuse a group ID from another stage", () => {
     }, editor);
     assert.notEqual(second.stages[1].groups[0].groupId, stolenId);
     assert.deepEqual(second.stages[0].groups[0].teams, ["Alpha"]);
+  } finally {
+    db.close();
+  }
+});
+
+test("rounds are stored per game, are independent of the series label, and a series shares one", () => {
+  const db = createDb();
+  try {
+    const { keys, stage } = seedRoundRobin(db);
+    const [ab, gd, ag] = keys;
+    // A second Alpha-Beta game so there is a series to propagate through.
+    const ab2 = insertGame(db, 4, { team1: "Alpha", team2: "Beta", result: "Beta" });
+    ensureDefaultStages(db, db.prepare("SELECT match_key AS matchKey, year, tournament FROM matches").all());
+    createSeries(db, 2026, "Summer", { stageId: stage.stageId, matchKeys: [ab, ab2], roundLabel: "Quarterfinal", bestOf: 3 }, editor);
+
+    const saved = updateGameRounds(db, 2026, "Summer", {
+      rounds: [{ matchKey: ab, round: " Week 1 " }, { matchKey: gd, round: "Week 1" }, { matchKey: ag, round: "Week 2" }],
+    }, editor);
+    const byKey = new Map(saved.games.map((game) => [game.matchKey, game]));
+    assert.equal(byKey.get(ab).round, "Week 1");
+    // The other game of the series follows it; the series label is untouched.
+    assert.equal(byKey.get(ab2).round, "Week 1");
+    assert.equal(byKey.get(ab2).series.roundLabel, "Quarterfinal");
+    assert.equal(byKey.get(ag).round, "Week 2");
+
+    // Re-ingest-style changes to stage assignment do not disturb rounds, and
+    // an empty round clears (for the whole series).
+    const cleared = updateGameRounds(db, 2026, "Summer", { rounds: [{ matchKey: ab2, round: "" }, { matchKey: ag, round: null }] }, editor);
+    assert.deepEqual(cleared.games.map((game) => game.round), [null, "Week 1", null, null]);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM game_rounds").get().n, 1);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tournament_structure_audit").get().n >= 2, true);
+  } finally {
+    db.close();
+  }
+});
+
+test("round assignments are validated", () => {
+  const db = createDb();
+  try {
+    const { keys } = seedRoundRobin(db);
+    const run = (rounds) => updateGameRounds(db, 2026, "Summer", { rounds }, editor);
+    assert.throws(() => updateGameRounds(db, 2026, "Summer", {}, editor), /must be a list/);
+    assert.throws(() => run([{ round: "R1" }]), /match key/);
+    assert.throws(() => run([{ matchKey: keys[0], round: 3 }]), /must be text/);
+    assert.throws(() => run([{ matchKey: keys[0], round: "x".repeat(81) }]), /at most 80/);
+    assert.throws(() => run([{ matchKey: "nope", round: "R1" }]), /not found/);
+    assert.throws(() => run([{ matchKey: keys[0], round: "A" }, { matchKey: keys[0], round: "B" }]), /only be assigned once/);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM game_rounds").get().n, 0);
   } finally {
     db.close();
   }

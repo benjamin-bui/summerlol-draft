@@ -501,6 +501,8 @@ function buildMatches(tournamentGames, matchOrderByKey, matchByKey, resolve) {
       stageOrder: source.stage?.stageOrder || null,
       seriesId: source.seriesId || null,
       seriesRound: source.series?.roundLabel || null,
+      // Round of a round-robin stage (not the series label above).
+      round: source.round || null,
       bestOf: source.series?.bestOf || null,
       gameNumber: source.gameNumber || null,
       winner: g.winner,
