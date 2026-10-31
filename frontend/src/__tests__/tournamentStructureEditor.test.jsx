@@ -274,4 +274,39 @@ describe("TournamentStructureEditor", () => {
       { matchKey: "m3", round: null },
     ]);
   });
+
+  it("sets the bracket section without touching the round", async () => {
+    const user = userEvent.setup();
+    const game = (key, order, team1, team2, extra = {}) => ({
+      matchKey: key, matchOrder: order, team1, team2, stageId: "stage-1",
+      stage: { stageName: "Playoffs" }, seriesId: null, round: null, section: null, ...extra,
+    });
+    const bracketStructure = {
+      ...structure,
+      stages: [{ stageId: "stage-1", name: "Playoffs", format: "double-elimination", stageOrder: 1, groups: [] }],
+      games: [game("m1", 1, "Alpha", "Beta", { round: "Semifinals", section: "upper" }), game("m2", 2, "Gamma", "Delta")],
+    };
+    vi.spyOn(editorApi, "getTournamentStructure").mockResolvedValue(bracketStructure);
+    const rounds = vi.spyOn(editorApi, "updateGameRounds").mockResolvedValue(bracketStructure);
+    render(
+      <TournamentStructureEditor rows={[{ year: 2026, tournament: "Summer" }]} onChanged={vi.fn()} onClose={vi.fn()} />,
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Tournament structure" });
+    // Assigned round and section both show on the row.
+    expect(await within(dialog).findByText(/Semifinals · Upper bracket/)).toBeInTheDocument();
+    const button = within(dialog).getByRole("button", { name: "Set bracket section on selected games" });
+    expect(button).toBeDisabled();
+    await user.click(within(dialog).getByRole("checkbox", { name: /Gamma vs Delta/ }));
+    await user.selectOptions(within(dialog).getByLabelText("Bracket section"), "lower");
+    await user.click(button);
+    await waitFor(() => expect(rounds).toHaveBeenCalledTimes(1));
+    // Only the section is sent, so any existing round is kept by the server.
+    expect(rounds.mock.calls[0][2]).toEqual([{ matchKey: "m2", section: "lower" }]);
+
+    await user.click(within(dialog).getByRole("checkbox", { name: /Gamma vs Delta/ }));
+    await user.selectOptions(within(dialog).getByLabelText("Bracket section"), "");
+    await user.click(button);
+    await waitFor(() => expect(rounds).toHaveBeenCalledTimes(2));
+    expect(rounds.mock.calls[1][2]).toEqual([{ matchKey: "m2", section: null }]);
+  });
 });

@@ -2328,6 +2328,91 @@ td:has(.pick-detail) {
 .tournament-result-game:disabled {
   cursor: default;
 }
+/* Elimination brackets: absolutely positioned cards with SVG connectors. */
+.bracket-scroll {
+  overflow-x: auto;
+  padding: 12px;
+}
+.bracket {
+  position: relative;
+}
+.bracket-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.bracket-lines path {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2;
+}
+.bracket-header {
+  position: absolute;
+  height: 24px;
+  line-height: 24px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bracket-match {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: 0.84rem;
+}
+.bracket-team {
+  display: flex;
+  flex: none;
+  height: 28px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.bracket-team > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bracket-team.is-series-winner {
+  background: var(--accent-glow);
+  font-weight: 600;
+}
+.bracket-match-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  margin: 0;
+  box-sizing: border-box;
+  padding: 0 6px;
+  overflow: hidden;
+}
+.bracket-match-foot .tournament-result-game {
+  padding: 0 6px;
+  font-size: 0.72rem;
+  line-height: 16px;
+}
+
 /* Round-robin stages: one block per group -- a Liquipedia-style standings
    table with a head-to-head grid, then that group's matches round by round. */
 .tournament-results-rr {

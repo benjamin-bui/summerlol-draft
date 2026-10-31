@@ -6,6 +6,7 @@ import MatchDetailEditor from "../components/shared/MatchDetailEditor";
 import TournamentStructureEditor from "../components/shared/TournamentStructureEditor";
 import TournamentFunFacts from "../components/shared/TournamentFunFacts";
 import { ordinal, pct, pctOrLessThanOne, sortByRole } from "../utils/format";
+import { layoutBracket } from "../utils/bracketLayout";
 import { useAuth } from "../context/AuthContext";
 
 function playerLinkProps(displayName, identityKey) {
@@ -692,6 +693,66 @@ function RoundRobinTable({ group }) {
   );
 }
 
+// Single/double elimination drawn as a bracket tree (see utils/bracketLayout):
+// a column per round, matches centred between the matches that feed them, and
+// connector lines from each winner to the match they play next. Cards are
+// absolutely positioned from the layout; the whole bracket scrolls sideways.
+function EliminationBracket({ seriesGroups, onJump }) {
+  const layout = layoutBracket(seriesGroups);
+  if (!layout.nodes.length) return <p className="stat-formula tournament-results-empty">No games played yet.</p>;
+  return (
+    <div className="bracket-scroll">
+      <div className="bracket" style={{ width: layout.width, height: layout.height }}>
+        <svg className="bracket-lines" width={layout.width} height={layout.height} aria-hidden="true">
+          {layout.edges.map((edge) => (
+            <path key={`${edge.from}-${edge.to}`} d={edge.path} />
+          ))}
+        </svg>
+        {layout.headers.map((header) => (
+          <div className="bracket-header" key={header.key} style={{ left: header.x, top: header.y, width: header.w }}>
+            {header.label}
+          </div>
+        ))}
+        {layout.nodes.map((node) => (
+          <article
+            className="bracket-match"
+            key={node.id}
+            style={{ left: node.x, top: node.y, width: node.w, height: node.h }}
+          >
+            {node.teams.map((side, index) => (
+              <div
+                className={`bracket-team${node.winnerSide === index ? " is-series-winner" : ""}`}
+                key={side.key}
+              >
+                <PlayerLink {...playerLinkProps(side.name, side.key)} />
+                <strong>{side.wins}</strong>
+              </div>
+            ))}
+            <footer className="bracket-match-foot">
+              {node.group.bestOf && <span className="stat-formula">Bo{node.group.bestOf}</span>}
+              {node.games.map((game, gameIndex) => {
+                const winner = game.winner === "team1" ? game.team1.name : game.winner === "team2" ? game.team2.name : "Draw";
+                return (
+                  <button
+                    type="button"
+                    className="tournament-result-game"
+                    key={game.matchKey || gameIndex}
+                    onClick={() => onJump(game.matchKey)}
+                    disabled={!game.matchKey}
+                    title={`Match ${game.order ?? ""}: ${winner}`}
+                  >
+                    {node.games.length > 1 ? `G${game.gameNumber || gameIndex + 1}` : "Details"}
+                  </button>
+                );
+              })}
+            </footer>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TournamentResultsBracket({ t, onJump }) {
   const stages = resultStages(t);
   if (!stages.length) {
@@ -711,6 +772,7 @@ function TournamentResultsBracket({ t, onJump }) {
       <div className="tournament-results-stages">
         {stages.map((stage, stageIndex) => {
           const isSwiss = /swiss/i.test(`${stage.format || ""} ${stage.name || ""}`);
+          const isElimination = /^(single|double)-elimination$/.test(stage.format || "");
           const roundRobinGroups = stage.roundRobin?.groups || [];
           return (
             <section className="tournament-results-stage" key={stage.stageId || stageIndex}>
@@ -735,7 +797,11 @@ function TournamentResultsBracket({ t, onJump }) {
                   )}
                 </div>
               ) : (
-                <ResultRounds seriesGroups={stage.groups} mode={isSwiss ? "swiss" : null} onJump={onJump} />
+                isElimination ? (
+                  <EliminationBracket seriesGroups={stage.groups} onJump={onJump} />
+                ) : (
+                  <ResultRounds seriesGroups={stage.groups} mode={isSwiss ? "swiss" : null} onJump={onJump} />
+                )
               )}
             </section>
           );

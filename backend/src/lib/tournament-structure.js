@@ -88,12 +88,15 @@ function ensureTournamentStructureSchema(db) {
       edited_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    -- Which round of a round-robin stage a game was played in. This is
+    -- Which round of a stage a game was played in and, for an elimination
+    -- bracket, which section of it ('upper', 'lower' or 'final'). A row exists
+    -- while either is set; round '' means none. This is
     -- separate from tournament_series.round_label, which names a series
     -- (e.g. a bracket round) rather than a round of concurrent games.
     CREATE TABLE IF NOT EXISTS game_rounds (
       match_key TEXT PRIMARY KEY,
-      round TEXT NOT NULL,
+      round TEXT NOT NULL DEFAULT '',
+      section TEXT,
       edited_by_sub TEXT,
       edited_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -138,6 +141,9 @@ function ensureTournamentStructureSchema(db) {
       after_json TEXT NOT NULL
     );
   `);
+  // game_rounds first shipped without `section`; add it to existing databases.
+  const roundColumns = db.prepare("PRAGMA table_info(game_rounds)").all().map((column) => column.name);
+  if (!roundColumns.includes("section")) db.exec("ALTER TABLE game_rounds ADD COLUMN section TEXT");
 }
 
 function structureForMatches(db, matches) {
@@ -158,7 +164,7 @@ function structureForMatches(db, matches) {
                    WHEN so.stage_id IS NOT NULL THEN so.stage_order ELSE s.stage_order END AS stageOrder,
               CASE WHEN o.match_key IS NOT NULL THEN o.series_id ELSE c.series_id END AS seriesId,
               ts.round_label AS seriesRound, ts.best_of AS bestOf,
-              gr.round AS round
+              gr.round AS round, gr.section AS section
        FROM matches m
        LEFT JOIN game_rounds gr ON gr.match_key = m.match_key
        LEFT JOIN csv_game_structure c ON c.match_key = m.match_key
@@ -188,6 +194,7 @@ function structureForMatches(db, matches) {
         ? { seriesId: row.seriesId, roundLabel: row.seriesRound, bestOf: row.bestOf }
         : null,
       round: row.round || null,
+      section: row.section || null,
     });
   }
   return structure;
@@ -675,10 +682,13 @@ function updateGameStructure(db, year, tournament, body, editor) {
 }
 
 const MAX_ROUND_LENGTH = 80;
+const BRACKET_SECTIONS = ["upper", "lower", "final"];
 
-// Sets (or clears, with an empty/null round) the round of each listed game.
-// A series is played as one unit, so a game in a series passes its round to
-// every game of that series.
+// Sets the round and/or bracket section of each listed game. For each field,
+// a missing key leaves the current value, "" / null clears it, and a value
+// sets it; a game with neither left has its row removed. A series is played
+// as one unit, so a game in a series passes the change to every game of that
+// series (the last listed game of a series wins if a request disagrees).
 function updateGameRounds(db, year, tournament, body, editor) {
   validateScope(db, year, tournament);
   if (!body || !Array.isArray(body.rounds)) throw new StructureValidationError("Rounds must be a list");
@@ -687,16 +697,26 @@ function updateGameRounds(db, year, tournament, body, editor) {
     if (!item || typeof item !== "object" || Array.isArray(item) || typeof item.matchKey !== "string" || !item.matchKey) {
       throw new StructureValidationError("Each round assignment must include a match key");
     }
-    if (item.round != null && typeof item.round !== "string") {
-      throw new StructureValidationError("Round must be text");
+    const change = { matchKey: item.matchKey };
+    if ("round" in item) {
+      if (item.round != null && typeof item.round !== "string") throw new StructureValidationError("Round must be text");
+      change.round = (item.round || "").trim();
+      if (change.round.length > MAX_ROUND_LENGTH) {
+        throw new StructureValidationError(`Round must be at most ${MAX_ROUND_LENGTH} characters`);
+      }
     }
-    const round = (item.round || "").trim();
-    if (round.length > MAX_ROUND_LENGTH) {
-      throw new StructureValidationError(`Round must be at most ${MAX_ROUND_LENGTH} characters`);
+    if ("section" in item) {
+      if (item.section != null && item.section !== "" && !BRACKET_SECTIONS.includes(item.section)) {
+        throw new StructureValidationError(`Bracket section must be one of: ${BRACKET_SECTIONS.join(", ")}`);
+      }
+      change.section = item.section || null;
+    }
+    if (!("round" in change) && !("section" in change)) {
+      throw new StructureValidationError("Each assignment must set a round or a bracket section");
     }
     if (keys.has(item.matchKey)) throw new StructureValidationError("Each game may only be assigned once per request");
     keys.add(item.matchKey);
-    return { matchKey: item.matchKey, round };
+    return change;
   });
   const matches = db
     .prepare(
@@ -721,19 +741,24 @@ function updateGameRounds(db, year, tournament, body, editor) {
   const targets = new Map();
   for (const item of requested) {
     const seriesId = structure.get(item.matchKey)?.seriesId;
-    for (const key of seriesId ? keysBySeries.get(seriesId) : [item.matchKey]) targets.set(key, item.round);
+    for (const key of seriesId ? keysBySeries.get(seriesId) : [item.matchKey]) targets.set(key, item);
   }
   const before = snapshotStructure(db, year, tournament);
   db.transaction(() => {
+    const current = db.prepare("SELECT round, section FROM game_rounds WHERE match_key = ?");
     const upsert = db.prepare(
-      `INSERT INTO game_rounds (match_key, round, edited_by_sub, edited_at)
-       VALUES (?, ?, ?, datetime('now'))
+      `INSERT INTO game_rounds (match_key, round, section, edited_by_sub, edited_at)
+       VALUES (?, ?, ?, ?, datetime('now'))
        ON CONFLICT(match_key) DO UPDATE SET
-         round = excluded.round, edited_by_sub = excluded.edited_by_sub, edited_at = datetime('now')`,
+         round = excluded.round, section = excluded.section,
+         edited_by_sub = excluded.edited_by_sub, edited_at = datetime('now')`,
     );
     const remove = db.prepare("DELETE FROM game_rounds WHERE match_key = ?");
-    for (const [matchKey, round] of targets) {
-      if (round) upsert.run(matchKey, round, editor.sub);
+    for (const [matchKey, change] of targets) {
+      const existing = current.get(matchKey);
+      const round = "round" in change ? change.round : existing?.round || "";
+      const section = "section" in change ? change.section : existing?.section || null;
+      if (round || section) upsert.run(matchKey, round, section, editor.sub);
       else remove.run(matchKey);
     }
     auditStructure(db, year, tournament, editor, before);
@@ -830,6 +855,7 @@ module.exports = {
   readTournamentStructure,
   saveStages,
   structureForMatches,
+  BRACKET_SECTIONS,
   updateGameRounds,
   updateGameStructure,
 };

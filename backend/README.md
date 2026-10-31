@@ -165,6 +165,20 @@ Data behavior worth knowing:
   to leave a stage's groups alone, send `[]` to clear them) and live in
   `tournament_stage_groups` / `tournament_stage_group_teams`, so CSV re-ingest
   does not touch them.
+- Games can also be given a **round** (a column of concurrent games) and, for
+  single/double elimination stages, a **bracket section** (`upper`, `lower` or
+  `final`). Both are set from the editor's game list and stored in `game_rounds`
+  (`PUT /api/editor/tournaments/:year/:tournament/rounds` with
+  `rounds: [{ matchKey, round?, section? }]`: a missing key keeps the current
+  value, `""`/`null` clears it, and a game in a series shares them with the
+  rest of the series). They are separate from a series' own `round_label`.
+  Round-robin groups list their matches round by round; elimination stages are
+  drawn as a bracket tree: a column per round, the upper and lower sections
+  stacked with their finals aligned, and the final section after them.
+  Connector lines are not stored: a line joins a match to the next one its
+  winner plays, so losers dropping to the lower bracket get no line. Without
+  rounds and sections an elimination stage still draws, as a single section
+  whose columns come from the series labels.
 - Stage edits and game assignments are stored as editor overrides, so
   re-ingesting the match CSV does not silently erase them. A series must already
   contain a game before the editor can append another one.

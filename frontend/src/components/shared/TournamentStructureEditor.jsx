@@ -51,6 +51,8 @@ function getSeriesSides(series) {
 }
 
 
+const SECTION_LABELS = { upper: "Upper bracket", lower: "Lower bracket", final: "Final" };
+
 // Group count, names and team allocation for one round-robin stage. Allocation
 // is per team (a select each) so a team can never sit in two groups.
 function RoundRobinGroupsEditor({ label, groups, teams, stageGames, onChange }) {
@@ -149,6 +151,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const [stages, setStages] = useState([]);
   const [selectedGames, setSelectedGames] = useState([]);
   const [roundName, setRoundName] = useState("");
+  const [bracketSection, setBracketSection] = useState("upper");
   const [gameStageFilter, setGameStageFilter] = useState("all");
   const [groupStageId, setGroupStageId] = useState("");
   const [roundLabel, setRoundLabel] = useState("");
@@ -430,7 +433,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                   <label className="structure-game-row" key={game.matchKey}>
                     <input type="checkbox" checked={selectedGames.includes(game.matchKey)} onChange={() => toggleGame(game.matchKey)} />
                     <span>#{game.matchOrder} {game.team1} vs {game.team2}</span>
-                    <span className="stat-formula">{game.stage?.stageName || "No stage"} · {currentLabel(game)}{game.round ? ` · ${game.round}` : ""}</span>
+                    <span className="stat-formula">{game.stage?.stageName || "No stage"} · {currentLabel(game)}{game.round ? ` · ${game.round}` : ""}{game.section ? ` · ${SECTION_LABELS[game.section]}` : ""}</span>
                   </label>
                 ))}
               </div>
@@ -489,6 +492,26 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                 >
                   Number rounds from match order
                 </button>
+                <label>
+                  Bracket section
+                  <select aria-label="Bracket section" value={bracketSection} onChange={(event) => setBracketSection(event.target.value)}>
+                    <option value="upper">Upper bracket</option>
+                    <option value="lower">Lower bracket</option>
+                    <option value="final">Final</option>
+                    <option value="">No section</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="columns-btn"
+                  disabled={busy || selectedGames.length === 0}
+                  onClick={() => run(() => editorApi.updateGameRounds(selected.year, selected.tournament, selectedGames.map((matchKey) => ({
+                    matchKey,
+                    section: bracketSection || null,
+                  })), csrfToken), { clearSelection: true })}
+                >
+                  Set bracket section on selected games
+                </button>
                 <button
                   type="button"
                   className="columns-btn"
@@ -501,7 +524,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                   Clear round
                 </button>
               </div>
-              <p className="stat-formula">Rounds order a round-robin stage&apos;s matches on the results page. A series keeps one round for all its games; this is separate from the series label.</p>
+              <p className="stat-formula">A round is a column of concurrent games (round-robin rows, bracket columns). In single/double elimination, the bracket section places a game in the upper bracket, lower bracket or final, and connector lines are drawn automatically from who advanced. A series keeps one round and section for all its games; both are separate from the series label.</p>
             </section>
 
             <section className="structure-section">

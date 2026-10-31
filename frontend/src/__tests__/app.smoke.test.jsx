@@ -385,6 +385,60 @@ describe("App smoke test against real data", () => {
     expect(screen.queryByRole("heading", { name: "Round 3" })).not.toBeInTheDocument();
   });
 
+  it("draws elimination stages as a bracket with sections, round headers and connectors", async () => {
+    const baseFetch = global.fetch.getMockImplementation();
+    vi.spyOn(global, "fetch").mockImplementation(async (url, options) => {
+      const response = await baseFetch(url, options);
+      if (!String(url).startsWith("/api/tournaments")) return response;
+      const data = JSON.parse(JSON.stringify(await response.json()));
+      const tournament = data.tournaments.find((item) => item.id === "2026-summer");
+      const source = tournament.matches[0];
+      const team = (name) => ({ ...source.team1, key: name, name, avg: 1000 });
+      const series = (order, a, b, winner, round, section) => ({
+        seriesId: null,
+        roundLabel: null,
+        bestOf: null,
+        games: [{
+          ...source, matchKey: `br-${order}`, order, stage: null, round, section,
+          team1: team(a), team2: team(b), winner: winner === a ? "team1" : "team2",
+        }],
+      });
+      tournament.stages = [{
+        stageId: "po", name: "Playoffs", format: "double-elimination", order: 1, roundRobin: null,
+        groups: [
+          series(1, "Alpha", "Beta", "Alpha", "UB Semifinals", "upper"),
+          series(2, "Gamma", "Delta", "Gamma", "UB Semifinals", "upper"),
+          series(3, "Alpha", "Gamma", "Alpha", "UB Final", "upper"),
+          series(4, "Beta", "Delta", "Beta", "LB Round 1", "lower"),
+          series(5, "Beta", "Gamma", "Gamma", "LB Final", "lower"),
+          series(6, "Alpha", "Gamma", "Alpha", "Grand Final", "final"),
+        ],
+      }];
+      return { ok: true, status: 200, json: () => Promise.resolve(data) };
+    });
+
+    const user = userEvent.setup();
+    renderApp("/?tab=tournaments");
+    await screen.findByText("Team rosters", {}, { timeout: 10000 });
+    await user.click(screen.getByRole("tab", { name: "Results" }));
+
+    const bracket = (await screen.findByText("Grand Final")).closest(".bracket");
+    expect(bracket).not.toBeNull();
+    // One header per round column, one card per series, and the connectors:
+    // 2 into the UB final, 1 into LB final, 2 into the grand final.
+    expect([...bracket.querySelectorAll(".bracket-header")].map((node) => node.textContent).sort()).toEqual(
+      ["Grand Final", "LB Final", "LB Round 1", "UB Final", "UB Semifinals"],
+    );
+    expect(bracket.querySelectorAll(".bracket-match")).toHaveLength(6);
+    expect(bracket.querySelectorAll(".bracket-lines path")).toHaveLength(5);
+    // Winners are highlighted and scores are game wins.
+    const grandFinal = [...bracket.querySelectorAll(".bracket-match")].at(-1);
+    expect(grandFinal.querySelector(".is-series-winner").textContent).toContain("Alpha");
+    expect([...grandFinal.querySelectorAll(".bracket-team strong")].map((node) => node.textContent)).toEqual(["1", "0"]);
+    // The flat round columns are not used for elimination stages.
+    expect(document.querySelector(".tournament-results-rounds")).toBeNull();
+  });
+
   it("selects only the clicked tournament on the first click from all selected", async () => {
     const user = userEvent.setup();
     renderApp("/?tab=champions");

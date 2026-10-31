@@ -339,3 +339,72 @@ test("round assignments are validated", () => {
     db.close();
   }
 });
+
+test("bracket sections are set independently of rounds and rows disappear once both are empty", () => {
+  const db = createDb();
+  try {
+    const { keys } = seedRoundRobin(db);
+    const [ab, gd] = keys;
+    const set = (rounds) => updateGameRounds(db, 2026, "Summer", { rounds }, editor);
+    const view = (saved, key) => {
+      const game = saved.games.find((item) => item.matchKey === key);
+      return [game.round, game.section];
+    };
+
+    // Section alone: no round is invented.
+    assert.deepEqual(view(set([{ matchKey: ab, section: "lower" }]), ab), [null, "lower"]);
+    // Round alone leaves the section; section alone leaves the round.
+    assert.deepEqual(view(set([{ matchKey: ab, round: "Semifinals" }]), ab), ["Semifinals", "lower"]);
+    assert.deepEqual(view(set([{ matchKey: ab, section: "upper" }]), ab), ["Semifinals", "upper"]);
+    // Both keys at once, and independent games.
+    const both = set([{ matchKey: ab, round: "Finals", section: "final" }, { matchKey: gd, section: "upper" }]);
+    assert.deepEqual([view(both, ab), view(both, gd)], [["Finals", "final"], [null, "upper"]]);
+    // Clearing one field keeps the row for the other; clearing both removes it.
+    assert.deepEqual(view(set([{ matchKey: ab, round: "" }]), ab), [null, "final"]);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM game_rounds").get().n, 2);
+    set([{ matchKey: ab, section: null }, { matchKey: gd, section: "" }]);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM game_rounds").get().n, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test("bracket section validation and series sharing", () => {
+  const db = createDb();
+  try {
+    const { keys, stage } = seedRoundRobin(db);
+    const ab2 = insertGame(db, 4, { team1: "Alpha", team2: "Beta", result: "Beta" });
+    ensureDefaultStages(db, db.prepare("SELECT match_key AS matchKey, year, tournament FROM matches").all());
+    createSeries(db, 2026, "Summer", { stageId: stage.stageId, matchKeys: [keys[0], ab2], bestOf: 3 }, editor);
+    assert.throws(
+      () => updateGameRounds(db, 2026, "Summer", { rounds: [{ matchKey: keys[0], section: "middle" }] }, editor),
+      /one of: upper, lower, final/,
+    );
+    assert.throws(
+      () => updateGameRounds(db, 2026, "Summer", { rounds: [{ matchKey: keys[0] }] }, editor),
+      /set a round or a bracket section/,
+    );
+    const saved = updateGameRounds(db, 2026, "Summer", { rounds: [{ matchKey: ab2, section: "lower" }] }, editor);
+    assert.deepEqual(
+      saved.games.filter((game) => game.seriesId).map((game) => game.section),
+      ["lower", "lower"],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("a game_rounds table from before sections existed is upgraded in place", () => {
+  const db = createDb();
+  try {
+    db.exec("DROP TABLE game_rounds");
+    db.exec("CREATE TABLE game_rounds (match_key TEXT PRIMARY KEY, round TEXT NOT NULL, edited_by_sub TEXT, edited_at TEXT NOT NULL DEFAULT (datetime('now')))");
+    db.prepare("INSERT INTO game_rounds (match_key, round) VALUES ('legacy', 'Week 1')").run();
+    ensureTournamentStructureSchema(db);
+    ensureTournamentStructureSchema(db); // idempotent
+    const row = db.prepare("SELECT round, section FROM game_rounds WHERE match_key = 'legacy'").get();
+    assert.deepEqual({ ...row }, { round: "Week 1", section: null });
+  } finally {
+    db.close();
+  }
+});

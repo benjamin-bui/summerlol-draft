@@ -503,6 +503,8 @@ function buildMatches(tournamentGames, matchOrderByKey, matchByKey, resolve) {
       seriesRound: source.series?.roundLabel || null,
       // Round of a round-robin stage (not the series label above).
       round: source.round || null,
+      // Elimination-bracket section: upper, lower or final.
+      section: source.section || null,
       bestOf: source.series?.bestOf || null,
       gameNumber: source.gameNumber || null,
       winner: g.winner,
