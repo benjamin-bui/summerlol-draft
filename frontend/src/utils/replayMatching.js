@@ -22,14 +22,55 @@ export function splitRiotId(value) {
   return hash === -1 ? { name: text, tag: "" } : { name: text.slice(0, hash), tag: text.slice(hash + 1) };
 }
 
+// OCR reads a name from pixels, so it is close to the real one rather than
+// identical: l/I/1 and O/0 get swapped, "ß" comes out as "B" or "g", and so on.
+// Fold those together, drop spacing and punctuation, and compare what's left.
+export function ocrFold(value) {
+  return foldName(value)
+    .replace(/ß/g, "b")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .replace(/rn/g, "m")
+    .replace(/vv/g, "w")
+    .replace(/[i1|!]/g, "l")
+    .replace(/0/g, "o")
+    .replace(/5/g, "s")
+    .replace(/8/g, "b");
+}
+
+function editDistance(a, b) {
+  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      row[j] = Math.min(previous[j] + 1, row[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    previous = row;
+  }
+  return previous[b.length];
+}
+
+// True when two names are the same up to OCR slips: equal once folded, or (for
+// names long enough to tell) at most one edit in five characters apart.
+export function ocrNamesMatch(read, actual) {
+  const a = ocrFold(read);
+  const b = ocrFold(actual);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const longest = Math.max(a.length, b.length);
+  return longest >= 5 && 1 - editDistance(a, b) / longest >= 0.8;
+}
+
 // How well a replay player's identity fits a roster name such as
 // "Voidliss#NA1": 3 = same Name#Tag, 2 = same game name (the tag is missing on
-// one side, as in older replays), 1 = same game name but a different tag,
-// 0 = no relation.
+// one side, as in older replays), 1.5 = a name read from a screenshot that is
+// close to the roster's, 1 = same game name but a different tag, 0 = no
+// relation. (Callers only compare these and test for > 0.)
 export function nameMatchStrength(replayPlayer, rosterName) {
   if (!replayPlayer.gameName || !rosterName) return 0;
   const roster = splitRiotId(rosterName);
-  if (foldName(replayPlayer.gameName) !== foldName(roster.name)) return 0;
+  if (foldName(replayPlayer.gameName) !== foldName(roster.name)) {
+    return replayPlayer.ocr && ocrNamesMatch(replayPlayer.gameName, roster.name) ? 1.5 : 0;
+  }
   if (!replayPlayer.tagLine || !roster.tag) return 2;
   return foldName(replayPlayer.tagLine) === foldName(roster.tag) ? 3 : 1;
 }
@@ -41,14 +82,45 @@ const bestStrength = (replayPlayer, names) =>
 
 const CHAMPION_DISPLAY_ALIASES = { MonkeyKing: "Wukong" };
 
-// The replay stores internal ids ("MissFortune", "MonkeyKing"). Prefer the
-// spelling already used in the data; otherwise make a readable one.
+// Screenshots identify a champion by its icon key (lowercase, no spaces). These
+// are the keys whose proper spelling isn't just the key capitalised.
+const CHAMPION_KEY_NAMES = {
+  aurelionsol: "Aurelion Sol",
+  belveth: "Bel'Veth",
+  chogath: "Cho'Gath",
+  drmundo: "Dr. Mundo",
+  jarvaniv: "Jarvan IV",
+  kaisa: "Kai'Sa",
+  khazix: "Kha'Zix",
+  kogmaw: "Kog'Maw",
+  ksante: "K'Sante",
+  leblanc: "LeBlanc",
+  leesin: "Lee Sin",
+  masteryi: "Master Yi",
+  missfortune: "Miss Fortune",
+  monkeyking: "Wukong",
+  nunu: "Nunu & Willump",
+  reksai: "Rek'Sai",
+  renata: "Renata Glasc",
+  tahmkench: "Tahm Kench",
+  twistedfate: "Twisted Fate",
+  velkoz: "Vel'Koz",
+  xinzhao: "Xin Zhao",
+};
+
+// The replay stores internal ids ("MissFortune", "MonkeyKing"); a screenshot
+// gives icon keys ("missfortune"). Prefer the spelling already used in the
+// data; otherwise make a readable one.
 export function championDisplayName(internalName, knownSpellings = []) {
   const key = championIconKey(internalName);
   const known = knownSpellings.find((name) => championIconKey(name) === key);
   if (known) return known;
   if (CHAMPION_DISPLAY_ALIASES[internalName]) return CHAMPION_DISPLAY_ALIASES[internalName];
-  return String(internalName).replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+  const text = String(internalName);
+  if (text === text.toLowerCase()) {
+    return CHAMPION_KEY_NAMES[key] || text.charAt(0).toUpperCase() + text.slice(1);
+  }
+  return text.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
 }
 
 // ---- choosing the match ------------------------------------------------------

@@ -3450,6 +3450,90 @@ p.match-editor-error {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* Screenshot review: crops of the screenshot beside the values read from it. */
+.match-editor-notice.is-alert {
+  border-color: var(--danger);
+  background: transparent;
+}
+/* Each row needs room for crops plus four inputs, so stack the teams. */
+.replay-teams.is-screenshot {
+  grid-template-columns: minmax(0, 1fr);
+}
+.replay-teams.is-screenshot .match-editor-team {
+  min-width: 0;
+}
+.screenshot-review-table {
+  width: 100%;
+}
+.screenshot-review-table td {
+  vertical-align: middle;
+}
+.screenshot-review-crops {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 190px;
+}
+.screenshot-crop {
+  display: block;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background-color: var(--bg);
+}
+.screenshot-crop-portrait {
+  border-radius: 50%;
+}
+.screenshot-crop-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+}
+.screenshot-review-champion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 150px;
+}
+.screenshot-review-name {
+  width: 100%;
+  min-width: 120px;
+}
+.screenshot-review-other {
+  display: inline-flex;
+  gap: 4px;
+}
+.screenshot-review-table select,
+.screenshot-review-table input {
+  max-width: 100%;
+}
+.screenshot-review-kda {
+  white-space: nowrap;
+}
+/* Same specificity as ".match-editor input[type=number] { width: 100% }", and
+   later, so the three K/D/A boxes stay small. */
+.screenshot-review-kda input.match-editor-stat {
+  width: 4.2em;
+  margin-right: 3px;
+}
+.screenshot-review-table .is-unsure {
+  border-color: var(--danger);
+  background: var(--accent-glow);
+}
+.screenshot-review-flag {
+  padding: 1px 6px;
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.screenshot-review-ok {
+  color: var(--win-stripe);
+  font-weight: 700;
+}
 .replay-section-title {
   margin: 18px 0 8px;
   font-size: 1rem;

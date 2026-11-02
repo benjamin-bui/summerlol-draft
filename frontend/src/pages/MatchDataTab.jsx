@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, downloadUrl } from "../api/client";
+import { ApiError, api, downloadUrl, editorApi } from "../api/client";
 import DataTable from "../components/table/DataTable";
 import { coerceNumericColumns } from "../components/table/tableLogic";
 import { ChampionLink, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
@@ -9,6 +9,9 @@ import TournamentStructureEditor from "../components/shared/TournamentStructureE
 import { ReplayError, readReplayFile } from "../utils/roflReplay";
 import { useAuth } from "../context/AuthContext";
 import { sortByRole } from "../utils/format";
+
+const SCREENSHOT_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const SCREENSHOT_MAX_BYTES = 8 * 1024 * 1024; // the server refuses anything larger
 
 const MATCH_DATA_COLUMNS = [
   {
@@ -120,7 +123,44 @@ export default function MatchDataTab({ active }) {
   const [pendingReplay, setPendingReplay] = useState(null);
   const [replayError, setReplayError] = useState(null);
   const replayInput = useRef(null);
-  const { canEdit } = useAuth();
+  const screenshotInput = useRef(null);
+  const [screenshotBusy, setScreenshotBusy] = useState(false);
+  const { canEdit, csrfToken } = useAuth();
+
+  // The screenshot preview is a temporary browser URL; release it when the
+  // dialog that shows it goes away.
+  useEffect(() => {
+    const url = pendingReplay?.imageUrl;
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [pendingReplay]);
+
+  // Screenshots are read on the server (it runs the OCR); check what we can
+  // here first so an obviously wrong file fails fast, without an upload.
+  async function chooseScreenshotFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setReplayError(null);
+    if (!SCREENSHOT_TYPES.includes(file.type)) {
+      setReplayError("Choose a PNG, JPEG or WebP screenshot.");
+      return;
+    }
+    if (file.size > SCREENSHOT_MAX_BYTES) {
+      setReplayError("That image is larger than 8 MB. Crop it to the scoreboard or save it at a smaller size.");
+      return;
+    }
+    setScreenshotBusy(true);
+    try {
+      const summary = await editorApi.parseScreenshot(file, csrfToken);
+      setPendingReplay({ ...summary, fileName: file.name, imageUrl: URL.createObjectURL(file) });
+    } catch (error) {
+      setReplayError(error instanceof ApiError ? error.message : "Could not read that screenshot.");
+    } finally {
+      setScreenshotBusy(false);
+    }
+  }
 
   async function chooseReplayFile(event) {
     const file = event.target.files?.[0];
@@ -151,11 +191,23 @@ export default function MatchDataTab({ active }) {
           <button type="button" className="columns-btn" onClick={() => replayInput.current?.click()}>
             Import replay (.rofl){"\u2026"}
           </button>
+          <input
+            ref={screenshotInput}
+            type="file"
+            accept={SCREENSHOT_TYPES.join(",")}
+            hidden
+            aria-label="Screenshot to import"
+            onChange={chooseScreenshotFile}
+          />
+          <button type="button" className="columns-btn" disabled={screenshotBusy} onClick={() => screenshotInput.current?.click()}>
+            {screenshotBusy ? "Reading screenshot\u2026" : "Import screenshot\u2026"}
+          </button>
           <button type="button" className="columns-btn" onClick={() => setEditingStructure(true)}>
             Manage tournament structure
           </button>
           <span className="replay-upload-hint">
-            Fills in champions, K/D/A and roles from a replay. Read in your browser; nothing is uploaded.
+            Fills in champions, K/D/A and roles from a replay (read in your browser; nothing is uploaded), or champions
+            and K/D/A from a screenshot of the post-game scoreboard (sent to the server to be read, and not stored).
           </span>
           {replayError && (
             <p className="match-editor-error" role="alert">
@@ -186,8 +238,8 @@ export default function MatchDataTab({ active }) {
           replay={pendingReplay}
           rows={rows}
           onCancel={() => setPendingReplay(null)}
-          onContinue={(row) => {
-            setEditing({ row, replay: pendingReplay });
+          onContinue={(row, reviewed) => {
+            setEditing({ row, replay: reviewed || pendingReplay });
             setPendingReplay(null);
           }}
         />

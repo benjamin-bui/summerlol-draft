@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import ScreenshotReviewTable from "./ScreenshotReviewTable";
 import { ROLE_LABELS } from "../../utils/format";
 import { formatDuration } from "../../utils/roflReplay";
 import {
@@ -14,16 +15,39 @@ import {
 // captains (the second list only offers captains the first has faced) and then
 // the match (only meetings between them). The replay's own details are pulled
 // into the match editor in the next step.
+//
+// The same dialog serves a screenshot read (replay.source === "screenshot").
+// That was read from pixels, so it is shown as an editable review table
+// instead: the editor corrects names, champions and K/D/A against crops of the
+// screenshot, and the corrected summary is what moves on.
 
 export default function ReplayImportDialog({ replay, rows, onCancel, onContinue }) {
   const [captain1, setCaptain1] = useState("");
   const [captain2, setCaptain2] = useState("");
   const [matchKey, setMatchKey] = useState("");
+  const isScreenshot = replay.source === "screenshot";
+  // Screenshot players are editable here; a replay's are fixed.
+  const [edited, setEdited] = useState(() => (isScreenshot ? replay.players.map((p) => ({ ...p, review: { ...p.review } })) : null));
+  const live = useMemo(() => (isScreenshot ? { ...replay, players: edited } : replay), [isScreenshot, replay, edited]);
+
+  function updatePlayer(index, patch) {
+    const { markChampionChecked, markKdaChecked, ...fields } = patch;
+    setEdited((current) =>
+      current.map((player) => {
+        if (player.index !== index) return player;
+        const review = { ...player.review };
+        if (markChampionChecked) review.championConfident = true;
+        // Edited numbers can no longer be vouched for by the team totals.
+        if (markKdaChecked) Object.assign(review, { kdaChecked: true, kdaOk: null });
+        return { ...player, ...fields, review };
+      }),
+    );
+  }
 
   const captains = useMemo(() => captainOptions(rows), [rows]);
   const opponents = useMemo(() => opponentOptions(rows, captain1), [rows, captain1]);
   const matches = useMemo(() => matchOptions(rows, captain1, captain2), [rows, captain1, captain2]);
-  const suggestions = useMemo(() => suggestMatches(replay, rows), [replay, rows]);
+  const suggestions = useMemo(() => suggestMatches(live, rows), [live, rows]);
 
   useEffect(() => {
     function onKey(event) {
@@ -72,9 +96,9 @@ export default function ReplayImportDialog({ replay, rows, onCancel, onContinue 
   return (
     <div className="match-editor-overlay">
       <div className="match-editor-backdrop" onClick={onCancel} />
-      <div className="match-editor replay-dialog" role="dialog" aria-modal="true" aria-label="Import replay">
+      <div className="match-editor replay-dialog" role="dialog" aria-modal="true" aria-label={isScreenshot ? "Import screenshot" : "Import replay"}>
         <div className="match-editor-header">
-          <h2>Import replay</h2>
+          <h2>{isScreenshot ? "Import screenshot" : "Import replay"}</h2>
           <button type="button" className="match-editor-close" aria-label="Close" onClick={onCancel}>
             {"\u00d7"}
           </button>
@@ -85,37 +109,58 @@ export default function ReplayImportDialog({ replay, rows, onCancel, onContinue 
             .join(" \u00b7 ")}
         </p>
 
-        <div className="replay-teams">
+        {isScreenshot && (
+          <p className="match-editor-notice" role="status">
+            Read from a screenshot. Check the highlighted values against the crops on the left and fix anything wrong;
+            roles aren{"\u2019"}t shown on a scoreboard, so you set them in the next step.
+          </p>
+        )}
+        {(replay.checks || []).map((check) => (
+          <p key={check.text} className={`match-editor-notice${check.level === "alert" ? " is-alert" : ""}`} role={check.level === "alert" ? "alert" : "status"}>
+            {check.text}
+          </p>
+        ))}
+
+        <div className={`replay-teams${isScreenshot ? " is-screenshot" : ""}`}>
           {replay.teams.map((team) => (
             <fieldset key={team} className="match-editor-team">
               <legend>
                 {teamLabel(team)}
                 {replay.winnerTeam === team ? " \u2014 won" : ""}
               </legend>
-              <table className="match-details-table match-editor-table">
-                <thead>
-                  <tr>
-                    <th>Player</th>
-                    <th>Role</th>
-                    <th>Champion</th>
-                    <th>K/D/A</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {replay.players
-                    .filter((p) => p.team === team)
-                    .map((p) => (
-                      <tr key={p.index}>
-                        <td className="match-editor-player">{p.riotId || <em>(name hidden)</em>}</td>
-                        <td>{p.role ? ROLE_LABELS[p.role] : "\u2014"}</td>
-                        <td>{p.champion}</td>
-                        <td>
-                          {p.kills ?? "\u2013"}/{p.deaths ?? "\u2013"}/{p.assists ?? "\u2013"}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+              {isScreenshot ? (
+                <ScreenshotReviewTable
+                  players={edited.filter((p) => p.team === team)}
+                  image={replay.image}
+                  imageUrl={replay.imageUrl}
+                  onChange={updatePlayer}
+                />
+              ) : (
+                <table className="match-details-table match-editor-table">
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      <th>Role</th>
+                      <th>Champion</th>
+                      <th>K/D/A</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {replay.players
+                      .filter((p) => p.team === team)
+                      .map((p) => (
+                        <tr key={p.index}>
+                          <td className="match-editor-player">{p.riotId || <em>(name hidden)</em>}</td>
+                          <td>{p.role ? ROLE_LABELS[p.role] : "\u2014"}</td>
+                          <td>{p.champion}</td>
+                          <td>
+                            {p.kills ?? "\u2013"}/{p.deaths ?? "\u2013"}/{p.assists ?? "\u2013"}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
             </fieldset>
           ))}
         </div>
@@ -185,7 +230,7 @@ export default function ReplayImportDialog({ replay, rows, onCancel, onContinue 
           <button type="button" className="columns-btn" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className="download-btn" disabled={!chosen} onClick={() => onContinue(chosen)}>
+          <button type="button" className="download-btn" disabled={!chosen} onClick={() => onContinue(chosen, live)}>
             Continue to match editor
           </button>
         </div>

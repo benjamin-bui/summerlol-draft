@@ -33,3 +33,9 @@ services:
       - backend/.env
     environment:
       - PORT=3000
+    # Screenshot import runs `tesseract` inside this container, one screenshot
+    # at a time (a few seconds of one core, tens of MB; measure on your host).
+    # If the host is tight, cap the container so a bad day can't starve its
+    # neighbours, e.g.:
+    #   mem_limit: 512m
+    #   cpus: "1.5"

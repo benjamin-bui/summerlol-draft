@@ -24,6 +24,7 @@ const { buildChampionProfile } = require("./src/lib/champion-profile");
 const { loadAuthConfig } = require("./src/lib/auth/config");
 const { createAuth } = require("./src/lib/auth/oidc-auth");
 const { createEditorRouter } = require("./src/lib/editor-routes");
+const { createScreenshotService } = require("./src/lib/screenshot-import");
 const {
   ensureDefaultStages,
   ensureTournamentStructureSchema,
@@ -378,6 +379,9 @@ app.use(
     db,
     requireEditor: auth.requireEditor,
     loadIdentityMap,
+    screenshots: createScreenshotService({
+      iconsDir: path.join(__dirname, "public", "icons", "champions"),
+    }),
   }),
 );
 

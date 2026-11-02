@@ -36,6 +36,11 @@ Tests use Node's built-in test runner and temporary SQLite databases/CSV files.
 They cover ingestion, identity helpers, tournament summaries, data checks,
 and TrueSkill behavior without modifying `data/app.db`.
 
+The screenshot-import tests (`test/screenshot-*.test.js`) read real scoreboard
+screenshots from `test/fixtures/` and so need the `tesseract` program and
+`public/icons/champions`; without them those tests are skipped and the rest
+still run. They add about 30-60 seconds to the suite.
+
 ## Data and Ingestion
 
 The runtime database is `data/app.db` (it may be created locally and is not
@@ -220,11 +225,66 @@ What it can and can't do:
 - Some replays have blank player names (the data then has to be assigned by
   hand) or no roles (ARAM/non-draft games); both are handled.
 
+### Importing a screenshot of the post-game scoreboard
+
+For games with no usable replay (anything before patch 14.11, which is most of
+the history), a screenshot of the client's post-game **Scoreboard** tab can fill
+in champions and K/D/A instead.
+
+- **Match History tab -> Import screenshot**: the image is sent to
+  `POST /api/editor/screenshot-parse` (editors only, same sign-in and CSRF
+  checks as the rest of `/api/editor`), read on the server, and shown in the same
+  dialog as a replay import. Each player appears with crops of the portrait,
+  name and K/D/A taken from the screenshot beside the values read from them, so
+  the editor can correct anything before choosing the match. The corrected values
+  then pre-fill the match editor as a replay would.
+- The upload is the raw PNG, JPEG or WebP (up to 8 MB, 24 megapixels). It is
+  processed in memory and discarded; nothing is written to disk or the database.
+
+What it reads, and how far to trust it:
+
+- **Names, K/D/A, team totals, duration, winner.** K/D/A is checked against the
+  team totals printed on the scoreboard, and one team's kills must equal the
+  other's deaths. A team that adds up gets a tick; one that doesn't is called
+  out. Totals that can't be read leave a team "unverified" rather than wrong.
+  The winner comes from the VICTORY/DEFEAT banner and which player's name is
+  gold (the screenshot's owner); a crop without the title bar leaves it blank.
+- **Champions** are recognised by comparing each portrait with the icons in
+  `public/icons/champions`. Only default-skin icons are stored, so skins can be
+  missed: those come back unconfident and are flagged "check", with the reader's
+  next-best guesses to choose from. No two players are given the same champion.
+  The set of champions it can recognise is the set of icons shipped, so add an
+  icon when a new champion is released.
+- **Not on a scoreboard**: roles, tags (so names are matched to rosters loosely,
+  tolerating OCR slips such as `l`/`I`/`1`), bans and pick order.
+- Needs the English client's Scoreboard tab with both teams visible; any size or
+  crop works as long as the two team headings and the K/D/A column are included.
+  JPEG and shrunken copies are handled (see the variants in the tests), but the
+  smaller and more compressed the screenshot, the more the editor will correct.
+
+Running it (relevant to the small shared host in `AGENTS.md`):
+
+- It uses the `tesseract` program (installed by the `Dockerfile`; set
+  `TESSERACT_BIN` to use one off `PATH`) and `sharp`. Each screenshot starts a
+  few short `tesseract` processes limited to one thread; there is no daemon and
+  no work at startup (the champion icons are read on first use).
+- Screenshots are read **one at a time**; at most one more may wait, and further
+  requests get a 429 "busy" answer. Each reading step has a timeout.
+- Measured on a single x86 core: about 2 seconds per screenshot once warm (4 on
+  the first, which loads the icons), about 100 MB for the Node process and about
+  50 MB for each `tesseract` run. This is not the production host, so measure
+  there before relying on these numbers; `docker-compose.yml` has a commented
+  example for capping the container.
+- Without `tesseract` the route answers 503 with a clear message and the rest of
+  the app is unaffected.
+
 ## Code Map
 
 - `server.js` registers the API routes and serves `public/`.
 - `src/lib/` contains request-time domain logic: identity, Riot sync,
-  TrueSkill, match details, and tournament summaries.
+  TrueSkill, match details, tournament summaries, and screenshot reading
+  (`screenshot-*.js`: layout geometry, OCR runner, champion matcher, and the
+  orchestrator in `screenshot-import.js`).
 - `src/scripts/` contains ingestion, validation, export/import, and sync CLIs.
 - `src/db/` contains SQL schema definitions.
 - `test/` contains Node test-runner tests.

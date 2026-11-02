@@ -40,16 +40,19 @@ export class ApiError extends Error {
   }
 }
 
-async function sendJson(url, { method = "GET", csrfToken, body } = {}) {
+// `body` is sent as JSON. `rawBody` (a File or Blob) is sent as it is, with its
+// own `contentType`, for uploads such as screenshots.
+async function sendJson(url, { method = "GET", csrfToken, body, rawBody, contentType } = {}) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (rawBody !== undefined) headers["Content-Type"] = contentType;
   if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
   const res = await fetch(url, {
     method,
     headers,
     credentials: "same-origin",
     cache: "no-store",
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: rawBody !== undefined ? rawBody : body === undefined ? undefined : JSON.stringify(body),
   });
   let data = null;
   try {
@@ -67,6 +70,11 @@ export const authApi = {
 };
 
 export const editorApi = {
+  // Sends a screenshot of the post-game scoreboard to be read on the server (it
+  // is processed in memory and not stored). Resolves to a match summary shaped
+  // like a parsed replay, plus what is needed to review it.
+  parseScreenshot: (file, csrfToken) =>
+    sendJson("/api/editor/screenshot-parse", { method: "POST", csrfToken, rawBody: file, contentType: file.type }),
   getMatch: (matchKey) => sendJson(`/api/editor/matches/${encodeURIComponent(matchKey)}`),
   saveMatch: (matchKey, body, csrfToken) =>
     sendJson(`/api/editor/matches/${encodeURIComponent(matchKey)}`, { method: "PUT", csrfToken, body }),

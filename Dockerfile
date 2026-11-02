@@ -33,6 +33,12 @@ WORKDIR /app
 # fixing volume permissions (see docker-entrypoint.sh).
 RUN apk add --no-cache python3 make g++ su-exec
 
+# Reads match screenshots (see backend/src/lib/screenshot-import.js): the
+# native `tesseract` program plus its English model, run once per screenshot
+# and never as a background process. sharp, which decodes the images, ships
+# prebuilt musl binaries through npm, so it needs nothing here.
+RUN apk add --no-cache tesseract-ocr tesseract-ocr-data-eng
+
 COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev
 RUN npm install ts-trueskill

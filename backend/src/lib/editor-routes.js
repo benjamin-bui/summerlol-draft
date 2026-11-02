@@ -4,6 +4,7 @@
 // (or even a body parser).
 
 const express = require("express");
+const { ScreenshotError } = require("./screenshot-import");
 const {
   ConflictError,
   NotFoundError,
@@ -22,7 +23,14 @@ const {
   updateGameStructure,
 } = require("./tournament-structure");
 
-function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
+// A screenshot is sent as the raw image body, not JSON.
+const SCREENSHOT_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const SCREENSHOT_LIMIT = "8mb";
+const MAX_SCREENSHOT_REQUESTS = 2;
+
+// `screenshots` (optional) reads a scoreboard screenshot; see
+// screenshot-import.js. Without it the screenshot route answers 503.
+function createEditorRouter({ db, requireEditor, loadIdentityMap, screenshots }) {
   const router = express.Router();
   const prefix = "/api/editor";
 
@@ -30,6 +38,7 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
   router.use(prefix, express.json({ limit: "64kb" }));
 
   const identities = () => loadIdentityMap(db);
+  let screenshotRequests = 0;
 
   router.get(`${prefix}/matches/:matchKey`, (req, res) => {
     try {
@@ -48,6 +57,57 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
       sendError(res, error, db, req.params.matchKey, identities);
     }
   });
+
+  // Reads a screenshot of the post-game scoreboard into a match summary (the
+  // same shape as a parsed replay). Processing happens in memory and the image
+  // is never stored.
+  const readScreenshotBody = express.raw({ type: SCREENSHOT_TYPES, limit: SCREENSHOT_LIMIT });
+  function admitScreenshotRequest(req, res, next) {
+    if (!screenshots) {
+      return res.status(503).json({ error: "Screenshot reading isn't enabled on this server." });
+    }
+    if (screenshotRequests >= MAX_SCREENSHOT_REQUESTS) {
+      return res.status(429).json({ error: "Another screenshot is being read. Try again in a few seconds.", code: "busy" });
+    }
+
+    screenshotRequests += 1;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      screenshotRequests -= 1;
+    };
+    res.once("finish", release);
+    res.once("close", release);
+    next();
+  }
+
+  router.post(
+    `${prefix}/screenshot-parse`,
+    admitScreenshotRequest,
+    (req, res, next) =>
+      readScreenshotBody(req, res, (error) => {
+        if (!error) return next();
+        const tooLarge = error.type === "entity.too.large";
+        return res.status(tooLarge ? 413 : 400).json({
+          error: tooLarge ? "That image is larger than 8 MB." : "Could not read the upload.",
+        });
+      }),
+    async (req, res) => {
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(415).json({ error: "Send the screenshot as a PNG, JPEG or WebP image." });
+      }
+      try {
+        return res.json(await screenshots.parse(req.body));
+      } catch (error) {
+        if (error instanceof ScreenshotError) {
+          return res.status(error.status).json({ error: error.message, code: error.code });
+        }
+        console.error("[screenshot]", error);
+        return res.status(500).json({ error: "Could not read that screenshot." });
+      }
+    },
+  );
 
   router.get(`${prefix}/tournaments/:year/:tournament/structure`, (req, res) => {
     try {
