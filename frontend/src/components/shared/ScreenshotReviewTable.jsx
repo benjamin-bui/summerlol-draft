@@ -12,7 +12,17 @@ const COUNT_FIELDS = [
   ["assists", "assists"],
 ];
 
-export default function ScreenshotReviewTable({ players, image, imageUrl, onChange }) {
+export default function ScreenshotReviewTable({
+  players,
+  image,
+  imageUrl,
+  onChange,
+  getAssignmentOptions,
+  assignmentSideForPlayer,
+  assignments,
+  onAssign,
+}) {
+  const canAssign = getAssignmentOptions && assignments && onAssign;
   return (
     <table className="match-details-table match-editor-table screenshot-review-table">
       <thead>
@@ -21,6 +31,7 @@ export default function ScreenshotReviewTable({ players, image, imageUrl, onChan
           <th>Player</th>
           <th>Champion</th>
           <th>K / D / A</th>
+          {canAssign && <th>Roster slot</th>}
         </tr>
       </thead>
       <tbody>
@@ -123,6 +134,22 @@ export default function ScreenshotReviewTable({ players, image, imageUrl, onChan
                   </span>
                 )}
               </td>
+              {canAssign && (
+                <td>
+                  <select
+                    aria-label={`Roster slot for ${player.riotId || `${player.champion} (${player.team})`}`}
+                    value={assignments[player.index] ?? ""}
+                    onChange={(event) => onAssign(player.index, event.target.value || null)}
+                  >
+                    <option value="">{"\u2014 not imported \u2014"}</option>
+                    {getAssignmentOptions(player).map((slot, playerIndex) => (
+                      <option key={slot.player} value={`${assignmentSideForPlayer(player)}:${playerIndex}`}>
+                        {slot.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+              )}
             </tr>
           );
         })}
@@ -130,4 +157,3 @@ export default function ScreenshotReviewTable({ players, image, imageUrl, onChan
     </table>
   );
 }
-

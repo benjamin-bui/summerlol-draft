@@ -3433,6 +3433,25 @@ p.match-editor-error {
   color: var(--muted);
   font-size: 0.82rem;
 }
+.match-editor.is-file-dragging {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.match-editor-drop-hint {
+  position: absolute;
+  inset: 12px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel), transparent 12%);
+  color: var(--text);
+  text-align: center;
+  font-weight: 600;
+  pointer-events: none;
+}
 .replay-import-bar .match-editor-error {
   flex-basis: 100%;
   margin: 0;

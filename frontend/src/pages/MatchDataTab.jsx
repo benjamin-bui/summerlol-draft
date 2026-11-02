@@ -154,7 +154,12 @@ export default function MatchDataTab({ active }) {
     setScreenshotBusy(true);
     try {
       const summary = await editorApi.parseScreenshot(file, csrfToken);
-      setPendingReplay({ ...summary, fileName: file.name, imageUrl: URL.createObjectURL(file) });
+      setPendingReplay({
+        ...summary,
+        fileName: file.name,
+        imageUrl: URL.createObjectURL(file),
+        imageFile: file,
+      });
     } catch (error) {
       setReplayError(error instanceof ApiError ? error.message : "Could not read that screenshot.");
     } finally {

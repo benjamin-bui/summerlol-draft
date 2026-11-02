@@ -4,6 +4,15 @@ import { useAuth } from "../../context/AuthContext";
 import { ROLE_LABELS } from "../../utils/format";
 import { applyReplayToForm, planReplayImport, slotKey } from "../../utils/replayMatching";
 import { ReplayError, formatDuration, readReplayFile } from "../../utils/roflReplay";
+import ScreenshotReviewTable from "./ScreenshotReviewTable";
+
+const SCREENSHOT_TYPES = {
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
+const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
 
 // A form for one match's per-player details (champion, K/D/A, role) and each
 // team's bans. Only ever opened for signed-in editors; the server independently
@@ -73,13 +82,14 @@ function describeProblems(problems, form) {
 // it: which replay team is which side, and which roster slot each replay
 // player fills. Every change here just re-fills the form below; nothing is
 // saved until "Save changes".
-function ReplayPanel({ info, state, onSwap, onAssign }) {
+function ReplayPanel({ info, state, onSwap, onAssign, onChangePlayer }) {
   const { replay, plan } = info;
+  const isScreenshot = replay.source === "screenshot";
   const teamNames = (replayTeam) => state.teams[plan.sideOf(replayTeam)].name;
   return (
-    <section className="replay-panel" aria-label="Replay import">
+    <section className="replay-panel" aria-label={isScreenshot ? "Screenshot import" : "Replay import"}>
       <div className="replay-panel-header">
-        <strong>Imported from replay</strong>
+        <strong>Imported from {isScreenshot ? "screenshot" : "replay"}</strong>
         <span>
           {[replay.fileName, replay.patch && `patch ${replay.patch}`, formatDuration(replay.durationMs)]
             .filter(Boolean)
@@ -94,50 +104,75 @@ function ReplayPanel({ info, state, onSwap, onAssign }) {
           {warning.text}
         </p>
       ))}
-      <div className="replay-teams">
+      <div className={`replay-teams${isScreenshot ? " is-screenshot" : ""}`}>
         {replay.teams.map((team) => {
           const side = plan.sideOf(team);
           return (
             <div key={team} className="replay-panel-team">
               <div className="replay-panel-team-name">
                 {teamNames(team)}
-                {replay.winnerTeam === team ? " \u2014 won in replay" : ""}
+                {replay.winnerTeam === team ? ` \u2014 won in ${isScreenshot ? "screenshot" : "replay"}` : ""}
               </div>
-              <table className="match-details-table match-editor-table">
-                <tbody>
-                  {replay.players
-                    .filter((p) => p.team === team)
-                    .map((p) => (
-                      <tr key={p.index}>
-                        <td className="match-editor-player">{p.riotId || <em>(name hidden)</em>}</td>
-                        <td>{p.champion}</td>
-                        <td>
-                          {p.kills ?? "\u2013"}/{p.deaths ?? "\u2013"}/{p.assists ?? "\u2013"}
-                        </td>
-                        <td>
-                          <select
-                            aria-label={`Roster slot for ${p.riotId || `${p.champion} (${team})`}`}
-                            value={plan.assign[p.index] ?? ""}
-                            onChange={(e) => onAssign(p.index, e.target.value || null)}
-                          >
-                            <option value="">{"\u2014 not imported \u2014"}</option>
-                            {state.teams[side].players.map((slot, playerIndex) => (
-                              <option key={slot.player} value={slotKey(side, playerIndex)}>
-                                {slot.displayName}
-                              </option>
+                    {isScreenshot ? (
+                      <ScreenshotReviewTable
+                        players={replay.players.filter((p) => p.team === team)}
+                        image={replay.image}
+                        imageUrl={replay.imageUrl}
+                        onChange={onChangePlayer}
+                        getAssignmentOptions={(player) => state.teams[plan.sideOf(player.team)].players}
+                        assignmentSideForPlayer={(player) => plan.sideOf(player.team)}
+                        assignments={plan.assign}
+                        onAssign={onAssign}
+                      />
+                    ) : (
+                      <table className="match-details-table match-editor-table">
+                        <tbody>
+                          {replay.players
+                            .filter((p) => p.team === team)
+                            .map((p) => (
+                              <tr key={p.index}>
+                                <td className="match-editor-player">{p.riotId || <em>(name hidden)</em>}</td>
+                                <td>{p.champion}</td>
+                                <td>
+                                  {p.kills ?? "\u2013"}/{p.deaths ?? "\u2013"}/{p.assists ?? "\u2013"}
+                                </td>
+                                <td>
+                                  <select
+                                    aria-label={`Roster slot for ${p.riotId || `${p.champion} (${team})`}`}
+                                    value={plan.assign[p.index] ?? ""}
+                                    onChange={(e) => onAssign(p.index, e.target.value || null)}
+                                  >
+                                    <option value="">{"\u2014 not imported \u2014"}</option>
+                                    {state.teams[side].players.map((slot, playerIndex) => (
+                                      <option key={slot.player} value={slotKey(side, playerIndex)}>
+                                        {slot.displayName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {plan.guessed.includes(p.index) && <span className="replay-guess"> check</span>}
+                                </td>
+                              </tr>
                             ))}
-                          </select>
-                          {plan.guessed.includes(p.index) && <span className="replay-guess"> check</span>}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          );
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                );
         })}
       </div>
-      <p className="replay-panel-note">Changing the teams or an assignment redoes the import. Bans aren{"\u2019"}t in replays; enter them below.</p>
+      {isScreenshot &&
+        (replay.checks || []).map((check) => (
+          <p
+            key={check.text}
+            className={check.level === "alert" ? "match-editor-error" : "match-editor-notice"}
+            role={check.level === "alert" ? "alert" : "status"}
+          >
+            {check.text}
+          </p>
+        ))}
+      <p className="replay-panel-note">
+        Changing the teams or an assignment redoes the import. Bans aren{"\u2019"}t in {isScreenshot ? "screenshots" : "replays"}; enter them below.
+      </p>
     </section>
   );
 }
@@ -155,7 +190,11 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
   const [fatal, setFatal] = useState(null);
   const [replayInfo, setReplayInfo] = useState(null);
   const [replayError, setReplayError] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const fileInput = useRef(null);
+  const dragDepth = useRef(0);
+  const screenshotUrl = useRef(null);
 
   const adopt = useCallback((next) => {
     const nextForm = toForm(next);
@@ -192,7 +231,15 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
       .then((loaded) => {
         if (cancelled) return;
         adopt(loaded);
-        if (initialReplay) beginReplay(initialReplay, loaded, toForm(loaded));
+        if (initialReplay) {
+          let replay = initialReplay;
+          if (initialReplay.source === "screenshot" && initialReplay.imageFile) {
+            const imageUrl = URL.createObjectURL(initialReplay.imageFile);
+            screenshotUrl.current = imageUrl;
+            replay = { ...initialReplay, imageUrl };
+          }
+          beginReplay(replay, loaded, toForm(loaded));
+        }
       })
       .catch((error) => {
         if (!cancelled) setFatal(explain(error));
@@ -207,9 +254,10 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
   const dirty = form !== null && JSON.stringify(form) !== initial;
 
   const requestClose = useCallback(() => {
+    if (importing) return;
     if (dirty && !window.confirm("Discard your unsaved changes?")) return;
     onClose();
-  }, [dirty, onClose]);
+  }, [dirty, importing, onClose]);
 
   useEffect(() => {
     function onKey(event) {
@@ -222,6 +270,13 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
   useEffect(() => {
     dialogRef.current?.focus();
   }, []);
+
+  useEffect(
+    () => () => {
+      if (screenshotUrl.current) URL.revokeObjectURL(screenshotUrl.current);
+    },
+    [],
+  );
 
   function setPlayerField(teamIndex, playerIndex, field, value) {
     setForm((current) => ({
@@ -241,17 +296,84 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
     }));
   }
 
-  async function chooseReplayFile(event) {
+  async function importFile(file) {
+    if (!file || importing) return;
+    setReplayError(null);
+    if (!state || !form) {
+      setReplayError("Wait for the match details to load before importing a file.");
+      return;
+    }
+    const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    setImporting(true);
+    try {
+      if (extension === ".rofl") {
+        const replay = await readReplayFile(file);
+        beginReplay(replay, state, replayInfo ? replayInfo.base : form);
+        if (screenshotUrl.current) {
+          URL.revokeObjectURL(screenshotUrl.current);
+          screenshotUrl.current = null;
+        }
+        return;
+      }
+
+      const contentType = SCREENSHOT_TYPES[extension];
+      if (!contentType) {
+        throw new Error("Choose a .rofl, .png, .jpg, .jpeg or .webp file.");
+      }
+      if (file.size > MAX_SCREENSHOT_BYTES) {
+        throw new Error("That image is larger than 8 MB. Crop it to the scoreboard or save it at a smaller size.");
+      }
+      const screenshot = await editorApi.parseScreenshot(file, csrfToken, contentType);
+      const imageUrl = URL.createObjectURL(file);
+      if (screenshotUrl.current) URL.revokeObjectURL(screenshotUrl.current);
+      screenshotUrl.current = imageUrl;
+      beginReplay({ ...screenshot, fileName: file.name, imageUrl }, state, replayInfo ? replayInfo.base : form);
+    } catch (error) {
+      setReplayError(
+        error instanceof ReplayError
+          ? error.message
+          : error instanceof ApiError
+            ? explain(error)
+            : error instanceof Error
+              ? error.message
+              : "Could not read that file.",
+      );
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function chooseImportFile(event) {
     const file = event.target.files?.[0];
     event.target.value = ""; // lets the same file be chosen again
-    if (!file) return;
-    setReplayError(null);
-    try {
-      const replay = await readReplayFile(file);
-      beginReplay(replay, state, replayInfo ? replayInfo.base : form);
-    } catch (error) {
-      setReplayError(error instanceof ReplayError ? error.message : "Could not read that replay file.");
+    void importFile(file);
+  }
+
+  function handleDragEnter(event) {
+    event.preventDefault();
+    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
+    dragDepth.current += 1;
+    setDragActive(true);
+  }
+
+  function handleDragLeave(event) {
+    event.preventDefault();
+    if (dragDepth.current === 0) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragActive(false);
+  }
+
+  function handleDrop(event) {
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragActive(false);
+    const files = Array.from(event.dataTransfer.files || []);
+    if (files.length > 1) {
+      setReplayError("Drop one replay or screenshot at a time.");
+      return;
     }
+    if (importing) return;
+    void importFile(files[0]);
   }
 
   function swapReplayTeams() {
@@ -268,6 +390,25 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
     const guessed = plan.guessed.filter((index) => index !== replayIndex && assign[index]);
     setReplayInfo({ replay, plan: { ...plan, assign, guessed }, base });
     setForm(applyReplayToForm(base, replay, assign, state.championSuggestions));
+  }
+
+  function updateScreenshotPlayer(index, patch) {
+    if (!replayInfo || replayInfo.replay.source !== "screenshot") return;
+    const { markChampionChecked, markKdaChecked, ...fields } = patch;
+    const replay = {
+      ...replayInfo.replay,
+      players: replayInfo.replay.players.map((player) => {
+        if (player.index !== index) return player;
+        const review = { ...player.review };
+        if (markChampionChecked) review.championConfident = true;
+        if (markKdaChecked) Object.assign(review, { kdaChecked: true, kdaOk: null });
+        return { ...player, ...fields, review };
+      }),
+    };
+    const nextPlan = planReplayImport(replay, state, { swap: replayInfo.plan.swap });
+    const plan = { ...nextPlan, assign: replayInfo.plan.assign, guessed: replayInfo.plan.guessed };
+    setReplayInfo({ ...replayInfo, replay, plan });
+    setForm(applyReplayToForm(replayInfo.base, replay, plan.assign, state.championSuggestions));
   }
 
   async function save(event) {
@@ -300,16 +441,20 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
     <div className="match-editor-overlay">
       <div className="match-editor-backdrop" onClick={requestClose} />
       <div
-        className="match-editor"
+        className={`match-editor${dragActive ? " is-file-dragging" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={`Edit match details: ${title}`}
         tabIndex={-1}
         ref={dialogRef}
+        onDragEnter={handleDragEnter}
+        onDragOver={(event) => event.preventDefault()}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         <div className="match-editor-header">
           <h2>Edit match details</h2>
-          <button type="button" className="match-editor-close" aria-label="Close" onClick={requestClose}>
+          <button type="button" className="match-editor-close" aria-label="Close" disabled={importing} onClick={requestClose}>
             {"\u00d7"}
           </button>
         </div>
@@ -340,25 +485,36 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
               <input
                 ref={fileInput}
                 type="file"
-                accept=".rofl"
+                accept=".rofl,.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
                 hidden
-                aria-label="Replay file"
-                onChange={chooseReplayFile}
+                aria-label="Replay or screenshot file"
+                onChange={chooseImportFile}
               />
-              <button type="button" className="columns-btn" onClick={() => fileInput.current?.click()}>
-                {replayInfo ? "Use a different replay\u2026" : "Import from replay (.rofl)\u2026"}
+              <button type="button" className="columns-btn" disabled={importing} onClick={() => fileInput.current?.click()}>
+                {importing ? "Reading file\u2026" : replayInfo ? "Import another file\u2026" : "Import from replay or screenshot\u2026"}
               </button>
               <span className="replay-upload-hint">
-                Reads champions, K/D/A and roles from the file in your browser; nothing is uploaded.
+                Drop a .rofl replay or PNG/JPEG/WebP scoreboard image anywhere in this dialog, or choose a file.
               </span>
             </div>
+            {dragActive && (
+              <div className="match-editor-drop-hint" role="status">
+                Drop one .rofl, PNG, JPEG or WebP file to import it
+              </div>
+            )}
             {replayError && (
               <p className="match-editor-error" role="alert">
                 {replayError}
               </p>
             )}
             {replayInfo && (
-              <ReplayPanel info={replayInfo} state={state} onSwap={swapReplayTeams} onAssign={assignReplayPlayer} />
+              <ReplayPanel
+                info={replayInfo}
+                state={state}
+                onSwap={swapReplayTeams}
+                onAssign={assignReplayPlayer}
+                onChangePlayer={updateScreenshotPlayer}
+              />
             )}
 
             <div className="match-editor-teams">
@@ -455,10 +611,10 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
             )}
 
             <div className="match-editor-actions">
-              <button type="button" className="columns-btn" onClick={requestClose}>
+              <button type="button" className="columns-btn" disabled={importing} onClick={requestClose}>
                 Cancel
               </button>
-              <button type="submit" className="download-btn" disabled={saving || !dirty}>
+              <button type="submit" className="download-btn" disabled={saving || importing || !dirty}>
                 {saving ? "Saving\u2026" : "Save changes"}
               </button>
             </div>

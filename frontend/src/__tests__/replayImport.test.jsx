@@ -236,7 +236,7 @@ describe("importing a replay inside the match editor", () => {
     const editor = await openEditor();
     expect(await within(editor).findByLabelText("Ene#TFT champion")).toHaveValue("");
     await userEvent.upload(
-      within(editor).getByLabelText("Replay file", { selector: "input" }),
+      within(editor).getByLabelText("Replay or screenshot file", { selector: "input" }),
       fixtureReplayFile("voidlissYeetor", "VOIDLISS_YEETOR.rofl"),
     );
     expect(await within(editor).findByText("Imported from replay")).toBeInTheDocument();
@@ -257,7 +257,7 @@ describe("importing a replay inside the match editor", () => {
 
   it("reports an unreadable file without touching the form", async () => {
     const editor = await openEditor();
-    await userEvent.upload(within(editor).getByLabelText("Replay file", { selector: "input" }), new File([new Uint8Array(300).fill(2)], "bad.rofl"));
+    await userEvent.upload(within(editor).getByLabelText("Replay or screenshot file", { selector: "input" }), new File([new Uint8Array(300).fill(2)], "bad.rofl"));
     expect(await within(editor).findByRole("alert")).toHaveTextContent(/doesn't look like a League of Legends replay/);
     expect(within(editor).queryByText("Imported from replay")).not.toBeInTheDocument();
     expect(within(editor).getByRole("button", { name: /save changes/i })).toBeDisabled();

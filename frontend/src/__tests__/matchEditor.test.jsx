@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +9,8 @@ import App from "../App";
 // real gatekeeper; these tests cover what the page shows and sends.)
 
 const baseFetch = global.fetch;
+const baseCreateObjectURL = URL.createObjectURL;
+const baseRevokeObjectURL = URL.revokeObjectURL;
 const json = (data, status = 200) =>
   Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(data) });
 
@@ -41,14 +43,59 @@ function editorState(matchKey) {
   };
 }
 
+const reviewBox = { left: 10, top: 10, width: 100, height: 30 };
+const screenshotPlayer = (index, team, gameName, champion, [kills, deaths, assists]) => ({
+  index,
+  team,
+  gameName,
+  riotId: gameName,
+  tagLine: null,
+  champion,
+  role: null,
+  kills,
+  deaths,
+  assists,
+  win: team === 100,
+  ocr: true,
+  review: {
+    championConfident: true,
+    championChoices: [{ key: champion, score: 0.95 }],
+    kdaOk: true,
+    boxes: {
+      portrait: { ...reviewBox, width: 30, height: 30 },
+      name: reviewBox,
+      kda: { ...reviewBox, width: 120 },
+    },
+  },
+});
+const screenshotSummary = {
+  source: "screenshot",
+  version: null,
+  patch: null,
+  durationMs: 1200000,
+  teams: [100, 200],
+  winnerTeam: 100,
+  hasRoles: false,
+  hasNames: true,
+  image: { width: 1029, height: 606 },
+  checks: [],
+  players: [
+    screenshotPlayer(0, 100, "Cap1", "ahri", [1, 2, 3]),
+    screenshotPlayer(1, 100, "A1", "lux", [4, 5, 6]),
+    screenshotPlayer(2, 200, "Cap2", "zed", [7, 8, 9]),
+    screenshotPlayer(3, 200, "B1", "ashe", [10, 11, 12]),
+  ],
+};
+
 let calls;
-function mockServer({ me, editorGet, editorPut }) {
+function mockServer({ me, editorGet, editorPut, screenshotPost = () => json(screenshotSummary) }) {
   calls = [];
   global.fetch = vi.fn((url, opts = {}) => {
     const u = String(url);
     calls.push({ url: u, method: opts.method || "GET", headers: opts.headers || {}, body: opts.body });
     if (u.startsWith("/api/auth/me")) return json(me);
     if (u.startsWith("/api/editor/")) {
+      if (u === "/api/editor/screenshot-parse") return screenshotPost(u, opts);
       if ((opts.method || "GET") === "PUT") return editorPut(u, opts);
       return editorGet(u, opts);
     }
@@ -78,6 +125,10 @@ beforeEach(() => {
 });
 afterEach(() => {
   global.fetch = baseFetch;
+  if (baseCreateObjectURL) URL.createObjectURL = baseCreateObjectURL;
+  else delete URL.createObjectURL;
+  if (baseRevokeObjectURL) URL.revokeObjectURL = baseRevokeObjectURL;
+  else delete URL.revokeObjectURL;
   vi.restoreAllMocks();
 });
 
@@ -187,6 +238,40 @@ describe("match editor for a signed-in editor", () => {
       player: "A1", champion: "Lux", kills: 4, deaths: null, assists: null, role: "Mid",
     });
     expect(body.bans).toEqual({ team1: ["Yasuo"], team2: ["Zed"] });
+  });
+
+  it("accepts a dropped image by extension, reviews it, and applies corrections to the match", async () => {
+    mockServer({
+      me: EDITOR,
+      editorGet: (url) => json(editorState(decodeURIComponent(url.split("/").pop()))),
+      editorPut: () => json({}),
+      screenshotPost: (_url, options) => json(screenshotSummary),
+    });
+    URL.createObjectURL = vi.fn(() => "blob:match-editor-screenshot");
+    URL.revokeObjectURL = vi.fn();
+    await openFirstMatch();
+    await userEvent.click(await screen.findByRole("button", { name: /edit match details/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: /edit match details/i });
+    const file = new File([new Uint8Array([1, 2, 3])], "SCOREBOARD.JpG", { type: "application/octet-stream" });
+    fireEvent.dragEnter(dialog, { dataTransfer: { files: [file], items: [file], types: ["Files"] } });
+    expect(within(dialog).getByRole("status")).toHaveTextContent(/drop one \.rofl/i);
+    fireEvent.drop(dialog, { dataTransfer: { files: [file], items: [file] } });
+
+    expect(await within(dialog).findByRole("region", { name: "Screenshot import" })).toBeInTheDocument();
+    const request = calls.find((call) => call.url === "/api/editor/screenshot-parse");
+    expect(request.headers["Content-Type"]).toBe("image/jpeg");
+    expect(request.headers["X-CSRF-Token"]).toBe("csrf-123");
+    expect(request.body).toBe(file);
+    expect(within(dialog).getByLabelText("Player 2 name")).toHaveValue("A1");
+    expect(within(dialog).getByLabelText("A1 champion")).toHaveValue("Lux");
+    expect(within(dialog).getByLabelText("A1 kills")).toHaveValue(4);
+    expect(within(dialog).getByLabelText("Roster slot for A1")).toHaveValue("0:1");
+    expect(within(dialog).getAllByRole("img", { name: /portrait on the screenshot/ })).toHaveLength(4);
+
+    await userEvent.clear(within(dialog).getByLabelText("Player 2 kills"));
+    await userEvent.type(within(dialog).getByLabelText("Player 2 kills"), "8");
+    expect(within(dialog).getByLabelText("A1 kills")).toHaveValue(8);
   });
 
   it("lists the server's validation problems by player and keeps the form open", async () => {
