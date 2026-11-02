@@ -150,8 +150,11 @@ Data behavior worth knowing:
 - Other tabs (Tournaments, player pages) show an edit after a page reload.
 - **Match History -> Manage tournament structure** lets authorized editors
   order and format stages, assign games to stages, group selected games into a
-  series, ungroup them, and append a game with a selected result to an existing
-  series. The Tournaments tab displays stages, series, and per-series game
+  series, ungroup them, and insert a game with a selected result before a chosen
+  match order or at the end of an existing series. Insertion shifts later match
+  orders (including simultaneous games) while preserving their relative order,
+  and those shifts survive CSV re-ingestion.
+  The Tournaments tab displays stages, series, and per-series game
   numbers; player/champion histories show the same context. This organization
   is display-only: TrueSkill still processes every game independently, and
   stages do not calculate pairings, advancement, or bracket progression.

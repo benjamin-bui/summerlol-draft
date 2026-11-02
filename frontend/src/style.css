@@ -3250,13 +3250,22 @@ th[data-champion-sort]:focus-visible {
   margin: 0 0 8px;
   font-size: 1rem;
 }
-.structure-stage-row,
-.structure-series-form {
+.structure-stage-row {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) minmax(145px, 1fr) 90px auto;
   align-items: end;
   gap: 8px;
   margin: 8px 0;
+}
+.structure-series-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin: 8px 0;
+}
+.structure-series-form label {
+  flex: 1 1 150px;
 }
 .structure-round-form {
   display: flex;
@@ -3333,9 +3342,6 @@ th[data-champion-sort]:focus-visible {
   -webkit-appearance: none;
   margin: 0;
 }
-.structure-series-form {
-  grid-template-columns: repeat(3, minmax(120px, 1fr)) auto;
-}
 .structure-selection-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -3391,8 +3397,7 @@ th[data-champion-sort]:focus-visible {
   margin: 0;
 }
 @media (max-width: 700px) {
-  .structure-stage-row,
-  .structure-series-form {
+  .structure-stage-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .structure-game-row {

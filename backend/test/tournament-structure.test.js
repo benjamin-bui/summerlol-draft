@@ -81,6 +81,55 @@ test("stages and series group games for display without removing individual game
   }
 });
 
+test("inserting a game at a match order shifts later games and keeps series numbering chronological", () => {
+  const db = createDb();
+  try {
+    const first = insertGame(db, 1, { team1: "Alpha", team2: "Beta" });
+    const simultaneousOne = insertGame(db, 2, { team1: "Gamma", team2: "Delta" });
+    const simultaneousTwo = insertGame(db, 2, { team1: "Echo", team2: "Foxtrot" });
+    const last = insertGame(db, 3, { team1: "Beta", team2: "Alpha", result: "Beta" });
+    ensureDefaultStages(db, db.prepare("SELECT match_key AS matchKey, year, tournament FROM matches").all());
+    const stage = readTournamentStructure(db, 2026, "Summer").stages[0];
+    const grouped = createSeries(db, 2026, "Summer", { matchKeys: [first, last], stageId: stage.stageId }, editor);
+    const seriesId = grouped.series[0].seriesId;
+
+    const appended = addGameToSeries(db, 2026, "Summer", seriesId, { result: "team1" }, editor);
+    const inserted = addGameToSeries(db, 2026, "Summer", seriesId, {
+      result: "team2",
+      matchOrder: 2,
+    }, editor);
+    const ordered = db.prepare(
+      "SELECT match_key AS matchKey, match_order AS matchOrder FROM matches ORDER BY match_order, csv_row_index",
+    ).all();
+
+    assert.deepEqual(ordered.map((game) => [game.matchKey, game.matchOrder]), [
+      [first, 1],
+      [inserted.matchKey, 2],
+      [simultaneousOne, 3],
+      [simultaneousTwo, 3],
+      [last, 4],
+      [appended.matchKey, 5],
+    ]);
+    assert.equal(
+      db.prepare("SELECT match_order FROM editor_created_matches WHERE match_key = ?").get(appended.matchKey).match_order,
+      5,
+    );
+    const series = readTournamentStructure(db, 2026, "Summer").series[0];
+    assert.deepEqual(series.games.map((game) => [game.matchOrder, game.gameNumber]), [
+      [1, 1],
+      [2, 2],
+      [4, 3],
+      [5, 4],
+    ]);
+    assert.throws(
+      () => addGameToSeries(db, 2026, "Summer", seriesId, { result: "team1", matchOrder: 7 }, editor),
+      /between 1 and 6/,
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test("stage edits override imported metadata and deleting a stage reassigns its games", () => {
   const db = createDb();
   try {
@@ -123,6 +172,8 @@ test("CSV re-ingestion preserves editor-created games, stage overrides, details,
   );
   try {
     ingestMatches(csvPath, { dbPath });
+    let addedMatchKey;
+    let importedMatchKeys;
     const db = new Database(dbPath);
     try {
       const stage = readTournamentStructure(db, 2026, "Summer").stages[0];
@@ -130,16 +181,18 @@ test("CSV re-ingestion preserves editor-created games, stage overrides, details,
       saveStages(db, 2026, "Summer", {
         stages: [{ ...stage, name: "Finals", format: "single-elimination" }],
       }, editor);
-      const keys = db.prepare("SELECT match_key AS matchKey FROM matches ORDER BY match_order").all().map((row) => row.matchKey);
-      assert.equal(keys.length, 2);
+      importedMatchKeys = db.prepare("SELECT match_key AS matchKey FROM matches ORDER BY match_order").all().map((row) => row.matchKey);
+      assert.equal(importedMatchKeys.length, 2);
       const added = addGameToSeries(db, 2026, "Summer", "series-imported", {
         result: "team1",
+        matchOrder: 1,
       }, editor);
+      addedMatchKey = added.matchKey;
       ensureMatchDetailsSchema(db);
       db.prepare(
         "INSERT INTO match_details (match_key, player, champion, kills, deaths, assists, role) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ).run(added.matchKey, "Player One", "Ahri", 5, 1, 7, "MID");
-      db.prepare("INSERT INTO match_bans (match_key, side, champion) VALUES (?, ?, ?)").run(added.matchKey, 1, "Yasuo");
+      ).run(addedMatchKey, "Player One", "Ahri", 5, 1, 7, "MID");
+      db.prepare("INSERT INTO match_bans (match_key, side, champion) VALUES (?, ?, ?)").run(addedMatchKey, 1, "Yasuo");
     } finally {
       db.close();
     }
@@ -153,6 +206,10 @@ test("CSV re-ingestion preserves editor-created games, stage overrides, details,
       assert.equal(structure.series[0].seriesId, "series-imported");
       assert.equal(structure.series[0].roundLabel, "Final");
       assert.deepEqual(structure.series[0].games.map((game) => game.gameNumber), [1, 2, 3]);
+      assert.deepEqual(
+        new Map(structure.games.map((game) => [game.matchKey, game.matchOrder])),
+        new Map([[addedMatchKey, 1], [importedMatchKeys[0], 2], [importedMatchKeys[1], 3]]),
+      );
       assert.equal(dbAfter.prepare("SELECT COUNT(*) AS n FROM match_details").get().n, 1);
       assert.equal(dbAfter.prepare("SELECT COUNT(*) AS n FROM match_bans").get().n, 1);
       assert.equal(new Set(dbAfter.prepare("SELECT csv_row_index FROM matches").all().map((row) => row.csv_row_index)).size, 3);

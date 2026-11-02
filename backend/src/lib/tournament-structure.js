@@ -113,6 +113,13 @@ function ensureTournamentStructureSchema(db) {
       match_stage TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS tournament_match_order_overrides (
+      match_key TEXT PRIMARY KEY,
+      match_order INTEGER NOT NULL,
+      edited_by_sub TEXT NOT NULL,
+      edited_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS tournament_stage_groups (
       group_id TEXT PRIMARY KEY,
       stage_id TEXT NOT NULL,
@@ -802,23 +809,49 @@ function addGameToSeries(db, year, tournament, seriesId, body, editor) {
   const resultSide = body.result;
   const result = resultSide === "team1" ? team1 : resultSide === "team2" ? team2 : null;
   if (!result && resultSide !== "draw") throw new StructureValidationError("Choose the game winner or a draw");
-  const matchOrder = db
+  const maxOrder = db
     .prepare(
-      `SELECT COALESCE(MAX(match_order), 0) + 1 AS nextOrder
+      `SELECT COALESCE(MAX(match_order), 0) AS maxOrder
        FROM matches WHERE year = ? AND COALESCE(tournament, '') = ?`,
     )
-    .get(year, tournament).nextOrder;
+    .get(year, tournament).maxOrder;
+  const matchOrder = body.matchOrder === undefined ? maxOrder + 1 : body.matchOrder;
+  if (!Number.isInteger(matchOrder) || matchOrder < 1 || matchOrder > maxOrder + 1) {
+    throw new StructureValidationError(`Match order must be a whole number between 1 and ${maxOrder + 1}`);
+  }
   const matchStage = body.matchStage == null ? null : String(body.matchStage).trim() || null;
+  const matchKeyOrder = maxOrder + 1;
   const matchKey = buildMatchKey({
     year,
     tournament,
     matchStage,
-    matchOrder,
+    matchOrder: matchKeyOrder,
     team1,
     team2,
   });
   const before = snapshotStructure(db, year, tournament);
   const insert = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO tournament_match_order_overrides (match_key, match_order, edited_by_sub)
+       SELECT match_key, match_order + 1, ?
+       FROM matches
+       WHERE year = ? AND COALESCE(tournament, '') = ? AND match_order >= ?
+       ON CONFLICT(match_key) DO UPDATE SET
+         match_order = excluded.match_order,
+         edited_by_sub = excluded.edited_by_sub,
+         edited_at = datetime('now')`,
+    ).run(editor.sub, year, tournament, matchOrder);
+    db.prepare(
+      `UPDATE editor_created_matches SET match_order = match_order + 1
+       WHERE match_key IN (
+         SELECT match_key FROM matches
+         WHERE year = ? AND COALESCE(tournament, '') = ? AND match_order >= ?
+       )`,
+    ).run(year, tournament, matchOrder);
+    db.prepare(
+      `UPDATE matches SET match_order = match_order + 1
+       WHERE year = ? AND COALESCE(tournament, '') = ? AND match_order >= ?`,
+    ).run(year, tournament, matchOrder);
     const rowIndex = db.prepare("SELECT COALESCE(MAX(csv_row_index), -1) + 1 AS n FROM matches").get().n;
     db.prepare(
       `INSERT INTO matches

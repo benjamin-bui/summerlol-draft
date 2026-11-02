@@ -158,6 +158,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const [bestOf, setBestOf] = useState("3");
   const [addSeriesId, setAddSeriesId] = useState("");
   const [addResult, setAddResult] = useState("team1");
+  const [insertBeforeOrder, setInsertBeforeOrder] = useState("end");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const selectedYear = selected?.year;
@@ -270,6 +271,9 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const selectedSeries = activeSeries.find((series) => series.seriesId === addSeriesId);
   const seriesSides = getSeriesSides(selectedSeries);
   const gameByKey = new Map((structure?.games || []).map((game) => [game.matchKey, game]));
+  const orderedMatchOrders = [...new Set((structure?.games || []).map((game) => game.matchOrder))].sort((a, b) => a - b);
+  const maxMatchOrder = orderedMatchOrders.at(-1) || 0;
+  const addGameMatchOrder = insertBeforeOrder === "end" ? maxMatchOrder + 1 : Number(insertBeforeOrder);
   const teams = tournamentTeams(structure?.games);
   const visibleGames = (structure?.games || []).filter(
     (game) =>
@@ -554,6 +558,14 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                       <option value="draw">Draw</option>
                     </select>
                   </label>
+                  <label>Insert position
+                    <select value={insertBeforeOrder} onChange={(event) => setInsertBeforeOrder(event.target.value)}>
+                      {orderedMatchOrders.map((order) => (
+                        <option key={order} value={order}>Before match #{order}</option>
+                      ))}
+                      <option value="end">At end (match #{maxMatchOrder + 1})</option>
+                    </select>
+                  </label>
                   {seriesSides && (
                     <p className="stat-formula structure-series-score">
                       Current score: {seriesSides.team1} {seriesSides.wins.team1}{"\u2013"}{seriesSides.wins.team2} {seriesSides.team2}
@@ -564,11 +576,14 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                     className="columns-btn"
                     disabled={busy || !addSeriesId}
                     onClick={() => run(async () => {
-                      await editorApi.addSeriesGame(selected.year, selected.tournament, addSeriesId, { result: addResult }, csrfToken);
+                      await editorApi.addSeriesGame(selected.year, selected.tournament, addSeriesId, {
+                        result: addResult,
+                        matchOrder: addGameMatchOrder,
+                      }, csrfToken);
                       return editorApi.getTournamentStructure(selected.year, selected.tournament);
                     }, { clearSelection: true })}
                   >
-                    Add next game
+                    Insert game
                   </button>
                 </div>
               ) : <p className="stat-formula">Group existing games first to create a series.</p>}

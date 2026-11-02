@@ -130,6 +130,44 @@ describe("TournamentStructureEditor", () => {
     expect(within(dialog).getByLabelText("Series")).toHaveTextContent("Alpha Captain 1–1 Beta Captain");
   });
 
+  it("inserts a game before the selected match order", async () => {
+    const user = userEvent.setup();
+    const seriesStructure = {
+      ...structure,
+      series: [{
+        seriesId: "series-final",
+        stageId: "stage-1",
+        roundLabel: "Final",
+        bestOf: 5,
+        games: [
+          { matchKey: "match-1", team1: "Alpha", team2: "Beta", result: "Alpha", gameNumber: 1 },
+          { matchKey: "match-2", team1: "Beta", team2: "Alpha", result: "Beta", gameNumber: 2 },
+        ],
+      }],
+    };
+    vi.spyOn(editorApi, "getTournamentStructure").mockResolvedValue(seriesStructure);
+    const addGame = vi.spyOn(editorApi, "addSeriesGame").mockResolvedValue({});
+    render(
+      <TournamentStructureEditor
+        rows={[{ year: 2026, tournament: "Summer" }]}
+        onChanged={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "Tournament structure" });
+    await user.selectOptions(within(dialog).getByLabelText("Insert position"), "2");
+    await user.click(within(dialog).getByRole("button", { name: "Insert game" }));
+
+    await waitFor(() => expect(addGame).toHaveBeenCalledWith(
+      2026,
+      "Summer",
+      "series-final",
+      { result: "team1", matchOrder: 2 },
+      null,
+    ));
+  });
+
   it("defines the number, names and team allocation of round-robin groups and saves them", async () => {
     const user = userEvent.setup();
     const rrStructure = {

@@ -324,6 +324,14 @@ function ingestMatches(csvPath, { dbPath = DB_PATH } = {}) {
       );
       if (restored.changes) updateEditorRowIndex.run(rowIndex, match.match_key);
     }
+    db.exec(
+      `UPDATE matches
+       SET match_order = (
+         SELECT match_order FROM tournament_match_order_overrides
+         WHERE tournament_match_order_overrides.match_key = matches.match_key
+       )
+       WHERE match_key IN (SELECT match_key FROM tournament_match_order_overrides)`,
+    );
     ensureDefaultStages(
       db,
       db
