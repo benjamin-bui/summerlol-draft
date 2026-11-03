@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ApiError, api, downloadUrl, editorApi } from "../api/client";
+import { api, downloadUrl } from "../api/client";
 import DataTable from "../components/table/DataTable";
 import { coerceNumericColumns } from "../components/table/tableLogic";
 import { ChampionLink, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
@@ -7,11 +7,12 @@ import MatchDetailEditor from "../components/shared/MatchDetailEditor";
 import ReplayImportDialog from "../components/shared/ReplayImportDialog";
 import TournamentStructureEditor from "../components/shared/TournamentStructureEditor";
 import { ReplayError, readReplayFile } from "../utils/roflReplay";
+import { readScreenshotFile } from "../utils/screenshotImport";
 import { useAuth } from "../context/AuthContext";
 import { sortByRole } from "../utils/format";
 
 const SCREENSHOT_TYPES = ["image/png", "image/jpeg", "image/webp"];
-const SCREENSHOT_MAX_BYTES = 8 * 1024 * 1024; // the server refuses anything larger
+const SCREENSHOT_MAX_BYTES = 8 * 1024 * 1024;
 
 const MATCH_DATA_COLUMNS = [
   {
@@ -125,7 +126,7 @@ export default function MatchDataTab({ active }) {
   const replayInput = useRef(null);
   const screenshotInput = useRef(null);
   const [screenshotBusy, setScreenshotBusy] = useState(false);
-  const { canEdit, csrfToken } = useAuth();
+  const { canEdit } = useAuth();
 
   // The screenshot preview is a temporary browser URL; release it when the
   // dialog that shows it goes away.
@@ -136,8 +137,7 @@ export default function MatchDataTab({ active }) {
     };
   }, [pendingReplay]);
 
-  // Screenshots are read on the server (it runs the OCR); check what we can
-  // here first so an obviously wrong file fails fast, without an upload.
+  // Read screenshots in the browser so the image never leaves the device.
   async function chooseScreenshotFile(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -153,7 +153,7 @@ export default function MatchDataTab({ active }) {
     }
     setScreenshotBusy(true);
     try {
-      const summary = await editorApi.parseScreenshot(file, csrfToken);
+      const summary = await readScreenshotFile(file);
       setPendingReplay({
         ...summary,
         fileName: file.name,
@@ -161,7 +161,7 @@ export default function MatchDataTab({ active }) {
         imageFile: file,
       });
     } catch (error) {
-      setReplayError(error instanceof ApiError ? error.message : "Could not read that screenshot.");
+      setReplayError(error instanceof Error ? error.message : "Could not read that screenshot.");
     } finally {
       setScreenshotBusy(false);
     }
@@ -212,7 +212,7 @@ export default function MatchDataTab({ active }) {
           </button>
           <span className="replay-upload-hint">
             Fills in champions, K/D/A and roles from a replay (read in your browser; nothing is uploaded), or champions
-            and K/D/A from a screenshot of the post-game scoreboard (sent to the server to be read, and not stored),
+            and K/D/A from a screenshot of the post-game scoreboard (read in your browser; the image stays on your device),
             with roles suggested from each player{"\u2019"}s most common match history.
           </span>
           {replayError && (

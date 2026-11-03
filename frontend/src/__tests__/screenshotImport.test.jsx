@@ -2,10 +2,12 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("../utils/screenshotImport", () => ({ readScreenshotFile: vi.fn() }));
+import { readScreenshotFile } from "../utils/screenshotImport";
 import App from "../App";
 
 // Importing a screenshot of the post-game scoreboard from the Match History
-// tab: the server reads it (stubbed here), the editor reviews and corrects the
+// tab: the browser reads it, the editor reviews and corrects the
 // result, picks the match, and the corrected values land in the match editor.
 
 const baseFetch = global.fetch;
@@ -72,13 +74,12 @@ const SUMMARY = {
 };
 
 let calls;
-function mockServer(me, screenshot = () => json(SUMMARY)) {
+function mockServer(me) {
   calls = [];
   global.fetch = vi.fn((url, opts = {}) => {
     const u = String(url);
     calls.push({ url: u, method: opts.method || "GET", headers: opts.headers || {}, body: opts.body });
     if (u.startsWith("/api/auth/me")) return json(me);
-    if (u === "/api/editor/screenshot-parse") return screenshot(opts);
     if (u.startsWith("/api/editor/")) {
       const key = decodeURIComponent(u.split("/api/editor/matches/")[1]);
       return (opts.method || "GET") === "PUT" ? json({ ...editorState(key), rev: "rev-2" }) : json(editorState(key));
@@ -99,6 +100,7 @@ const png = (name = "board.png", type = "image/png", bytes = 64) => new File([ne
 const upload = (file) => userEvent.upload(screen.getByLabelText("Screenshot to import", { selector: "input" }), file);
 
 beforeEach(() => {
+  vi.mocked(readScreenshotFile).mockReset().mockResolvedValue(SUMMARY);
   vi.spyOn(window, "confirm").mockReturnValue(true);
   // jsdom has no object URLs; the dialog shows the screenshot through one.
   URL.createObjectURL = vi.fn(() => "blob:screenshot");
@@ -127,15 +129,12 @@ describe("importing a screenshot from the Match History tab", () => {
     mockServer(EDITOR);
     await renderMatchHistory();
     await screen.findByRole("button", { name: /import screenshot/i });
+    await screen.findByRole("button", { name: /import screenshot/i });
     const file = png();
     await upload(file);
 
-    // It is sent as the raw image, with the CSRF token.
-    const request = calls.find((c) => c.url === "/api/editor/screenshot-parse");
-    expect(request.method).toBe("POST");
-    expect(request.headers["Content-Type"]).toBe("image/png");
-    expect(request.headers["X-CSRF-Token"]).toBe("csrf-123");
-    expect(request.body).toBe(file);
+    expect(readScreenshotFile).toHaveBeenCalledWith(file);
+    expect(calls.some((call) => call.url.includes("screenshot-parse"))).toBe(false);
 
     const dialog = await screen.findByRole("dialog", { name: "Import screenshot" });
     expect(within(dialog).getByRole("img", { name: "Uploaded scoreboard screenshot" })).toHaveAttribute("src", "blob:screenshot");
@@ -195,9 +194,11 @@ describe("importing a screenshot from the Match History tab", () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:screenshot");
   });
 
-  it("explains when the server can't read the picture, opens no dialog, and lets the editor try again", async () => {
-    mockServer(EDITOR, () => json({ error: "Couldn't find the scoreboard. Use a screenshot of the post-game Scoreboard tab.", code: "no-scoreboard" }, 422));
+  it("explains when the browser can't read the picture, opens no dialog, and lets the editor try again", async () => {
+    mockServer(EDITOR);
+    vi.mocked(readScreenshotFile).mockRejectedValue(new Error("Couldn't find the scoreboard. Use a screenshot of the post-game Scoreboard tab."));
     await renderMatchHistory();
+    await screen.findByRole("button", { name: /import screenshot/i });
     await upload(png());
     expect(await screen.findByRole("alert")).toHaveTextContent(/Couldn't find the scoreboard/);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -224,17 +225,23 @@ describe("importing a screenshot from the Match History tab", () => {
     expect(calls.some((c) => c.url.includes("screenshot-parse"))).toBe(false);
   });
 
-  it("shows the server's message when reading is busy or unavailable", async () => {
-    mockServer(EDITOR, () => json({ error: "Another screenshot is being read. Try again in a few seconds.", code: "busy" }, 429));
+  it("shows a local OCR error", async () => {
+    mockServer(EDITOR);
+    vi.mocked(readScreenshotFile).mockRejectedValue(new Error("Could not load the local OCR engine."));
     await renderMatchHistory();
+    await screen.findByRole("button", { name: /import screenshot/i });
     await upload(png());
-    expect(await screen.findByRole("alert")).toHaveTextContent(/Another screenshot is being read/);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Could not load the local OCR engine/);
   });
 
   it("shows progress while the screenshot is being read", async () => {
+    mockServer(EDITOR);
     let finish;
-    mockServer(EDITOR, () => new Promise((resolve) => { finish = () => resolve({ ok: true, status: 200, json: () => Promise.resolve(SUMMARY) }); }));
+    vi.mocked(readScreenshotFile).mockImplementation(() => new Promise((resolve) => {
+      finish = () => resolve(SUMMARY);
+    }));
     await renderMatchHistory();
+    await screen.findByRole("button", { name: /import screenshot/i });
     await upload(png());
     const busy = await screen.findByRole("button", { name: /reading screenshot/i });
     expect(busy).toBeDisabled();
@@ -249,7 +256,8 @@ describe("importing a screenshot from the Match History tab", () => {
       checks: [{ level: "alert", text: "Team 1's kills don't add up to the scoreboard's totals (29/24/72). Check that team's numbers." }],
       players: SUMMARY.players.map((p) => (p.team === 100 ? { ...p, review: { ...p.review, kdaOk: false } } : p)),
     };
-    mockServer(EDITOR, () => json(summary));
+    mockServer(EDITOR);
+    vi.mocked(readScreenshotFile).mockResolvedValue(summary);
     await renderMatchHistory();
     await upload(png());
     const dialog = await screen.findByRole("dialog", { name: "Import screenshot" });

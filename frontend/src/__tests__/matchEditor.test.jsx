@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("../utils/screenshotImport", () => ({ readScreenshotFile: vi.fn() }));
+import { readScreenshotFile } from "../utils/screenshotImport";
 import App from "../App";
 
 // The editor controls must be invisible to everyone but signed-in editors,
@@ -88,14 +90,13 @@ const screenshotSummary = {
 };
 
 let calls;
-function mockServer({ me, editorGet, editorPut, screenshotPost = () => json(screenshotSummary) }) {
+function mockServer({ me, editorGet, editorPut }) {
   calls = [];
   global.fetch = vi.fn((url, opts = {}) => {
     const u = String(url);
     calls.push({ url: u, method: opts.method || "GET", headers: opts.headers || {}, body: opts.body });
     if (u.startsWith("/api/auth/me")) return json(me);
     if (u.startsWith("/api/editor/")) {
-      if (u === "/api/editor/screenshot-parse") return screenshotPost(u, opts);
       if ((opts.method || "GET") === "PUT") return editorPut(u, opts);
       return editorGet(u, opts);
     }
@@ -121,6 +122,7 @@ async function openFirstMatch(path = "/?tab=matchdata") {
 }
 
 beforeEach(() => {
+  vi.mocked(readScreenshotFile).mockReset().mockResolvedValue(screenshotSummary);
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
 afterEach(() => {
@@ -245,7 +247,6 @@ describe("match editor for a signed-in editor", () => {
       me: EDITOR,
       editorGet: (url) => json(editorState(decodeURIComponent(url.split("/").pop()))),
       editorPut: () => json({}),
-      screenshotPost: (_url, options) => json(screenshotSummary),
     });
     URL.createObjectURL = vi.fn(() => "blob:match-editor-screenshot");
     URL.revokeObjectURL = vi.fn();
@@ -259,10 +260,8 @@ describe("match editor for a signed-in editor", () => {
     fireEvent.drop(dialog, { dataTransfer: { files: [file], items: [file] } });
 
     expect(await within(dialog).findByRole("region", { name: "Screenshot import" })).toBeInTheDocument();
-    const request = calls.find((call) => call.url === "/api/editor/screenshot-parse");
-    expect(request.headers["Content-Type"]).toBe("image/jpeg");
-    expect(request.headers["X-CSRF-Token"]).toBe("csrf-123");
-    expect(request.body).toBe(file);
+    expect(readScreenshotFile).toHaveBeenCalledWith(file, { onProgress: expect.any(Function) });
+    expect(calls.some((call) => call.url.includes("screenshot-parse"))).toBe(false);
     expect(within(dialog).getByLabelText("Player 2 name")).toHaveValue("A1");
     expect(within(dialog).getByLabelText("A1 champion")).toHaveValue("Lux");
     expect(within(dialog).getByLabelText("A1 kills")).toHaveValue(4);
@@ -279,7 +278,6 @@ describe("match editor for a signed-in editor", () => {
       me: EDITOR,
       editorGet: (url) => json(editorState(decodeURIComponent(url.split("/").pop()))),
       editorPut: () => json({}),
-      screenshotPost: (_url, options) => json(screenshotSummary),
     });
     const appFetch = global.fetch;
     const imageUrl = "https://cdn.discordapp.com/attachments/123/image.png";
@@ -315,10 +313,9 @@ describe("match editor for a signed-in editor", () => {
       credentials: "omit",
       referrerPolicy: "no-referrer",
     });
-    const request = calls.find((call) => call.url === "/api/editor/screenshot-parse");
-    expect(request.headers["Content-Type"]).toBe("image/png");
-    expect(request.body).toBeInstanceOf(File);
-    expect(request.body.name).toBe("dropped-image.png");
+    expect(readScreenshotFile).toHaveBeenCalledWith(expect.any(File), { onProgress: expect.any(Function) });
+    expect(readScreenshotFile.mock.calls[0][0].name).toBe("dropped-image.png");
+    expect(calls.some((call) => call.url.includes("screenshot-parse"))).toBe(false);
   });
 
   it("lists the server's validation problems by player and keeps the form open", async () => {

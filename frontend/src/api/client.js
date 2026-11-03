@@ -70,11 +70,6 @@ export const authApi = {
 };
 
 export const editorApi = {
-  // Sends a screenshot of the post-game scoreboard to be read on the server (it
-  // is processed in memory and not stored). Resolves to a match summary shaped
-  // like a parsed replay, plus what is needed to review it.
-  parseScreenshot: (file, csrfToken, contentType = file.type) =>
-    sendJson("/api/editor/screenshot-parse", { method: "POST", csrfToken, rawBody: file, contentType }),
   getMatch: (matchKey) => sendJson(`/api/editor/matches/${encodeURIComponent(matchKey)}`),
   saveMatch: (matchKey, body, csrfToken) =>
     sendJson(`/api/editor/matches/${encodeURIComponent(matchKey)}`, { method: "PUT", csrfToken, body }),

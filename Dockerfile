@@ -11,6 +11,10 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 COPY frontend/ ./
+# The Vite build reads this icon directory to generate the client-side
+# champion matcher manifest. The icons themselves are copied in the final
+# stage, not emitted into the frontend build.
+COPY backend/public/icons/champions /backend/public/icons/champions
 # Build to a throwaway dir inside this stage rather than the default
 # ../backend/public (which only makes sense for a local, non-Docker build
 # where frontend/ and backend/ are real sibling directories) -- see
@@ -32,12 +36,6 @@ WORKDIR /app
 # su-exec lets the entrypoint drop from root to the "node" user after
 # fixing volume permissions (see docker-entrypoint.sh).
 RUN apk add --no-cache python3 make g++ su-exec
-
-# Reads match screenshots (see backend/src/lib/screenshot-import.js): the
-# native `tesseract` program plus its English model, run once per screenshot
-# and never as a background process. sharp, which decodes the images, ships
-# prebuilt musl binaries through npm, so it needs nothing here.
-RUN apk add --no-cache tesseract-ocr tesseract-ocr-data-eng
 
 COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev

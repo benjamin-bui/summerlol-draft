@@ -4,6 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { ROLE_LABELS } from "../../utils/format";
 import { applyReplayToForm, planReplayImport, slotKey } from "../../utils/replayMatching";
 import { ReplayError, formatDuration, readReplayFile } from "../../utils/roflReplay";
+import { readScreenshotFile } from "../../utils/screenshotImport";
 import ScreenshotReviewTable from "./ScreenshotReviewTable";
 
 const SCREENSHOT_TYPES = {
@@ -248,6 +249,7 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
   const [replayInfo, setReplayInfo] = useState(null);
   const [replayError, setReplayError] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const fileInput = useRef(null);
   const dragDepth = useRef(0);
@@ -396,7 +398,7 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
       if (importedFile.size > MAX_SCREENSHOT_BYTES) {
         throw new Error("That image is larger than 8 MB. Crop it to the scoreboard or save it at a smaller size.");
       }
-      const screenshot = await editorApi.parseScreenshot(importedFile, csrfToken, contentType);
+      const screenshot = await readScreenshotFile(importedFile, { onProgress: setImportProgress });
       const history = await getRoleHistory(screenshot);
       const imageUrl = URL.createObjectURL(importedFile);
       if (screenshotUrl.current) URL.revokeObjectURL(screenshotUrl.current);
@@ -414,6 +416,7 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
       );
     } finally {
       setImporting(false);
+      setImportProgress("");
     }
   }
 
@@ -575,7 +578,7 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
                 onChange={chooseImportFile}
               />
               <button type="button" className="columns-btn" disabled={importing} onClick={() => fileInput.current?.click()}>
-                {importing ? "Reading file\u2026" : replayInfo ? "Import another file\u2026" : "Import from replay or screenshot\u2026"}
+                {importing ? importProgress || "Reading file\u2026" : replayInfo ? "Import another file\u2026" : "Import from replay or screenshot\u2026"}
               </button>
               <span className="replay-upload-hint">
                 Drop a .rofl replay, PNG/JPEG/WebP scoreboard image or link to an image anywhere in this dialog, or choose a file.
