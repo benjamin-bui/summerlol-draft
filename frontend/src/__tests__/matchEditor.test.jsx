@@ -274,6 +274,53 @@ describe("match editor for a signed-in editor", () => {
     expect(within(dialog).getByLabelText("A1 kills")).toHaveValue(8);
   });
 
+  it("downloads a dragged image URL and imports it as a screenshot", async () => {
+    mockServer({
+      me: EDITOR,
+      editorGet: (url) => json(editorState(decodeURIComponent(url.split("/").pop()))),
+      editorPut: () => json({}),
+      screenshotPost: (_url, options) => json(screenshotSummary),
+    });
+    const appFetch = global.fetch;
+    const imageUrl = "https://cdn.discordapp.com/attachments/123/image.png";
+    const imageBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" });
+    global.fetch = vi.fn((url, options) =>
+      url === imageUrl
+        ? Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: { get: (name) => (name === "content-type" ? "image/png" : null) },
+            blob: () => Promise.resolve(imageBlob),
+          })
+        : appFetch(url, options),
+    );
+    URL.createObjectURL = vi.fn(() => "blob:match-editor-screenshot");
+    URL.revokeObjectURL = vi.fn();
+    await openFirstMatch();
+    await userEvent.click(await screen.findByRole("button", { name: /edit match details/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: /edit match details/i });
+    const dataTransfer = {
+      files: [],
+      types: ["text/uri-list"],
+      getData: (type) => (type === "text/uri-list" ? imageUrl : ""),
+    };
+    fireEvent.dragEnter(dialog, { dataTransfer });
+    expect(within(dialog).getByRole("status")).toHaveTextContent(/drop one \.rofl/i);
+    fireEvent.drop(dialog, { dataTransfer });
+
+    expect(await within(dialog).findByRole("region", { name: "Screenshot import" })).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledWith(imageUrl, {
+      mode: "cors",
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
+    });
+    const request = calls.find((call) => call.url === "/api/editor/screenshot-parse");
+    expect(request.headers["Content-Type"]).toBe("image/png");
+    expect(request.body).toBeInstanceOf(File);
+    expect(request.body.name).toBe("dropped-image.png");
+  });
+
   it("lists the server's validation problems by player and keeps the form open", async () => {
     mockServer({
       me: EDITOR,

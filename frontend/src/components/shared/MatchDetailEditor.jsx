@@ -12,7 +12,64 @@ const SCREENSHOT_TYPES = {
   ".png": "image/png",
   ".webp": "image/webp",
 };
+const SCREENSHOT_EXTENSIONS = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+};
 const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
+const IMAGE_DROP_TYPES = ["text/uri-list", "text/x-moz-url", "text/html", "text/plain"];
+
+function getDroppedImageUrl(dataTransfer) {
+  const types = Array.from(dataTransfer?.types || []);
+  const candidates = [];
+  if (types.includes("text/html")) {
+    const html = dataTransfer.getData("text/html");
+    if (html) {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      candidates.push(...Array.from(doc.images, (image) => image.src));
+    }
+  }
+  for (const type of ["text/uri-list", "text/x-moz-url", "text/plain"]) {
+    if (!types.includes(type)) continue;
+    const value = dataTransfer.getData(type);
+    if (value) candidates.push(...value.split(/\r?\n/).filter((line) => line && !line.startsWith("#")));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const url = new URL(candidate, window.location.href);
+      if (url.protocol === "http:" || url.protocol === "https:") return url.href;
+    } catch {
+      // Ignore drag payload fields that are not URLs.
+    }
+  }
+  return null;
+}
+
+async function downloadDroppedImage(url) {
+  let response;
+  try {
+    response = await fetch(url, { mode: "cors", credentials: "omit", referrerPolicy: "no-referrer" });
+  } catch {
+    throw new Error("Could not download that image. Try saving it and importing it as a file.");
+  }
+  if (!response.ok) throw new Error(`Could not download that image (HTTP ${response.status}).`);
+
+  const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+  const extension = SCREENSHOT_EXTENSIONS[contentType];
+  if (!extension) throw new Error("The dropped link is not a PNG, JPEG or WebP image.");
+  const contentLength = Number(response.headers.get("content-length"));
+  if (contentLength > MAX_SCREENSHOT_BYTES) {
+    throw new Error("That image is larger than 8 MB. Crop it to the scoreboard or save it at a smaller size.");
+  }
+
+  const blob = await response.blob();
+  if (blob.size > MAX_SCREENSHOT_BYTES) {
+    throw new Error("That image is larger than 8 MB. Crop it to the scoreboard or save it at a smaller size.");
+  }
+  return new File([blob], `dropped-image${extension}`, { type: contentType });
+}
 
 // A form for one match's per-player details (champion, K/D/A, role) and each
 // team's bans. Only ever opened for signed-in editors; the server independently
@@ -296,18 +353,19 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
     }));
   }
 
-  async function importFile(file) {
-    if (!file || importing) return;
+  async function importFile(file, droppedImageUrl = null) {
+    if ((!file && !droppedImageUrl) || importing) return;
     setReplayError(null);
     if (!state || !form) {
       setReplayError("Wait for the match details to load before importing a file.");
       return;
     }
-    const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
     setImporting(true);
     try {
+      const importedFile = file || (await downloadDroppedImage(droppedImageUrl));
+      const extension = importedFile.name.slice(importedFile.name.lastIndexOf(".")).toLowerCase();
       if (extension === ".rofl") {
-        const replay = await readReplayFile(file);
+        const replay = await readReplayFile(importedFile);
         beginReplay(replay, state, replayInfo ? replayInfo.base : form);
         if (screenshotUrl.current) {
           URL.revokeObjectURL(screenshotUrl.current);
@@ -320,14 +378,14 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
       if (!contentType) {
         throw new Error("Choose a .rofl, .png, .jpg, .jpeg or .webp file.");
       }
-      if (file.size > MAX_SCREENSHOT_BYTES) {
+      if (importedFile.size > MAX_SCREENSHOT_BYTES) {
         throw new Error("That image is larger than 8 MB. Crop it to the scoreboard or save it at a smaller size.");
       }
-      const screenshot = await editorApi.parseScreenshot(file, csrfToken, contentType);
-      const imageUrl = URL.createObjectURL(file);
+      const screenshot = await editorApi.parseScreenshot(importedFile, csrfToken, contentType);
+      const imageUrl = URL.createObjectURL(importedFile);
       if (screenshotUrl.current) URL.revokeObjectURL(screenshotUrl.current);
       screenshotUrl.current = imageUrl;
-      beginReplay({ ...screenshot, fileName: file.name, imageUrl }, state, replayInfo ? replayInfo.base : form);
+      beginReplay({ ...screenshot, fileName: importedFile.name, imageUrl }, state, replayInfo ? replayInfo.base : form);
     } catch (error) {
       setReplayError(
         error instanceof ReplayError
@@ -351,7 +409,8 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
 
   function handleDragEnter(event) {
     event.preventDefault();
-    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
+    const types = Array.from(event.dataTransfer?.types || []);
+    if (!types.includes("Files") && !IMAGE_DROP_TYPES.some((type) => types.includes(type))) return;
     dragDepth.current += 1;
     setDragActive(true);
   }
@@ -373,7 +432,16 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
       return;
     }
     if (importing) return;
-    void importFile(files[0]);
+    if (files[0]) {
+      void importFile(files[0]);
+      return;
+    }
+    const imageUrl = getDroppedImageUrl(event.dataTransfer);
+    if (!imageUrl) {
+      setReplayError("Drop a replay or image file, or a link to a PNG, JPEG or WebP image.");
+      return;
+    }
+    void importFile(null, imageUrl);
   }
 
   function swapReplayTeams() {
@@ -494,7 +562,7 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
                 {importing ? "Reading file\u2026" : replayInfo ? "Import another file\u2026" : "Import from replay or screenshot\u2026"}
               </button>
               <span className="replay-upload-hint">
-                Drop a .rofl replay or PNG/JPEG/WebP scoreboard image anywhere in this dialog, or choose a file.
+                Drop a .rofl replay, PNG/JPEG/WebP scoreboard image or link to an image anywhere in this dialog, or choose a file.
               </span>
             </div>
             {dragActive && (
