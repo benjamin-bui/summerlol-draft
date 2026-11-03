@@ -3142,6 +3142,15 @@ th[data-champion-sort]:focus-visible {
   color: var(--muted);
   font-size: 0.9rem;
 }
+.match-editor-result {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: min(320px, 100%);
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
 .match-editor-teams {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

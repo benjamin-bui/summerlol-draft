@@ -289,17 +289,22 @@ test("an authorized editor can sign in, load a match, and save changes", async (
   const state = await (await browser.request(`/api/editor/matches/${MATCH_KEY}`)).json();
   assert.deepEqual(state.teams.map((t) => t.players.map((p) => p.displayName)), [["Cap1", "A1", "A2"], ["Cap2", "B1", "B2"]]);
   assert.equal(state.winnerSide, 1, "the recorded winner (Cap1) is team 1");
+  assert.equal(state.resultSide, "team1");
   assert.equal(state.teams[0].players[1].champion, "Ahri");
   assert.deepEqual(state.bans.team2.map((b) => b.champion), ["Zed"]);
 
   const save = await browser.request(`/api/editor/matches/${MATCH_KEY}`, {
     method: "PUT",
     headers: sameOriginHeaders(app, me.csrfToken),
-    body: validBody(state.rev),
+    body: validBody(state.rev, { resultSide: "team2" }),
   });
   assert.equal(save.status, 200, JSON.stringify(await save.clone().json()));
   const saved = await save.json();
   assert.notEqual(saved.rev, state.rev);
+  assert.equal(saved.result, "Cap2");
+  assert.equal(saved.resultSide, "team2");
+  assert.equal(saved.winnerSide, 2);
+  assert.equal(app.db.prepare("SELECT result FROM matches WHERE match_key = ?").get(MATCH_KEY).result, "Cap2");
   assert.deepEqual(saved.bans.team2.map((b) => b.champion), ["Zed", "Lux"], "duplicate ban collapsed");
 
   assert.deepEqual(
@@ -311,6 +316,8 @@ test("an authorized editor can sign in, load a match, and save changes", async (
   );
   const audit = app.db.prepare("SELECT * FROM match_detail_audit").get();
   assert.equal(audit.edited_by_sub, "user-1");
+  assert.match(audit.before_json, /"result":"Cap1"/);
+  assert.match(audit.after_json, /"result":"Cap2"/);
   assert.match(audit.before_json, /"kills":1/);
   assert.match(audit.after_json, /"kills":5/);
   assert.equal(app.db.prepare("SELECT edited_by_sub FROM match_detail_edits WHERE match_key = ?").get(MATCH_KEY).edited_by_sub, "user-1");
@@ -462,6 +469,7 @@ test("invalid edits are rejected with specific problems and change nothing", asy
     ["markup in a champion", { players: [{ player: "A1", champion: "<img src=x onerror=1>" }] }, "not a valid champion"],
     ["six bans", { bans: { team1: ["A", "B", "C", "D", "E", "F"] } }, "at most 5"],
     ["bans that aren't a list", { bans: { team1: "Zed" } }, "must be a list"],
+    ["an unknown match result", { resultSide: "team3" }, "Choose Team 1, Team 2, or Draw"],
   ];
   for (const [label, partial, expected] of cases) {
     const res = await send({ ...validBody(rev), ...partial });

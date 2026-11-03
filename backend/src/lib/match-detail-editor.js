@@ -1,5 +1,5 @@
-// Reading, validating and saving one match's details (per-player champion /
-// K/D/A / role, plus each team's bans) for the in-app editor.
+// Reading, validating and saving one match's result, per-player details and
+// team bans for the in-app editor.
 //
 // The server is the only authority on who played for which team: it derives
 // the two rosters itself and rejects anything that doesn't line up, so a
@@ -65,8 +65,9 @@ function storedBans(db, matchKey) {
 
 // A fingerprint of what is stored right now. An editor sends back the rev they
 // loaded; if it no longer matches, someone else saved in between.
-function computeRev(details, bans) {
+function computeRev(details, bans, result) {
   const canonical = JSON.stringify({
+    result,
     details: details
       .map((d) => [
         normalizePlayerId(d.player),
@@ -155,7 +156,7 @@ function readMatchState(db, matchKey, identityMap) {
     });
   }
   // Which team the recorded result says won (1 or 2), so a replay's winner can
-  // be sanity-checked against it. null when the result names neither captain.
+  // be sanity-checked against it.
   const winner = normalizePlayerId(match.result);
   const winnerSide =
     winner && winner === normalizePlayerId(match.team1)
@@ -163,8 +164,14 @@ function readMatchState(db, matchKey, identityMap) {
       : winner && winner === normalizePlayerId(match.team2)
         ? 2
         : null;
+  let resultSide = "";
+  if (winnerSide === 1) resultSide = "team1";
+  else if (winnerSide === 2) resultSide = "team2";
+  else if (String(match.result).trim().toLowerCase() === "draw") resultSide = "draw";
   return {
     matchKey: match.matchKey,
+    result: match.result,
+    resultSide,
     winnerSide,
     year: match.year,
     tournament: match.tournament,
@@ -176,7 +183,7 @@ function readMatchState(db, matchKey, identityMap) {
       ...d,
       championKey: d.champion ? championKey(d.champion) : null,
     })),
-    rev: computeRev(details, bans),
+    rev: computeRev(details, bans, match.result),
     roles: ROLES,
     maxBans: MAX_BANS_PER_SIDE,
     championSuggestions: championSuggestions(db),
@@ -227,10 +234,18 @@ function parseRole(value, field, problems) {
 
 // Turns a request body into the exact rows to store, or throws ValidationError
 // listing every problem found (so the UI can show them all at once).
-function validateEdit(body, teams) {
+function validateEdit(body, teams, match) {
   const problems = [];
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new ValidationError([{ field: "body", message: "Expected a JSON object" }]);
+  }
+
+  let result = match.result;
+  if (body.resultSide !== undefined && body.resultSide !== "") {
+    if (body.resultSide === "team1") result = match.team1;
+    else if (body.resultSide === "team2") result = match.team2;
+    else if (body.resultSide === "draw") result = "Draw";
+    else problems.push({ field: "resultSide", message: "Choose Team 1, Team 2, or Draw" });
   }
 
   const slots = new Map();
@@ -318,7 +333,7 @@ function validateEdit(body, teams) {
     problems.push({ field: "baseRev", message: "baseRev is required" });
   }
   if (problems.length) throw new ValidationError(problems);
-  return { rows, bans, baseRev: body.baseRev };
+  return { rows, bans, result, baseRev: body.baseRev };
 }
 
 // ---- saving -----------------------------------------------------------------
@@ -327,15 +342,14 @@ function validateEdit(body, teams) {
 // Returns the match's new state. Throws NotFoundError, ValidationError or
 // ConflictError; nothing is written in any of those cases.
 function saveMatchEdit(db, matchKey, body, editor, identityMap) {
-  const match = findMatch(db, matchKey);
-  if (!match) throw new NotFoundError();
-
   return db.transaction(() => {
+    const match = findMatch(db, matchKey);
+    if (!match) throw new NotFoundError();
     const beforeDetails = storedDetails(db, matchKey);
     const beforeBans = storedBans(db, matchKey);
     const { teams, matchedDetailIds } = buildTeams(db, match, beforeDetails, identityMap);
-    const { rows, bans, baseRev } = validateEdit(body, teams);
-    const currentRev = computeRev(beforeDetails, beforeBans);
+    const { rows, bans, result, baseRev } = validateEdit(body, teams, match);
+    const currentRev = computeRev(beforeDetails, beforeBans, match.result);
     if (baseRev !== currentRev) throw new ConflictError();
 
     // Saving what is already stored changes nothing, so it must not mark the
@@ -345,6 +359,7 @@ function saveMatchEdit(db, matchKey, body, editor, identityMap) {
     const nextRev = computeRev(
       [...orphans, ...rows],
       [1, 2].flatMap((side) => bans[side].map((champion) => ({ side, champion }))),
+      result,
     );
     if (nextRev === currentRev) return readMatchState(db, matchKey, identityMap);
 
@@ -367,11 +382,13 @@ function saveMatchEdit(db, matchKey, body, editor, identityMap) {
       for (const champion of bans[side]) insertBan.run(matchKey, side, champion);
     }
 
-    const snapshot = (details, banRows) =>
+    const snapshot = (matchResult, details, banRows) =>
       JSON.stringify({
+        result: matchResult,
         details: details.map(({ id, ...d }) => d),
         bans: banRows,
       });
+    db.prepare("UPDATE matches SET result = ? WHERE match_key = ?").run(result, matchKey);
     db.prepare(
       `INSERT INTO match_detail_edits (match_key, edited_by_sub, edited_by_email, edited_at)
        VALUES (?, ?, ?, datetime('now'))
@@ -387,8 +404,8 @@ function saveMatchEdit(db, matchKey, body, editor, identityMap) {
       matchKey,
       editor.sub,
       editor.email,
-      snapshot(beforeDetails, beforeBans),
-      snapshot(storedDetails(db, matchKey), storedBans(db, matchKey)),
+      snapshot(match.result, beforeDetails, beforeBans),
+      snapshot(result, storedDetails(db, matchKey), storedBans(db, matchKey)),
     );
 
     return readMatchState(db, matchKey, identityMap);

@@ -260,7 +260,9 @@ export default function MatchDataTab({ active }) {
           onSaved={(saved) =>
             setRows((current) =>
               current.map((r) =>
-                r.match_key === saved.matchKey ? { ...r, match_details: saved.matchDetails, bans: saved.bans } : r,
+                r.match_key === saved.matchKey
+                  ? { ...r, result: saved.result, match_details: saved.matchDetails, bans: saved.bans }
+                  : r,
               ),
             )
           }

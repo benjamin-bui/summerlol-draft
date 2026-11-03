@@ -32,6 +32,9 @@ function editorState(matchKey) {
   });
   return {
     matchKey,
+    result: "Cap1",
+    resultSide: "team1",
+    winnerSide: 1,
     teams: [
       { side: 1, name: "Cap1", players: [player("Cap1", { isCaptain: true, champion: "Ahri", kills: 1, deaths: 2, assists: 3, role: "Mid" }), player("A1")] },
       { side: 2, name: "Cap2", players: [player("Cap2", { side: 2, isCaptain: true }), player("B1", { side: 2 })] },
@@ -209,6 +212,9 @@ describe("match editor for a signed-in editor", () => {
       },
       editorPut: () => {
         const saved = editorState(matchKey);
+        saved.result = "Cap2";
+        saved.resultSide = "team2";
+        saved.winnerSide = 2;
         saved.matchDetails = [{ matchKey, player: "A1", champion: "Lux", kills: 4, deaths: 5, assists: 6, role: "Mid", championKey: "lux" }];
         saved.bans = { team1: [{ champion: "Yasuo", key: "yasuo" }], team2: [] };
         saved.rev = "rev-2";
@@ -228,6 +234,7 @@ describe("match editor for a signed-in editor", () => {
     await userEvent.type(within(dialog).getByLabelText("A1 kills"), "4");
     await userEvent.selectOptions(within(dialog).getByLabelText("A1 role"), "Mid");
     await userEvent.type(within(dialog).getByLabelText("Cap1 ban 1"), "Yasuo");
+    await userEvent.selectOptions(within(dialog).getByLabelText("Match result"), "team2");
     expect(save).toBeEnabled();
     await userEvent.click(save);
 
@@ -236,6 +243,7 @@ describe("match editor for a signed-in editor", () => {
     expect(put.headers["X-CSRF-Token"]).toBe("csrf-123");
     const body = JSON.parse(put.body);
     expect(body.baseRev).toBe("rev-1");
+    expect(body.resultSide).toBe("team2");
     expect(body.players.find((p) => p.player === "A1")).toEqual({
       player: "A1", champion: "Lux", kills: 4, deaths: null, assists: null, role: "Mid",
     });

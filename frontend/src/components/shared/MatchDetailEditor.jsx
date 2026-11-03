@@ -85,6 +85,7 @@ function toForm(state) {
     return names;
   };
   return {
+    resultSide: state.resultSide ?? "",
     teams: state.teams.map((team) => ({
       side: team.side,
       name: team.name,
@@ -109,6 +110,7 @@ const numberOrNull = (text) => (String(text).trim() === "" ? null : Number(text)
 function toPayload(form, rev) {
   return {
     baseRev: rev,
+    resultSide: form.resultSide,
     players: form.teams.flatMap((team) =>
       team.players.map((p) => ({
         player: p.player,
@@ -603,6 +605,22 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
                 onChangePlayer={updateScreenshotPlayer}
               />
             )}
+
+            <label className="match-editor-result">
+              Match result
+              <select
+                aria-label="Match result"
+                value={form.resultSide}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, resultSide: event.target.value }))
+                }
+              >
+                {form.resultSide === "" && <option value="">No winner recorded</option>}
+                <option value="team1">{form.teams[0].name} wins</option>
+                <option value="team2">{form.teams[1].name} wins</option>
+                <option value="draw">Draw</option>
+              </select>
+            </label>
 
             <div className="match-editor-teams">
               {form.teams.map((team, teamIndex) => {

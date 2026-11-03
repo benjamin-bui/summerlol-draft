@@ -63,7 +63,7 @@ function ensureMatchDetailsSchema(db) {
     )
   `);
   // Append-only history of every editor save: who, when, and the full
-  // before/after of the match's details and bans.
+  // before/after of the match's result, details and bans.
   db.exec(`
     CREATE TABLE IF NOT EXISTS match_detail_audit (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

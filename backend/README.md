@@ -133,7 +133,8 @@ How access is enforced (all server-side; hiding buttons is only cosmetic):
   request. Login uses the authorization-code flow with PKCE, `state` and
   `nonce`; the redirect URI comes from `PUBLIC_URL`, never from request headers.
 - The server derives each team's roster itself and validates every field
-  (known players, roles, 0-99 stats, champion names, at most 5 bans per team).
+  (match result, known players, roles, 0-99 stats, champion names, at most 5
+  bans per team).
   Two editors saving over each other get a 409 instead of a silent overwrite.
 
 Data behavior worth knowing:
