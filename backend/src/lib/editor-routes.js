@@ -16,6 +16,7 @@ const {
   StructureNotFoundError,
   StructureValidationError,
   addGameToSeries,
+  addTournamentGame,
   createSeries,
   readTournamentStructure,
   saveStages,
@@ -166,6 +167,21 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap, screenshots })
           req.editor,
         ),
       );
+    } catch (error) {
+      sendStructureError(res, error);
+    }
+  });
+
+  router.post(`${prefix}/tournaments/:year/:tournament/games`, (req, res) => {
+    try {
+      addTournamentGame(
+        db,
+        Number(req.params.year),
+        req.params.tournament,
+        req.body,
+        req.editor,
+      );
+      res.status(201).json(readTournamentStructure(db, Number(req.params.year), req.params.tournament));
     } catch (error) {
       sendStructureError(res, error);
     }

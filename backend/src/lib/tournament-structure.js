@@ -773,39 +773,59 @@ function updateGameRounds(db, year, tournament, body, editor) {
   return readTournamentStructure(db, year, tournament);
 }
 
-function addGameToSeries(db, year, tournament, seriesId, body, editor) {
+function addTournamentGame(db, year, tournament, body, editor) {
   validateScope(db, year, tournament);
   if (!body || !["team1", "team2", "draw"].includes(body.result)) {
     throw new StructureValidationError("Choose the game winner or a draw");
   }
-  const series = db
-    .prepare(
-      `SELECT series_id AS seriesId, stage_id AS stageId
-       FROM tournament_series WHERE series_id = ? AND year = ? AND tournament = ?`,
-    )
-    .get(seriesId, year, tournament);
-  if (!series) throw new StructureNotFoundError("Series not found");
-  const activeStage = db
-    .prepare(
-      `SELECT 1 FROM tournament_stages s
-       LEFT JOIN tournament_stage_overrides o ON o.stage_id = s.stage_id
-       WHERE s.stage_id = ? AND s.year = ? AND s.tournament = ? AND COALESCE(o.is_deleted, 0) = 0`,
-    )
-    .get(series.stageId, year, tournament);
-  if (!activeStage) throw new StructureValidationError("This series belongs to a removed stage");
-  const seriesGames = db
-    .prepare(
-      `SELECT m.match_key AS matchKey, m.team1, m.team2
-       FROM matches m
-       LEFT JOIN game_structure_overrides o ON o.match_key = m.match_key
-       LEFT JOIN csv_game_structure c ON c.match_key = m.match_key
-       WHERE (CASE WHEN o.match_key IS NOT NULL THEN o.series_id ELSE c.series_id END) = ?
-       ORDER BY m.match_order`,
-    )
-    .all(seriesId);
-  if (!seriesGames.length) throw new StructureValidationError("Add this game to a series that already has at least one game");
-  const team1 = seriesGames[0].team1;
-  const team2 = seriesGames[0].team2;
+  const seriesId = body.seriesId == null || body.seriesId === "" ? null : body.seriesId;
+  if (seriesId !== null && typeof seriesId !== "string") {
+    throw new StructureValidationError("Choose a valid series");
+  }
+  let stageId = body.stageId == null || body.stageId === "" ? null : body.stageId;
+  let team1;
+  let team2;
+  if (seriesId) {
+    const series = db
+      .prepare(
+        `SELECT series_id AS seriesId, stage_id AS stageId
+         FROM tournament_series WHERE series_id = ? AND year = ? AND tournament = ?`,
+      )
+      .get(seriesId, year, tournament);
+    if (!series) throw new StructureNotFoundError("Series not found");
+    const seriesGames = db
+      .prepare(
+        `SELECT m.team1, m.team2
+         FROM matches m
+         LEFT JOIN game_structure_overrides o ON o.match_key = m.match_key
+         LEFT JOIN csv_game_structure c ON c.match_key = m.match_key
+         WHERE (CASE WHEN o.match_key IS NOT NULL THEN o.series_id ELSE c.series_id END) = ?
+         ORDER BY m.match_order`,
+      )
+      .all(seriesId);
+    if (!seriesGames.length) throw new StructureValidationError("Add this game to a series that already has at least one game");
+    team1 = seriesGames[0].team1;
+    team2 = seriesGames[0].team2;
+    stageId = series.stageId;
+  } else {
+    const teamNames = tournamentTeamNames(db, year, tournament);
+    team1 = typeof body.team1 === "string" ? teamNames.get(body.team1.trim().toLowerCase()) : null;
+    team2 = typeof body.team2 === "string" ? teamNames.get(body.team2.trim().toLowerCase()) : null;
+    if (!team1 || !team2 || team1.toLowerCase() === team2.toLowerCase()) {
+      throw new StructureValidationError("Choose two different teams from this tournament");
+    }
+  }
+  if (stageId !== null) {
+    if (typeof stageId !== "string") throw new StructureValidationError("Choose a valid stage");
+    const activeStage = db
+      .prepare(
+        `SELECT 1 FROM tournament_stages s
+         LEFT JOIN tournament_stage_overrides o ON o.stage_id = s.stage_id
+         WHERE s.stage_id = ? AND s.year = ? AND s.tournament = ? AND COALESCE(o.is_deleted, 0) = 0`,
+      )
+      .get(stageId, year, tournament);
+    if (!activeStage) throw new StructureValidationError("Choose a stage in this tournament");
+  }
   const resultSide = body.result;
   const result = resultSide === "team1" ? team1 : resultSide === "team2" ? team2 : null;
   if (!result && resultSide !== "draw") throw new StructureValidationError("Choose the game winner or a draw");
@@ -867,11 +887,15 @@ function addGameToSeries(db, year, tournament, seriesId, body, editor) {
       `INSERT INTO game_structure_overrides
        (match_key, stage_id, series_id, edited_by_sub, edited_by_email)
        VALUES (?, ?, ?, ?, ?)`,
-    ).run(matchKey, series.stageId, seriesId, editor.sub, editor.email);
+    ).run(matchKey, stageId, seriesId, editor.sub, editor.email);
     auditStructure(db, year, tournament, editor, before);
   });
   insert();
   return { matchKey, matchOrder, seriesId };
+}
+
+function addGameToSeries(db, year, tournament, seriesId, body, editor) {
+  return addTournamentGame(db, year, tournament, { ...body, seriesId }, editor);
 }
 
 module.exports = {
@@ -880,6 +904,7 @@ module.exports = {
   StructureNotFoundError,
   StructureValidationError,
   addGameToSeries,
+  addTournamentGame,
   createSeries,
   defaultStageId,
   ensureDefaultStages,

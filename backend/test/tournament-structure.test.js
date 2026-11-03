@@ -7,6 +7,7 @@ const Database = require("better-sqlite3");
 const { buildMatchKey } = require("../src/lib/match-identity");
 const {
   addGameToSeries,
+  addTournamentGame,
   createSeries,
   ensureDefaultStages,
   ensureTournamentStructureSchema,
@@ -125,6 +126,35 @@ test("inserting a game at a match order shifts later games and keeps series numb
       () => addGameToSeries(db, 2026, "Summer", seriesId, { result: "team1", matchOrder: 7 }, editor),
       /between 1 and 6/,
     );
+  } finally {
+    db.close();
+  }
+});
+
+test("a standalone game can be inserted for two tournament teams without a series", () => {
+  const db = createDb();
+  try {
+    const { stage } = seedRoundRobin(db);
+    const added = addTournamentGame(db, 2026, "Summer", {
+      team1: " alpha ",
+      team2: "GAMMA",
+      result: "team2",
+      stageId: stage.stageId,
+      matchOrder: 2,
+    }, editor);
+
+    const game = readTournamentStructure(db, 2026, "Summer").games.find((item) => item.matchKey === added.matchKey);
+    assert.equal(game.team1, "Alpha");
+    assert.equal(game.team2, "Gamma");
+    assert.equal(game.result, "Gamma");
+    assert.equal(game.matchOrder, 2);
+    assert.equal(game.stageId, stage.stageId);
+    assert.equal(game.seriesId, null);
+    assert.throws(() => addTournamentGame(db, 2026, "Summer", {
+      team1: "Alpha",
+      team2: "Unknown",
+      result: "team1",
+    }, editor), /two different teams from this tournament/);
   } finally {
     db.close();
   }

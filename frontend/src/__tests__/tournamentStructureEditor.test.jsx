@@ -126,7 +126,7 @@ describe("TournamentStructureEditor", () => {
     const resultSelect = within(dialog).getByLabelText("Result");
     expect(within(resultSelect).getByRole("option", { name: "Alpha Captain wins (1 win)" })).toBeInTheDocument();
     expect(within(resultSelect).getByRole("option", { name: "Beta Captain wins (1 win)" })).toBeInTheDocument();
-    expect(within(dialog).getByText("Current score: Alpha Captain 1–1 Beta Captain")).toBeInTheDocument();
+    expect(within(dialog).getByText("Alpha Captain vs Beta Captain · Current score: 1–1")).toBeInTheDocument();
     expect(within(dialog).getByLabelText("Series")).toHaveTextContent("Alpha Captain 1–1 Beta Captain");
   });
 
@@ -146,7 +146,7 @@ describe("TournamentStructureEditor", () => {
       }],
     };
     vi.spyOn(editorApi, "getTournamentStructure").mockResolvedValue(seriesStructure);
-    const addGame = vi.spyOn(editorApi, "addSeriesGame").mockResolvedValue({});
+    const addGame = vi.spyOn(editorApi, "createTournamentGame").mockResolvedValue({});
     render(
       <TournamentStructureEditor
         rows={[{ year: 2026, tournament: "Summer" }]}
@@ -162,8 +162,46 @@ describe("TournamentStructureEditor", () => {
     await waitFor(() => expect(addGame).toHaveBeenCalledWith(
       2026,
       "Summer",
-      "series-final",
-      { result: "team1", matchOrder: 2 },
+      {
+        seriesId: "series-final",
+        result: "team1",
+        matchOrder: 2,
+      },
+      null,
+    ));
+  });
+
+  it("shows an insert button and creates a standalone game when there are no series", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(editorApi, "getTournamentStructure").mockResolvedValue(structure);
+    const createGame = vi.spyOn(editorApi, "createTournamentGame").mockResolvedValue(structure);
+    render(
+      <TournamentStructureEditor
+        rows={[{ year: 2026, tournament: "Summer" }]}
+        onChanged={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "Tournament structure" });
+    const insertButton = within(dialog).getByRole("button", { name: "Insert game" });
+    expect(insertButton).toBeInTheDocument();
+    expect(insertButton).toBeDisabled();
+    await user.selectOptions(within(dialog).getByLabelText("Team 1"), "Alpha");
+    await user.selectOptions(within(dialog).getByLabelText("Team 2"), "Beta");
+    expect(insertButton).toBeEnabled();
+    await user.click(insertButton);
+
+    await waitFor(() => expect(createGame).toHaveBeenCalledWith(
+      2026,
+      "Summer",
+      {
+        team1: "Alpha",
+        team2: "Beta",
+        stageId: "stage-1",
+        result: "team1",
+        matchOrder: 4,
+      },
       null,
     ));
   });

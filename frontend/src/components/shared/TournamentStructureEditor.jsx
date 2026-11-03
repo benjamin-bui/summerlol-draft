@@ -158,6 +158,9 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const [bestOf, setBestOf] = useState("3");
   const [addSeriesId, setAddSeriesId] = useState("");
   const [addResult, setAddResult] = useState("team1");
+  const [addTeam1, setAddTeam1] = useState("");
+  const [addTeam2, setAddTeam2] = useState("");
+  const [addStageId, setAddStageId] = useState("");
   const [insertBeforeOrder, setInsertBeforeOrder] = useState("end");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -176,6 +179,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
       setGameStageFilter("all");
       setGroupStageId(next.stages[0]?.stageId || "");
       setAddSeriesId(next.series.find((series) => series.games.length)?.seriesId || "");
+      setAddStageId(next.stages[0]?.stageId || "");
     } catch (err) {
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) refresh();
       setError(err.message || "Could not load tournament structure.");
@@ -195,6 +199,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
       setGameStageFilter("all");
       setGroupStageId(next.stages[0]?.stageId || "");
       setAddSeriesId(next.series.find((series) => series.games.length)?.seriesId || "");
+      setAddStageId(next.stages[0]?.stageId || "");
     }).catch((err) => {
       if (cancelled) return;
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) refresh();
@@ -216,6 +221,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
         setStages(editableStages(next.stages));
         setGroupStageId(next.stages[0]?.stageId || "");
         setAddSeriesId(next.series.find((series) => series.games.length)?.seriesId || "");
+        setAddStageId(next.stages[0]?.stageId || "");
       } else {
         await loadStructure(selected);
       }
@@ -275,6 +281,9 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const maxMatchOrder = orderedMatchOrders.at(-1) || 0;
   const addGameMatchOrder = insertBeforeOrder === "end" ? maxMatchOrder + 1 : Number(insertBeforeOrder);
   const teams = tournamentTeams(structure?.games);
+  const addTeam1Name = seriesSides?.team1 || addTeam1;
+  const addTeam2Name = seriesSides?.team2 || addTeam2;
+  const canInsertGame = addSeriesId || (addTeam1 && addTeam2 && addTeam1 !== addTeam2);
   const visibleGames = (structure?.games || []).filter(
     (game) =>
       gameStageFilter === "all" ||
@@ -532,61 +541,86 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
             </section>
 
             <section className="structure-section">
-              <h3>Add a game to a series</h3>
-              {activeSeries.length ? (
-                <div className="structure-series-form">
-                  <label>Series
-                    <select value={addSeriesId} onChange={(event) => setAddSeriesId(event.target.value)}>
-                      {activeSeries.map((series) => {
-                        const stage = structure.stages.find((item) => item.stageId === series.stageId);
-                        const sides = getSeriesSides(series);
-                        const score = `${sides.team1} ${sides.wins.team1}\u2013${sides.wins.team2} ${sides.team2}`;
-                        return <option key={series.seriesId} value={series.seriesId}>
-                          {stage?.name || "Stage"} · {series.roundLabel || "Series"} · {score} {series.bestOf ? `(Bo${series.bestOf})` : ""}
-                        </option>;
-                      })}
-                    </select>
-                  </label>
-                  <label>Result
-                    <select value={addResult} onChange={(event) => setAddResult(event.target.value)}>
-                      <option value="team1">
-                        {seriesSides?.team1 || "Team 1"} wins ({seriesSides?.wins.team1 || 0} {seriesSides?.wins.team1 === 1 ? "win" : "wins"})
-                      </option>
-                      <option value="team2">
-                        {seriesSides?.team2 || "Team 2"} wins ({seriesSides?.wins.team2 || 0} {seriesSides?.wins.team2 === 1 ? "win" : "wins"})
-                      </option>
-                      <option value="draw">Draw</option>
-                    </select>
-                  </label>
-                  <label>Insert position
-                    <select value={insertBeforeOrder} onChange={(event) => setInsertBeforeOrder(event.target.value)}>
-                      {orderedMatchOrders.map((order) => (
-                        <option key={order} value={order}>Before match #{order}</option>
-                      ))}
-                      <option value="end">At end (match #{maxMatchOrder + 1})</option>
-                    </select>
-                  </label>
-                  {seriesSides && (
-                    <p className="stat-formula structure-series-score">
-                      Current score: {seriesSides.team1} {seriesSides.wins.team1}{"\u2013"}{seriesSides.wins.team2} {seriesSides.team2}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    className="columns-btn"
-                    disabled={busy || !addSeriesId}
-                    onClick={() => run(async () => {
-                      await editorApi.addSeriesGame(selected.year, selected.tournament, addSeriesId, {
-                        result: addResult,
-                        matchOrder: addGameMatchOrder,
-                      }, csrfToken);
-                      return editorApi.getTournamentStructure(selected.year, selected.tournament);
-                    }, { clearSelection: true })}
-                  >
-                    Insert game
-                  </button>
-                </div>
-              ) : <p className="stat-formula">Group existing games first to create a series.</p>}
+              <h3>Insert a game</h3>
+              <div className="structure-series-form">
+                <label>Series
+                  <select value={addSeriesId} onChange={(event) => setAddSeriesId(event.target.value)}>
+                    <option value="">Standalone game</option>
+                    {activeSeries.map((series) => {
+                      const stage = structure.stages.find((item) => item.stageId === series.stageId);
+                      const sides = getSeriesSides(series);
+                      const score = `${sides.team1} ${sides.wins.team1}\u2013${sides.wins.team2} ${sides.team2}`;
+                      return <option key={series.seriesId} value={series.seriesId}>
+                        {stage?.name || "Stage"} · {series.roundLabel || "Series"} · {score} {series.bestOf ? `(Bo${series.bestOf})` : ""}
+                      </option>;
+                    })}
+                  </select>
+                </label>
+                {seriesSides ? (
+                  <p className="stat-formula structure-series-score">
+                    {seriesSides.team1} vs {seriesSides.team2} · Current score: {seriesSides.wins.team1}{"\u2013"}{seriesSides.wins.team2}
+                  </p>
+                ) : (
+                  <>
+                    <label>Team 1
+                      <select aria-label="Team 1" value={addTeam1} onChange={(event) => setAddTeam1(event.target.value)}>
+                        <option value="">Choose team</option>
+                        {teams.map((team) => <option key={team} value={team}>{team}</option>)}
+                      </select>
+                    </label>
+                    <label>Team 2
+                      <select aria-label="Team 2" value={addTeam2} onChange={(event) => setAddTeam2(event.target.value)}>
+                        <option value="">Choose team</option>
+                        {teams.map((team) => <option key={team} value={team}>{team}</option>)}
+                      </select>
+                    </label>
+                    <label>Stage
+                      <select aria-label="Game stage" value={addStageId} onChange={(event) => setAddStageId(event.target.value)}>
+                        <option value="">No stage</option>
+                        {structure.stages.map((stage) => <option key={stage.stageId} value={stage.stageId}>{stage.name}</option>)}
+                      </select>
+                    </label>
+                  </>
+                )}
+                <label>Result
+                  <select aria-label="Result" value={addResult} onChange={(event) => setAddResult(event.target.value)}>
+                    <option value="team1">
+                      {addTeam1Name || "Team 1"} wins{seriesSides ? ` (${seriesSides.wins.team1} ${seriesSides.wins.team1 === 1 ? "win" : "wins"})` : ""}
+                    </option>
+                    <option value="team2">
+                      {addTeam2Name || "Team 2"} wins{seriesSides ? ` (${seriesSides.wins.team2} ${seriesSides.wins.team2 === 1 ? "win" : "wins"})` : ""}
+                    </option>
+                    <option value="draw">Draw</option>
+                  </select>
+                </label>
+                <label>Insert position
+                  <select aria-label="Insert position" value={insertBeforeOrder} onChange={(event) => setInsertBeforeOrder(event.target.value)}>
+                    {orderedMatchOrders.map((order) => (
+                      <option key={order} value={order}>Before match #{order}</option>
+                    ))}
+                    <option value="end">At end (match #{maxMatchOrder + 1})</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="columns-btn"
+                  disabled={busy || !canInsertGame}
+                  onClick={() => run(() => editorApi.createTournamentGame(selected.year, selected.tournament, {
+                    ...(addSeriesId ? { seriesId: addSeriesId } : {
+                      team1: addTeam1,
+                      team2: addTeam2,
+                      stageId: addStageId || null,
+                    }),
+                    result: addResult,
+                    matchOrder: addGameMatchOrder,
+                  }, csrfToken), { clearSelection: true })}
+                >
+                  Insert game
+                </button>
+              </div>
+              <p className="stat-formula">
+                Insert standalone games or add one to an existing series. Later match orders shift to make room.
+              </p>
             </section>
           </>
         )}
