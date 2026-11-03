@@ -181,7 +181,7 @@ describe("importing a screenshot from the Match History tab", () => {
     expect(within(editor).getByLabelText("LightningFst#1008 champion")).toHaveValue("Kayn");
     expect(within(editor).getByLabelText("Brishin#bris champion")).toHaveValue("Teemo"); // typed in
     expect(within(editor).getByLabelText("NotElectro#3754 champion")).toHaveValue("Senna");
-    expect(within(editor).getByLabelText("Voidliss#NA1 role")).toHaveValue("");
+    expect(within(editor).getByLabelText("Voidliss#NA1 role")).toHaveValue("Bot");
 
     await userEvent.click(within(editor).getByRole("button", { name: /save changes/i }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

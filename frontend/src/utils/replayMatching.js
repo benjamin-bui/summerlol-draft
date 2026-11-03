@@ -3,7 +3,7 @@
 // which side, pairing replay players with roster slots, and filling the editor
 // form. All pure functions -- the UI just calls them.
 
-import { championIconKey } from "./format";
+import { championIconKey, ROLES } from "./format";
 
 // ---- names -------------------------------------------------------------------
 
@@ -292,7 +292,43 @@ export function planReplayImport(replay, state, { swap } = {}) {
 
 // Fills the form's roster slots from the replay, per `assign`
 // ({ replayPlayerIndex: slotKey | null }). Everything else is left untouched.
-export function applyReplayToForm(form, replay, assign, knownChampions = []) {
+function mostFrequentRole(player, rows, currentMatchKey) {
+  const gameName = foldName(player.gameName);
+  const riotId = foldName(player.riotId || [player.gameName, player.tagLine].filter(Boolean).join("#"));
+  if (!gameName && !riotId) return null;
+
+  const countsFor = (match) => {
+    const counts = new Map();
+    for (const row of rows) {
+      if (row.match_key === currentMatchKey) continue;
+      for (const detail of row.match_details || []) {
+        if (!ROLES.includes(detail.role) || !match(detail.player)) continue;
+        counts.set(detail.role, (counts.get(detail.role) || 0) + 1);
+      }
+    }
+    return counts;
+  };
+  const exactCounts = riotId ? countsFor((name) => foldName(name) === riotId) : new Map();
+  const counts = exactCounts.size
+    ? exactCounts
+    : countsFor((name) => gameName && foldName(splitRiotId(name).name) === gameName);
+
+  let role = null;
+  let max = 0;
+  let tied = false;
+  for (const [candidate, count] of counts) {
+    if (count > max) {
+      role = candidate;
+      max = count;
+      tied = false;
+    } else if (count === max) {
+      tied = true;
+    }
+  }
+  return tied ? null : role;
+}
+
+export function applyReplayToForm(form, replay, assign, knownChampions = [], roleHistory = [], currentMatchKey = null) {
   const byKey = new Map();
   for (const player of replay.players) {
     if (assign[player.index]) byKey.set(assign[player.index], player);
@@ -311,7 +347,7 @@ export function applyReplayToForm(form, replay, assign, knownChampions = []) {
           kills: stat(player.kills),
           deaths: stat(player.deaths),
           assists: stat(player.assists),
-          role: player.role ?? slot.role,
+          role: player.role || slot.role || mostFrequentRole(player, roleHistory, currentMatchKey) || "",
         };
       }),
     })),

@@ -151,6 +151,36 @@ describe("applyReplayToForm", () => {
     expect(form.teams[0].players[0].champion).toBe(replay.players[0].champion);
   });
 
+  it("uses a player's most frequent historical role when the replay has none", () => {
+    const state = matchState();
+    const replay = {
+      players: [{ index: 0, gameName: "Ene", tagLine: "TFT", riotId: "Ene#TFT", champion: "Ahri", role: null, kills: 1, deaths: 2, assists: 3 }],
+    };
+    const history = [
+      { match_key: "old-1", match_details: [{ player: "Ene#TFT", role: "Mid" }] },
+      { match_key: "old-2", match_details: [{ player: "Ene#TFT", role: "Mid" }] },
+      { match_key: "old-3", match_details: [{ player: "Ene#TFT", role: "Bot" }] },
+      { match_key: "current", match_details: [{ player: "Ene#TFT", role: "Top" }] },
+    ];
+    const assign = { 0: slotKey(0, 1) };
+    const form = applyReplayToForm(formFor(state), replay, assign, [], history, "current");
+    expect(form.teams[0].players[1].role).toBe("Mid");
+  });
+
+  it("leaves a role blank when historical roles are tied", () => {
+    const state = matchState();
+    const replay = {
+      players: [{ index: 0, gameName: "Ene", tagLine: "TFT", riotId: "Ene#TFT", champion: "Ahri", role: null, kills: 1, deaths: 2, assists: 3 }],
+    };
+    const history = [
+      { match_key: "old-1", match_details: [{ player: "Ene#TFT", role: "Mid" }] },
+      { match_key: "old-2", match_details: [{ player: "Ene#TFT", role: "Bot" }] },
+    ];
+    const assign = { 0: slotKey(0, 1) };
+    const form = applyReplayToForm(formFor(state), replay, assign, [], history);
+    expect(form.teams[0].players[1].role).toBe("");
+  });
+
   it("turns internal champion ids into readable names", () => {
     expect(championDisplayName("MonkeyKing", [])).toBe("Wukong");
     expect(championDisplayName("MissFortune", [])).toBe("Miss Fortune");

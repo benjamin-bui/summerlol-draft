@@ -212,7 +212,8 @@ export default function MatchDataTab({ active }) {
           </button>
           <span className="replay-upload-hint">
             Fills in champions, K/D/A and roles from a replay (read in your browser; nothing is uploaded), or champions
-            and K/D/A from a screenshot of the post-game scoreboard (sent to the server to be read, and not stored).
+            and K/D/A from a screenshot of the post-game scoreboard (sent to the server to be read, and not stored),
+            with roles suggested from each player{"\u2019"}s most common match history.
           </span>
           {replayError && (
             <p className="match-editor-error" role="alert">
@@ -253,6 +254,7 @@ export default function MatchDataTab({ active }) {
         <MatchDetailEditor
           matchKey={editing.row.match_key}
           replay={editing.replay}
+          roleHistoryRows={rows}
           title={`${editing.row.team1} vs ${editing.row.team2} \u00b7 ${editing.row.tournament} ${editing.row.year} \u00b7 ${editing.row.match_stage}`}
           onClose={() => setEditing(null)}
           onSaved={(saved) =>
