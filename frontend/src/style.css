@@ -3464,6 +3464,25 @@ p.match-editor-error {
 .replay-dialog {
   width: min(1000px, 100%);
 }
+.screenshot-reference {
+  margin: 0 0 16px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.screenshot-reference figcaption {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.screenshot-reference img {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  margin: 0 auto;
+  object-fit: contain;
+}
 .replay-teams {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

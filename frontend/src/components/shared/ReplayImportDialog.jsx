@@ -109,6 +109,13 @@ export default function ReplayImportDialog({ replay, rows, onCancel, onContinue 
             .join(" \u00b7 ")}
         </p>
 
+        {isScreenshot && replay.imageUrl && (
+          <figure className="screenshot-reference">
+            <figcaption>Screenshot reference</figcaption>
+            <img src={replay.imageUrl} alt="Uploaded scoreboard screenshot" />
+          </figure>
+        )}
+
         {isScreenshot && (
           <p className="match-editor-notice" role="status">
             Read from a screenshot. Check the highlighted values against the crops on the left and fix anything wrong;

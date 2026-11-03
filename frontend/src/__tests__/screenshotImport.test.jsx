@@ -138,6 +138,7 @@ describe("importing a screenshot from the Match History tab", () => {
     expect(request.body).toBe(file);
 
     const dialog = await screen.findByRole("dialog", { name: "Import screenshot" });
+    expect(within(dialog).getByRole("img", { name: "Uploaded scoreboard screenshot" })).toHaveAttribute("src", "blob:screenshot");
     expect(within(dialog).getByText(/Read from a screenshot/)).toBeInTheDocument();
     expect(within(dialog).getByText(/This screenshot is small/)).toBeInTheDocument();
     expect(within(dialog).getByText(/Blue side \(100\) — won/)).toBeInTheDocument();
