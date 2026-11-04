@@ -9,6 +9,8 @@ const crypto = require("crypto");
 const { ROLES, normalizeRole } = require("./match-detail-fields");
 const { championKey } = require("./champion-releases");
 const { normalizePlayerId, playersMatch, sideMembers } = require("./match-roster");
+const { lookupIdentity } = require("./player-identity");
+const { loadPastNamesByIdentityKey, recordPastNames } = require("./name-history");
 
 const MAX_BANS_PER_SIDE = 5;
 const MAX_STAT = 99;
@@ -148,6 +150,15 @@ function readMatchState(db, matchKey, identityMap) {
   const details = storedDetails(db, matchKey);
   const bans = storedBans(db, matchKey);
   const { teams } = buildTeams(db, match, details, identityMap);
+  // Earlier names of each roster player, so an imported name that no longer
+  // matches anyone can still be paired with the right slot.
+  const pastNames = loadPastNamesByIdentityKey(db);
+  for (const team of teams) {
+    for (const slot of team.players) {
+      const identity = lookupIdentity(identityMap, slot.displayName) || lookupIdentity(identityMap, slot.player);
+      slot.pastNames = (identity && pastNames.get(identity.identityKey)) || [];
+    }
+  }
   const banShape = { team1: [], team2: [] };
   for (const ban of bans) {
     banShape[ban.side === 1 ? "team1" : "team2"].push({
@@ -352,6 +363,17 @@ function saveMatchEdit(db, matchKey, body, editor, identityMap) {
     const currentRev = computeRev(beforeDetails, beforeBans, match.result);
     if (baseRev !== currentRev) throw new ConflictError();
 
+    // Names the editor matched to a roster player by hand are remembered even
+    // when nothing else about the match changed.
+    const recordedPastNames = recordPastNames(db, {
+      matchKey,
+      slots: teams.flatMap((team) => team.players),
+      entries: body.nameMatches,
+      identityMap,
+      editor,
+    });
+    const withRecorded = () => ({ ...readMatchState(db, matchKey, identityMap), recordedPastNames });
+
     // Saving what is already stored changes nothing, so it must not mark the
     // match as hand-edited (which would shield it from CSV re-ingests) or add
     // a misleading audit entry.
@@ -361,7 +383,7 @@ function saveMatchEdit(db, matchKey, body, editor, identityMap) {
       [1, 2].flatMap((side) => bans[side].map((champion) => ({ side, champion }))),
       result,
     );
-    if (nextRev === currentRev) return readMatchState(db, matchKey, identityMap);
+    if (nextRev === currentRev) return withRecorded();
 
     // Replace the rows that belong to a roster slot. Any stored row that
     // matches nobody (which a CSV ingest can't produce) is left untouched.
@@ -408,7 +430,7 @@ function saveMatchEdit(db, matchKey, body, editor, identityMap) {
       snapshot(result, storedDetails(db, matchKey), storedBans(db, matchKey)),
     );
 
-    return readMatchState(db, matchKey, identityMap);
+    return withRecorded();
   })();
 }
 

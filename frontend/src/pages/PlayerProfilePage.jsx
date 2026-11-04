@@ -406,6 +406,7 @@ export default function PlayerProfilePage() {
       <h2 className="player-profile-title">
         <NameWithTag fullName={title} />
       </h2>
+      {player.pastNames?.length > 0 && <p className="replay-extra-hint">Formerly {player.pastNames.join(", ")}</p>}
       <div className="profile-header">
         <div className="profile-header-top">
           <div className="profile-identity">

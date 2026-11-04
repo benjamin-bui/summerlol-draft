@@ -3,24 +3,13 @@
 // which side, pairing replay players with roster slots, and filling the editor
 // form. All pure functions -- the UI just calls them.
 
-import { championIconKey, ROLES } from "./format";
+import { championIconKey } from "./format";
+import { foldName, splitRiotId } from "./names";
+import { getRoleIndex, suggestTeamRoles } from "./roleAssignment";
+
+export { foldName, splitRiotId };
 
 // ---- names -------------------------------------------------------------------
-
-// Accent-, case- and whitespace-insensitive ("Ène" == "Ene").
-export function foldName(value) {
-  return String(value ?? "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
-
-export function splitRiotId(value) {
-  const text = String(value ?? "");
-  const hash = text.indexOf("#");
-  return hash === -1 ? { name: text, tag: "" } : { name: text.slice(0, hash), tag: text.slice(hash + 1) };
-}
 
 // OCR reads a name from pixels, so it is close to the real one rather than
 // identical: l/I/1 and O/0 get swapped, "ß" comes out as "B" or "g", and so on.
@@ -60,12 +49,12 @@ export function ocrNamesMatch(read, actual) {
   return longest >= 5 && 1 - editDistance(a, b) / longest >= 0.8;
 }
 
-// How well a replay player's identity fits a roster name such as
+// How well a replay player's identity fits one roster name such as
 // "Voidliss#NA1": 3 = same Name#Tag, 2 = same game name (the tag is missing on
 // one side, as in older replays), 1.5 = a name read from a screenshot that is
 // close to the roster's, 1 = same game name but a different tag, 0 = no
-// relation. (Callers only compare these and test for > 0.)
-export function nameMatchStrength(replayPlayer, rosterName) {
+// relation.
+function currentNameStrength(replayPlayer, rosterName) {
   if (!replayPlayer.gameName || !rosterName) return 0;
   const roster = splitRiotId(rosterName);
   if (foldName(replayPlayer.gameName) !== foldName(roster.name)) {
@@ -75,8 +64,32 @@ export function nameMatchStrength(replayPlayer, rosterName) {
   return foldName(replayPlayer.tagLine) === foldName(roster.tag) ? 3 : 1;
 }
 
-const bestStrength = (replayPlayer, names) =>
-  names.reduce((best, name) => Math.max(best, nameMatchStrength(replayPlayer, name)), 0);
+// A name the roster player is known to have gone by before (the past-names
+// table). Rated just under the same comparison against their current name, so
+// a current-name match always wins a tie.
+function pastNameStrength(replayPlayer, pastName) {
+  const strength = currentNameStrength(replayPlayer, pastName);
+  if (strength === 0) return 0;
+  if (strength >= 3) return 1.9;
+  if (strength >= 2) return 1.8;
+  return strength === 1.5 ? 1.4 : 0.9;
+}
+
+// (Callers only compare these and test for > 0.) `pastNames` are earlier names
+// of the person `rosterName` is today.
+export function nameMatchStrength(replayPlayer, rosterName, pastNames = []) {
+  return pastNames.reduce(
+    (best, past) => Math.max(best, pastNameStrength(replayPlayer, past)),
+    currentNameStrength(replayPlayer, rosterName),
+  );
+}
+
+// A roster slot as the editor's state describes it, rated against a replay player.
+const slotStrength = (replayPlayer, slot) =>
+  Math.max(
+    nameMatchStrength(replayPlayer, slot.displayName, slot.pastNames || []),
+    nameMatchStrength(replayPlayer, slot.player),
+  );
 
 // ---- champions ---------------------------------------------------------------
 
@@ -167,14 +180,11 @@ export function matchLabel(row) {
   return `${row.year} ${row.tournament} \u00b7 ${row.match_stage} \u00b7 ${row.team1} vs ${row.team2}`;
 }
 
-// Every name that appears in a match's two rosters (captains included).
-function matchNames(row) {
-  return [
-    row.team1,
-    row.team2,
-    ...(row._team1Roster?.roster || []).map((member) => member.displayName),
-    ...(row._team2Roster?.roster || []).map((member) => member.displayName),
-  ];
+// Everyone who appears in a match's two rosters (captains included), with any
+// past names the server knows for them.
+function matchMembers(row) {
+  const roster = (team) => (team?.roster || []).map((member) => ({ displayName: member.displayName, pastNames: member.pastNames || [] }));
+  return [{ displayName: row.team1, pastNames: [] }, { displayName: row.team2, pastNames: [] }, ...roster(row._team1Roster), ...roster(row._team2Roster)];
 }
 
 // Matches whose rosters contain many of the replay's players, best first.
@@ -182,8 +192,11 @@ function matchNames(row) {
 export function suggestMatches(replay, rows, { minPlayers = 6 } = {}) {
   return rows
     .map((row) => {
-      const names = matchNames(row);
-      return { row, score: replay.players.filter((p) => bestStrength(p, names) > 0).length };
+      const members = matchMembers(row);
+      const score = replay.players.filter((p) =>
+        members.some((member) => nameMatchStrength(p, member.displayName, member.pastNames) > 0),
+      ).length;
+      return { row, score };
     })
     .filter((candidate) => candidate.score >= minPlayers)
     .sort((a, b) => b.score - a.score)
@@ -201,7 +214,7 @@ function assignSide(replayPlayers, teamIndex, slots) {
   const pairs = [];
   for (const player of replayPlayers) {
     slots.forEach((slot, playerIndex) => {
-      const strength = bestStrength(player, [slot.displayName, slot.player]);
+      const strength = slotStrength(player, slot);
       if (strength > 0) pairs.push({ player, key: slotKey(teamIndex, playerIndex), strength });
     });
   }
@@ -235,7 +248,7 @@ export function planReplayImport(replay, state, { swap } = {}) {
   const slotsOf = (teamIndex) => state.teams[teamIndex].players;
 
   const overlap = (replayTeam, teamIndex) =>
-    playersOf(replayTeam).filter((p) => slotsOf(teamIndex).some((s) => bestStrength(p, [s.displayName, s.player]) > 0)).length;
+    playersOf(replayTeam).filter((p) => slotsOf(teamIndex).some((s) => slotStrength(p, s) > 0)).length;
 
   let useSwap = swap;
   let sideBasis = "manual";
@@ -290,55 +303,93 @@ export function planReplayImport(replay, state, { swap } = {}) {
   return { swap: useSwap, sideBasis, sideOf, assign, guessed, warnings };
 }
 
-// Fills the form's roster slots from the replay, per `assign`
-// ({ replayPlayerIndex: slotKey | null }). Everything else is left untouched.
-function mostFrequentRole(player, rows, currentMatchKey) {
-  const gameName = foldName(player.gameName);
-  const riotId = foldName(player.riotId || [player.gameName, player.tagLine].filter(Boolean).join("#"));
-  if (!gameName && !riotId) return null;
+// ---- roles ---------------------------------------------------------------------------
 
-  const countsFor = (match) => {
-    const counts = new Map();
-    for (const row of rows) {
-      if (row.match_key === currentMatchKey) continue;
-      for (const detail of row.match_details || []) {
-        if (!ROLES.includes(detail.role) || !match(detail.player)) continue;
-        counts.set(detail.role, (counts.get(detail.role) || 0) + 1);
-      }
-    }
-    return counts;
-  };
-  const exactCounts = riotId ? countsFor((name) => foldName(name) === riotId) : new Map();
-  const counts = exactCounts.size
-    ? exactCounts
-    : countsFor((name) => gameName && foldName(splitRiotId(name).name) === gameName);
+const parseKey = (key) => key.split(":").map(Number);
 
-  let role = null;
-  let max = 0;
-  let tied = false;
-  for (const [candidate, count] of counts) {
-    if (count > max) {
-      role = candidate;
-      max = count;
-      tied = false;
-    } else if (count === max) {
-      tied = true;
-    }
-  }
-  return tied ? null : role;
-}
-
-export function applyReplayToForm(form, replay, assign, knownChampions = [], roleHistory = [], currentMatchKey = null) {
+// The role for every roster slot the replay fills, as { slotKey: role | "" }.
+// A role is taken, in order, from: `keep` (what the editor already chose, which
+// may be an explicit blank), the replay itself, the role already on the form's
+// slot, and finally a guess from the team's history and champions (see
+// roleAssignment.js). Roles that are already settled are never handed to a
+// second player of the same team.
+//   keep           { slotKey: role } choices to leave alone
+//   ignoreExisting true to disregard the form's own roles for the filled slots
+//                  (the "re-assign roles" button), but not the replay's
+export function resolveRoles(form, replay, assign, { roleHistory = [], currentMatchKey = null, keep = {}, ignoreExisting = false } = {}) {
   const byKey = new Map();
   for (const player of replay.players) {
     if (assign[player.index]) byKey.set(assign[player.index], player);
   }
+  const roles = {};
+  let index = null;
+  form.teams.forEach((team, teamIndex) => {
+    const taken = [];
+    const open = [];
+    team.players.forEach((slot, playerIndex) => {
+      const key = slotKey(teamIndex, playerIndex);
+      const player = byKey.get(key);
+      if (!player) {
+        if (slot.role) taken.push(slot.role);
+        return;
+      }
+      if (key in keep) {
+        roles[key] = keep[key] || "";
+        if (roles[key]) taken.push(roles[key]);
+        return;
+      }
+      const settled = player.role || (ignoreExisting ? "" : slot.role) || "";
+      if (settled) {
+        roles[key] = settled;
+        taken.push(settled);
+      } else {
+        open.push({ key, slot, player });
+      }
+    });
+    if (!open.length) return;
+
+    // A screenshot lists each team in scoreboard order; `position` lets the
+    // guesser notice when that order is the role order.
+    const scoreboard = replay.source === "screenshot" ? replay.players.filter((p) => p.team === open[0].player.team).map((p) => p.index) : null;
+    const members = open.map(({ key, slot, player }) => ({
+      id: key,
+      position: scoreboard ? scoreboard.indexOf(player.index) : undefined,
+      champion: player.champion,
+      names: [
+        slot.player,
+        slot.displayName,
+        player.riotId,
+        player.gameName && player.tagLine ? `${player.gameName}#${player.tagLine}` : null,
+        player.gameName,
+        ...(slot.pastNames || []),
+      ].filter(Boolean),
+    }));
+    index ||= getRoleIndex(roleHistory, currentMatchKey);
+    const guesses = suggestTeamRoles(index, members, { taken });
+    for (const { key } of open) roles[key] = guesses[key] || "";
+  });
+  return roles;
+}
+
+// ---- filling the form -----------------------------------------------------------------
+
+// Fills the form's roster slots from the replay, per `assign`
+// ({ replayPlayerIndex: slotKey | null }). Everything else is left untouched.
+// `options.roles` ({ slotKey: role }, from resolveRoles) fixes the roles to
+// use; without it they are worked out here.
+export function applyReplayToForm(form, replay, assign, knownChampions = [], roleHistory = [], currentMatchKey = null, options = {}) {
+  const byKey = new Map();
+  for (const player of replay.players) {
+    if (assign[player.index]) byKey.set(assign[player.index], player);
+  }
+  const roles = options.roles || resolveRoles(form, replay, assign, { roleHistory, currentMatchKey });
   return {
     ...form,
     teams: form.teams.map((team, teamIndex) => ({
       ...team,
       players: team.players.map((slot, playerIndex) => {
-        const player = byKey.get(slotKey(teamIndex, playerIndex));
+        const key = slotKey(teamIndex, playerIndex);
+        const player = byKey.get(key);
         if (!player) return slot;
         const stat = (value) => (value === null ? "" : String(value));
         return {
@@ -347,9 +398,63 @@ export function applyReplayToForm(form, replay, assign, knownChampions = [], rol
           kills: stat(player.kills),
           deaths: stat(player.deaths),
           assists: stat(player.assists),
-          role: player.role || slot.role || mostFrequentRole(player, roleHistory, currentMatchKey) || "",
+          role: roles[key] ?? slot.role ?? "",
         };
       }),
     })),
   };
+}
+
+// Redoes an import after the editor changed something about it (swapped teams,
+// re-assigned a player, corrected a read value) WITHOUT losing what they typed
+// into the rest of the form: the bans and match result stay as they are now, and
+// so do the roster slots no import touches -- before or after this change.
+//   current     the form as it is on screen
+//   base        the form as it was before any import
+//   previous    { slotKey: replayPlayerIndex } as it was before this change
+export function reapplyReplay(current, base, replay, assign, previous, knownChampions, options = {}) {
+  const fresh = applyReplayToForm(base, replay, assign, knownChampions, options.roleHistory, options.currentMatchKey, { roles: options.roles });
+  const touched = new Set([...Object.values(assign), ...Object.values(previous || {})].filter(Boolean));
+  return {
+    ...fresh,
+    resultSide: current.resultSide,
+    bans: current.bans,
+    teams: fresh.teams.map((team, teamIndex) => ({
+      ...team,
+      players: team.players.map((slot, playerIndex) =>
+        touched.has(slotKey(teamIndex, playerIndex)) ? slot : current.teams[teamIndex].players[playerIndex],
+      ),
+    })),
+  };
+}
+
+// ---- remembering old names ---------------------------------------------------------------
+
+// Replay players the editor has matched to a roster slot whose name doesn't
+// match theirs -- someone who has changed their Riot ID, or plays on an alt. The
+// name that was read is worth keeping as a past name of that roster player (so
+// the next import, and the player search, can find them under it).
+//   confirmed  { replayPlayerIndex: slotKey } assignments the editor made or
+//              approved by hand; a guess the importer made itself is only
+//              offered, not assumed (`confirmed: false`).
+export function pastNameCandidates(replay, plan, state, confirmed = {}) {
+  const candidates = [];
+  for (const player of replay.players) {
+    const key = plan.assign[player.index];
+    const read = String(player.gameName ?? "").trim();
+    if (!key || !read) continue;
+    const [side, slotIndex] = parseKey(key);
+    const slot = state.teams[side]?.players[slotIndex];
+    if (!slot || slotStrength(player, slot) > 0) continue; // already the same name (or a known past one)
+    candidates.push({
+      index: player.index,
+      key,
+      name: read,
+      tag: player.tagLine ? String(player.tagLine).trim() : null,
+      slotPlayer: slot.player,
+      slotName: slot.displayName,
+      confirmed: confirmed[player.index] === key,
+    });
+  }
+  return candidates;
 }

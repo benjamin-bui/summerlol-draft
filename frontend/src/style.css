@@ -3655,3 +3655,80 @@ p.match-editor-error {
   color: var(--danger);
   font-size: 0.8rem;
 }
+
+/* Full screenshot in the match editor */
+.screenshot-viewer {
+  margin: 0 0 16px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.screenshot-viewer.is-pinned {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+.screenshot-viewer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+}
+.screenshot-viewer-hint {
+  color: var(--muted);
+}
+.screenshot-viewer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+.screenshot-viewer-actions a.columns-btn {
+  text-decoration: none;
+}
+.screenshot-viewer-body {
+  max-height: 42vh;
+  overflow: auto;
+  border-radius: 4px;
+}
+.screenshot-viewer-body img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.screenshot-viewer-body.is-actual-size img {
+  width: auto;
+  max-width: none;
+}
+@media (max-height: 700px) {
+  .screenshot-viewer-body {
+    max-height: 32vh;
+  }
+}
+
+/* Past names offered when saving an import */
+.replay-extra {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+.replay-extra label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0;
+}
+.replay-extra-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.trueskill-search-former {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}

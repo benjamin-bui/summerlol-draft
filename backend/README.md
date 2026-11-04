@@ -145,6 +145,19 @@ Data behavior worth knowing:
   it alone so a hand edit is never silently overwritten. To make the CSV win
   again: `node src/scripts/ingest-match-details.js <csv> --overwrite-edited`.
 - Other tabs (Tournaments, player pages) show an edit after a page reload.
+- **Past names.** When an editor imports a screenshot or replay and pairs a
+  name that no longer matches anyone on the roster (a renamed player, an alt)
+  with the right roster slot by hand, the save can include
+  `nameMatches: [{ player, name, tag }]`. Each valid entry becomes a
+  `name_history` row (`source = 'manual-match'`, with the `match_key` and the
+  editor's `sub`; rows written by Riot sync keep `source = 'riot-sync'`). The
+  provenance columns are added to older databases automatically at startup.
+  Past names are served on `/api/trueskill` players (`pastNames`), on roster
+  members in `/api/raw-matches`, on each roster slot of the editor's match state
+  and on `/api/player/:key`, which also resolves a player by an old name when
+  exactly one player has gone by it. The player search, the screenshot/replay
+  name matching and the profile page use them. Invalid or unknown entries are
+  skipped rather than failing the save.
 - **Match History -> Manage tournament structure** lets authorized editors
   order and format stages, assign games to stages, group selected games into a
   series, ungroup them, and insert a game with a selected result before a chosen

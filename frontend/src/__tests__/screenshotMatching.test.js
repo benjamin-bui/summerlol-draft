@@ -77,7 +77,10 @@ describe("matching names read from a screenshot", () => {
     expect(Object.values(plan.assign).every(Boolean)).toBe(true);
     const form = applyReplayToForm({ teams: state.teams.map((t) => ({ ...t, players: t.players.map((p) => ({ ...p })) })) }, screenshot, plan.assign, state.championSuggestions);
     const find = (name) => form.teams.flatMap((t) => t.players).find((p) => p.player === name);
-    expect(find("Voidliss#NA1")).toMatchObject({ champion: "Ashe", kills: "6", deaths: "5", assists: "25", role: "" });
+    expect(find("Voidliss#NA1")).toMatchObject({ champion: "Ashe", kills: "6", deaths: "5", assists: "25" });
+    // Roles aren't on a scoreboard, so they're guessed from the champions: one of each, never repeated.
+    const team = form.teams[0].players.map((p) => p.role).filter(Boolean);
+    expect(new Set(team).size).toBe(team.length);
     expect(find("RichGamebuddy#NA1")).toMatchObject({ champion: "Miss Fortune" }); // the site's own spelling
     expect(find("Bloodyninja1122#NA1")).toMatchObject({ champion: "Jinx", kills: "2" });
   });

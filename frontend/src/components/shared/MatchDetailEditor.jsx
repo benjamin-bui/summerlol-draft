@@ -2,10 +2,18 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiError, api, editorApi } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
 import { ROLE_LABELS } from "../../utils/format";
-import { applyReplayToForm, planReplayImport, slotKey } from "../../utils/replayMatching";
+import {
+  applyReplayToForm,
+  pastNameCandidates,
+  planReplayImport,
+  reapplyReplay,
+  resolveRoles,
+  slotKey,
+} from "../../utils/replayMatching";
 import { ReplayError, formatDuration, readReplayFile } from "../../utils/roflReplay";
 import { readScreenshotFile } from "../../utils/screenshotImport";
 import ScreenshotReviewTable from "./ScreenshotReviewTable";
+import ScreenshotViewer from "./ScreenshotViewer";
 
 const SCREENSHOT_TYPES = {
   ".jpeg": "image/jpeg",
@@ -98,6 +106,7 @@ function toForm(state) {
         deaths: blankIfNull(p.deaths),
         assists: blankIfNull(p.assists),
         role: blankIfNull(p.role),
+        pastNames: p.pastNames || [],
       })),
     })),
     bans: { team1: pad(state.bans.team1), team2: pad(state.bans.team2) },
@@ -107,9 +116,10 @@ function toForm(state) {
 const orNull = (text) => (text.trim() === "" ? null : text.trim());
 const numberOrNull = (text) => (String(text).trim() === "" ? null : Number(text));
 
-function toPayload(form, rev) {
+function toPayload(form, rev, nameMatches = []) {
   return {
     baseRev: rev,
+    ...(nameMatches.length ? { nameMatches } : {}),
     resultSide: form.resultSide,
     players: form.teams.flatMap((team) =>
       team.players.map((p) => ({
@@ -142,7 +152,7 @@ function describeProblems(problems, form) {
 // it: which replay team is which side, and which roster slot each replay
 // player fills. Every change here just re-fills the form below; nothing is
 // saved until "Save changes".
-function ReplayPanel({ info, state, onSwap, onAssign, onChangePlayer }) {
+function ReplayPanel({ info, state, onSwap, onAssign, onChangePlayer, onRedoRoles, roleNote, pastNames, onTogglePastName }) {
   const { replay, plan } = info;
   const isScreenshot = replay.source === "screenshot";
   const teamNames = (replayTeam) => state.teams[plan.sideOf(replayTeam)].name;
@@ -158,7 +168,20 @@ function ReplayPanel({ info, state, onSwap, onAssign, onChangePlayer }) {
         <button type="button" className="columns-btn" onClick={onSwap}>
           Swap teams
         </button>
+        <button
+          type="button"
+          className="columns-btn"
+          onClick={onRedoRoles}
+          title="Guess every imported player's role again from match history and champions, replacing roles already filled in for them"
+        >
+          Re-assign roles
+        </button>
       </div>
+      {roleNote && (
+        <p className="match-editor-notice" role="status">
+          {roleNote}
+        </p>
+      )}
       {plan.warnings.map((warning, i) => (
         <p key={i} className={warning.level === "alert" ? "match-editor-error" : "match-editor-notice"} role={warning.level === "alert" ? "alert" : "status"}>
           {warning.text}
@@ -230,6 +253,24 @@ function ReplayPanel({ info, state, onSwap, onAssign, onChangePlayer }) {
             {check.text}
           </p>
         ))}
+      {pastNames.length > 0 && (
+        <div className="replay-extra">
+          <strong>Past names</strong>
+          {pastNames.map((entry) => (
+            <label key={entry.index}>
+              <input type="checkbox" checked={entry.remember} onChange={(event) => onTogglePastName(entry.index, event.target.checked)} />
+              <span>
+                Remember {"\u201c"}
+                {entry.name}
+                {entry.tag ? `#${entry.tag}` : ""}
+                {"\u201d"} as a past name of {entry.slotName}
+                {!entry.confirmed && <span className="replay-extra-hint"> (matched automatically {"\u2014"} tick to confirm)</span>}
+              </span>
+            </label>
+          ))}
+          <span className="replay-extra-hint">Saved with the match; it helps find this player by their old name later.</span>
+        </div>
+      )}
       <p className="replay-panel-note">
         Changing the teams or an assignment redoes the import. Bans aren{"\u2019"}t in {isScreenshot ? "screenshots" : "replays"}; enter them below.
       </p>
@@ -250,6 +291,7 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
   const [fatal, setFatal] = useState(null);
   const [replayInfo, setReplayInfo] = useState(null);
   const [replayError, setReplayError] = useState(null);
+  const [roleNote, setRoleNote] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
   const [dragActive, setDragActive] = useState(false);
@@ -267,10 +309,17 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
   // Lines a replay up with the match and fills the form from it. `baseForm` is
   // what the form looked like before any replay, so re-doing the import (new
   // assignment, swapped teams) always starts from that.
-  const beginReplay = useCallback((replay, loaded, baseForm, options, history = roleHistoryRows || []) => {
+  const beginReplay = useCallback((replay, loaded, baseForm, options, history = roleHistoryRows || [], current = null, previousAssign = null) => {
     const plan = planReplayImport(replay, loaded, options);
-    setReplayInfo({ replay, plan, base: baseForm, roleHistory: history });
-    setForm(applyReplayToForm(baseForm, replay, plan.assign, loaded.championSuggestions, history, matchKey));
+    const roles = resolveRoles(baseForm, replay, plan.assign, { roleHistory: history, currentMatchKey: matchKey });
+    setReplayInfo({ replay, plan, base: baseForm, roleHistory: history, roles, confirmed: {}, remember: {} });
+    setRoleNote(null);
+    // When something was already typed in (bans, the result), a redone import keeps it.
+    setForm(
+      current
+        ? reapplyReplay(current, baseForm, replay, plan.assign, previousAssign, loaded.championSuggestions, { roles })
+        : applyReplayToForm(baseForm, replay, plan.assign, loaded.championSuggestions, history, matchKey, { roles }),
+    );
   }, [matchKey, roleHistoryRows]);
 
   const getRoleHistory = useCallback(async (replay) => {
@@ -354,6 +403,11 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
   );
 
   function setPlayerField(teamIndex, playerIndex, field, value) {
+    const key = slotKey(teamIndex, playerIndex);
+    if (field === "role") {
+      // A role picked by hand is kept when the import is redone.
+      setReplayInfo((info) => (info && key in info.roles ? { ...info, roles: { ...info.roles, [key]: value } } : info));
+    }
     setForm((current) => ({
       ...current,
       teams: current.teams.map((team, t) =>
@@ -385,7 +439,7 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
       if (extension === ".rofl") {
         const replay = await readReplayFile(importedFile);
         const history = await getRoleHistory(replay);
-        beginReplay(replay, state, replayInfo ? replayInfo.base : form, undefined, history);
+        beginReplay(replay, state, replayInfo ? replayInfo.base : form, undefined, history, form, replayInfo?.plan.assign);
         if (screenshotUrl.current) {
           URL.revokeObjectURL(screenshotUrl.current);
           screenshotUrl.current = null;
@@ -405,7 +459,7 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
       const imageUrl = URL.createObjectURL(importedFile);
       if (screenshotUrl.current) URL.revokeObjectURL(screenshotUrl.current);
       screenshotUrl.current = imageUrl;
-      beginReplay({ ...screenshot, fileName: importedFile.name, imageUrl }, state, replayInfo ? replayInfo.base : form, undefined, history);
+      beginReplay({ ...screenshot, fileName: importedFile.name, imageUrl }, state, replayInfo ? replayInfo.base : form, undefined, history, form, replayInfo?.plan.assign);
     } catch (error) {
       setReplayError(
         error instanceof ReplayError
@@ -466,7 +520,7 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
   }
 
   function swapReplayTeams() {
-    beginReplay(replayInfo.replay, state, replayInfo.base, { swap: !replayInfo.plan.swap }, replayInfo.roleHistory);
+    beginReplay(replayInfo.replay, state, replayInfo.base, { swap: !replayInfo.plan.swap }, replayInfo.roleHistory, form, replayInfo.plan.assign);
   }
 
   function assignReplayPlayer(replayIndex, key) {
@@ -477,8 +531,18 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
     }
     assign[replayIndex] = key;
     const guessed = plan.guessed.filter((index) => index !== replayIndex && assign[index]);
-    setReplayInfo({ replay, plan: { ...plan, assign, guessed }, base });
-    setForm(applyReplayToForm(base, replay, assign, state.championSuggestions, replayInfo.roleHistory, matchKey));
+    // Slots whose player didn't change keep their role; only the changed ones are guessed afresh.
+    const keep = {};
+    for (const [index, slot] of Object.entries(assign)) {
+      if (slot && plan.assign[index] === slot && slot in replayInfo.roles) keep[slot] = replayInfo.roles[slot];
+    }
+    const roles = resolveRoles(base, replay, assign, { roleHistory: replayInfo.roleHistory, currentMatchKey: matchKey, keep });
+    // Picking the slot by hand is what makes the name worth remembering.
+    const confirmed = { ...replayInfo.confirmed };
+    if (key) confirmed[replayIndex] = key;
+    else delete confirmed[replayIndex];
+    setReplayInfo({ ...replayInfo, plan: { ...plan, assign, guessed }, roles, confirmed });
+    setForm(reapplyReplay(form, base, replay, assign, plan.assign, state.championSuggestions, { roles }));
   }
 
   function updateScreenshotPlayer(index, patch) {
@@ -497,7 +561,38 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
     const nextPlan = planReplayImport(replay, state, { swap: replayInfo.plan.swap });
     const plan = { ...nextPlan, assign: replayInfo.plan.assign, guessed: replayInfo.plan.guessed };
     setReplayInfo({ ...replayInfo, replay, plan });
-    setForm(applyReplayToForm(replayInfo.base, replay, plan.assign, state.championSuggestions, replayInfo.roleHistory, matchKey));
+    // Correcting a name or a score re-fills the imported values but leaves the
+    // roles (guessed or picked by hand), the bans and the rest of the form alone.
+    setForm(reapplyReplay(form, replayInfo.base, replay, plan.assign, plan.assign, state.championSuggestions, { roles: replayInfo.roles }));
+  }
+
+  // Guesses every imported player's role again -- after names, champions and
+  // assignments have been corrected -- replacing whatever was filled in for them.
+  function redoRoles() {
+    const { replay, plan, base } = replayInfo;
+    const roles = resolveRoles(base, replay, plan.assign, { roleHistory: replayInfo.roleHistory, currentMatchKey: matchKey, ignoreExisting: true });
+    setReplayInfo({ ...replayInfo, roles });
+    setForm(reapplyReplay(form, base, replay, plan.assign, plan.assign, state.championSuggestions, { roles }));
+    const slots = Object.values(plan.assign).filter(Boolean);
+    const filled = slots.filter((key) => roles[key]).length;
+    setRoleNote(
+      filled === slots.length
+        ? `Roles re-assigned for all ${filled} imported players.`
+        : `Roles re-assigned: ${filled} of ${slots.length} imported players filled in; the rest were too close to call, so choose them below.`,
+    );
+  }
+
+  // Imported names that no longer match the roster slot they were paired with,
+  // and whether each will be saved as a past name of that player.
+  const pastNames = replayInfo
+    ? pastNameCandidates(replayInfo.replay, replayInfo.plan, state, replayInfo.confirmed).map((entry) => ({
+        ...entry,
+        remember: replayInfo.remember[entry.index] ?? entry.confirmed,
+      }))
+    : [];
+
+  function togglePastName(index, remember) {
+    setReplayInfo((info) => ({ ...info, remember: { ...info.remember, [index]: remember } }));
   }
 
   async function save(event) {
@@ -506,7 +601,10 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
     setProblems([]);
     setNotice(null);
     try {
-      const saved = await editorApi.saveMatch(matchKey, toPayload(form, state.rev), csrfToken);
+      const nameMatches = pastNames
+        .filter((entry) => entry.remember)
+        .map((entry) => ({ player: entry.slotPlayer, name: entry.name, tag: entry.tag }));
+      const saved = await editorApi.saveMatch(matchKey, toPayload(form, state.rev, nameMatches), csrfToken);
       onSaved(saved);
       onClose();
     } catch (error) {
@@ -603,8 +701,13 @@ export default function MatchDetailEditor({ matchKey, title, replay: initialRepl
                 onSwap={swapReplayTeams}
                 onAssign={assignReplayPlayer}
                 onChangePlayer={updateScreenshotPlayer}
+                onRedoRoles={redoRoles}
+                roleNote={roleNote}
+                pastNames={pastNames}
+                onTogglePastName={togglePastName}
               />
             )}
+            {replayInfo?.replay.imageUrl && <ScreenshotViewer src={replayInfo.replay.imageUrl} fileName={replayInfo.replay.fileName} />}
 
             <label className="match-editor-result">
               Match result

@@ -9,6 +9,11 @@ const {
   opggLinkFromDisplayName,
   slugFromDisplayName,
 } = require("./src/lib/player-identity");
+const {
+  ensureNameHistorySchema,
+  identityKeysForPastName,
+  loadPastNamesByIdentityKey,
+} = require("./src/lib/name-history");
 const { runFullSync } = require("./src/lib/riot-sync");
 const { startPeriodicSync } = require("./src/scripts/scheduler");
 const { computeTrueSkillFromMatches } = require("./src/lib/trueskill-matches");
@@ -62,6 +67,9 @@ if (fs.existsSync(identitySchemaPath)) {
   const schemaSql = fs.readFileSync(identitySchemaPath, "utf8");
   db.exec(schemaSql);
 }
+// Past-name provenance columns (source / match_key / added_by) on databases
+// whose name_history table predates them.
+ensureNameHistorySchema(db);
 // The draft-picks table always carries an integer `id` (the key CSV re-ingest
 // and the draft data download use). Add it to a database built without one.
 ensureRowsIdColumn(db, "rows");
@@ -613,10 +621,13 @@ app.get("/api/trueskill", async (req, res) => {
 
     const rankMap = getAllRanksMap(db);
 
+    // Earlier names, so the player search finds someone under an old one.
+    const pastNames = loadPastNamesByIdentityKey(db);
     result.players = result.players.map((p) => {
       const playerRanks = rankMap.get(p.identityKey) || {};
       return {
         ...p,
+        ...(pastNames.has(p.identityKey) ? { pastNames: pastNames.get(p.identityKey) } : {}),
         soloQueueRank: playerRanks["RANKED_SOLO_5x5"] || null,
         flexQueueRank: playerRanks["RANKED_FLEX_SR"] || null,
         premade5x5Rank: playerRanks["RANKED_PREMADE_5x5"] || null,
@@ -871,6 +882,15 @@ app.get("/api/player/:key", async (req, res) => {
         return slug != null && decodeURIComponent(slug) === key;
       });
     }
+    // An old name (typed, or from an old link) finds the player it belonged
+    // to -- as long as it points at exactly one person.
+    const pastNames = loadPastNamesByIdentityKey(db);
+    if (playerIndex === -1) {
+      const owners = identityKeysForPastName(pastNames, key);
+      if (owners.length === 1) {
+        playerIndex = result.players.findIndex((p) => p.identityKey === owners[0]);
+      }
+    }
     const player = result.players[playerIndex];
     if (!player) return res.status(404).json({ error: "Player not found" });
     const identityKey = player.identityKey; // canonical key -- everything below must key off this, not the raw `key` param, since `key` may be a slug rather than the real identityKey
@@ -1105,6 +1125,7 @@ app.get("/api/player/:key", async (req, res) => {
     res.json({
       ...player,
       slug: slugFromDisplayName(player.group),
+      ...(pastNames.has(player.identityKey) ? { pastNames: pastNames.get(player.identityKey) } : {}),
       soloQueueRank: rankMap.get(player.identityKey) || null,
       overallRank: playerIndex + 1,
       totalPlayers: result.players.length,
@@ -1559,12 +1580,26 @@ app.get("/api/raw-matches", async (req, res) => {
       trueskillResult.games.map((g) => [g.csvRowIndex, g]),
     );
 
+    // Roster members carry their past names so a screenshot read under an old
+    // name can still be matched to the right match.
+    const pastNames = loadPastNamesByIdentityKey(db);
+    const withPastNames = (team) =>
+      team && pastNames.size
+        ? {
+            ...team,
+            roster: (team.roster || []).map((member) =>
+              pastNames.has(member.identityKey)
+                ? { ...member, pastNames: pastNames.get(member.identityKey) }
+                : member,
+            ),
+          }
+        : (team ?? null);
     const enriched = rows.map((row) => {
       const game = gameByRowIndex.get(row.csv_row_index);
       return {
         ...row,
-        _team1Roster: game?.team1 ?? null,
-        _team2Roster: game?.team2 ?? null,
+        _team1Roster: withPastNames(game?.team1),
+        _team2Roster: withPastNames(game?.team2),
       };
     });
 

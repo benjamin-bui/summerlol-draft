@@ -7,7 +7,10 @@ import {
   matchOptions,
   nameMatchStrength,
   opponentOptions,
+  pastNameCandidates,
   planReplayImport,
+  reapplyReplay,
+  resolveRoles,
   slotKey,
   suggestMatches,
 } from "../utils/replayMatching";
@@ -39,6 +42,32 @@ describe("name matching", () => {
     expect(nameMatchStrength(player("Brishin", "other"), "Brishin#bris")).toBe(1);
     expect(nameMatchStrength(player("Nobody"), "Brishin#bris")).toBe(0);
     expect(nameMatchStrength(player(""), "Brishin#bris")).toBe(0);
+  });
+
+  it("recognises a name the roster player used to go by, just below a match on their current name", () => {
+    expect(nameMatchStrength(player("Lúnar"), "Voidliss#NA1")).toBe(0);
+    expect(nameMatchStrength(player("Lunar"), "Voidliss#NA1", ["Lúnar"])).toBe(1.8);
+    expect(nameMatchStrength(player("Lunar", "OLD"), "Voidliss#NA1", ["Lunar#OLD"])).toBe(1.9);
+    expect(nameMatchStrength(player("Voidliss"), "Voidliss#NA1", ["Lunar"])).toBe(2); // the current name still wins
+    expect(nameMatchStrength({ ...player("Lunnar"), ocr: true }, "Voidliss#NA1", ["Lunar"])).toBe(1.4); // read from pixels
+  });
+
+  it("uses past names to pair a renamed player with the right slot", async () => {
+    const replay = await load("voidlissYeetor");
+    const plain = planReplayImport(replay, matchState());
+    const renamed = replay.players.find((p) => p.gameName === "Lúnar");
+    expect(plain.assign[renamed.index]).toBe(null); // nothing on the roster says who this is
+    // The slots nobody was paired with, on this player's side.
+    const side = plain.sideOf(renamed.team);
+    const taken = new Set(Object.values(plain.assign));
+    const freeKeys = matchState().teams[side].players.map((_, i) => slotKey(side, i)).filter((key) => !taken.has(key));
+    expect(freeKeys.length).toBeGreaterThan(1); // two leftovers: too ambiguous to guess
+    // Once the roster says one of them used to be "Lunar", the pairing is certain.
+    const state = matchState();
+    const [freeSide, freeIndex] = freeKeys[0].split(":").map(Number);
+    state.teams[freeSide].players[freeIndex].pastNames = ["Lunar"];
+    const plan = planReplayImport(replay, state);
+    expect(plan.assign[renamed.index]).toBe(freeKeys[0]);
   });
 });
 
@@ -167,10 +196,11 @@ describe("applyReplayToForm", () => {
     expect(form.teams[0].players[1].role).toBe("Mid");
   });
 
-  it("leaves a role blank when historical roles are tied", () => {
+  it("leaves a role blank when historical roles are tied and the champion doesn't settle it", () => {
     const state = matchState();
+    // "Locke" has no history on the site and no built-in role, so nothing breaks the tie.
     const replay = {
-      players: [{ index: 0, gameName: "Ene", tagLine: "TFT", riotId: "Ene#TFT", champion: "Ahri", role: null, kills: 1, deaths: 2, assists: 3 }],
+      players: [{ index: 0, gameName: "Ene", tagLine: "TFT", riotId: "Ene#TFT", champion: "Locke", role: null, kills: 1, deaths: 2, assists: 3 }],
     };
     const history = [
       { match_key: "old-1", match_details: [{ player: "Ene#TFT", role: "Mid" }] },
@@ -179,6 +209,71 @@ describe("applyReplayToForm", () => {
     const assign = { 0: slotKey(0, 1) };
     const form = applyReplayToForm(formFor(state), replay, assign, [], history);
     expect(form.teams[0].players[1].role).toBe("");
+  });
+
+  it("lets the champion break a tie in a player's own history", () => {
+    const state = matchState();
+    const replay = {
+      players: [{ index: 0, gameName: "Ene", tagLine: "TFT", riotId: "Ene#TFT", champion: "Ahri", role: null, kills: 1, deaths: 2, assists: 3 }],
+    };
+    const history = [
+      { match_key: "old-1", match_details: [{ player: "Ene#TFT", role: "Mid" }] },
+      { match_key: "old-2", match_details: [{ player: "Ene#TFT", role: "Bot" }] },
+    ];
+    const form = applyReplayToForm(formFor(state), replay, { 0: slotKey(0, 1) }, [], history);
+    expect(form.teams[0].players[1].role).toBe("Mid");
+  });
+
+  it("never gives two players of a team the same role", () => {
+    const state = matchState();
+    const names = state.teams[0].players.map((p) => p.player);
+    // Everyone's own history says Mid, and they are all on mid champions.
+    const history = [{ match_key: "old", match_details: names.map((player) => ({ player, role: "Mid", champion: "Ahri" })) }];
+    const replay = {
+      players: names.map((name, index) => ({ index, gameName: name.split("#")[0], tagLine: name.split("#")[1], riotId: name, champion: "Ahri", role: null, kills: 1, deaths: 1, assists: 1 })),
+    };
+    const assign = Object.fromEntries(names.map((_, index) => [index, slotKey(0, index)]));
+    const roles = Object.values(applyReplayToForm(formFor(state), replay, assign, [], history).teams[0].players.map((p) => p.role)).filter(Boolean);
+    expect(new Set(roles).size).toBe(roles.length);
+  });
+
+  it("guesses a team's roles together: players of settled roles are removed from the others' options", () => {
+    const state = matchState();
+    state.teams[0].players[0].role = "Mid"; // already decided by hand
+    const replay = {
+      players: [
+        { index: 0, gameName: "Voidliss", tagLine: "NA1", riotId: "Voidliss#NA1", champion: "Ahri", role: null, kills: 1, deaths: 1, assists: 1 },
+        { index: 1, gameName: "Ene", tagLine: "TFT", riotId: "Ene#TFT", champion: "Syndra", role: null, kills: 1, deaths: 1, assists: 1 },
+      ],
+    };
+    const assign = { 0: slotKey(0, 0), 1: slotKey(0, 1) };
+    const roles = resolveRoles(formFor(state), replay, assign, { roleHistory: [] });
+    expect(roles[slotKey(0, 0)]).toBe("Mid"); // the form's own role is kept
+    expect(roles[slotKey(0, 1)]).not.toBe("Mid"); // so another mid champion can't also be Mid
+  });
+
+  it("keeps roles the editor chose, even a deliberate blank, and can discard the form's own with ignoreExisting", () => {
+    const state = matchState();
+    state.teams[0].players[1].role = "Top";
+    const replay = { players: [{ index: 0, gameName: "Ene", tagLine: "TFT", riotId: "Ene#TFT", champion: "Ahri", role: null, kills: 1, deaths: 1, assists: 1 }] };
+    const assign = { 0: slotKey(0, 1) };
+    const key = slotKey(0, 1);
+    expect(resolveRoles(formFor(state), replay, assign, {})[key]).toBe("Top");
+    expect(resolveRoles(formFor(state), replay, assign, { keep: { [key]: "Bot" } })[key]).toBe("Bot");
+    expect(resolveRoles(formFor(state), replay, assign, { keep: { [key]: "" } })[key]).toBe("");
+    expect(resolveRoles(formFor(state), replay, assign, { ignoreExisting: true })[key]).toBe("Mid"); // Ahri, not the stale Top
+  });
+
+  it("uses the roster slot's name, not the name as read, to find a player's history", () => {
+    const state = matchState();
+    // The reader garbled the name completely, but the editor matched it to Ene's slot.
+    const replay = { players: [{ index: 0, gameName: "Xq7zz", tagLine: null, riotId: "Xq7zz", champion: "Locke", role: null, kills: 1, deaths: 1, assists: 1, ocr: true }] };
+    const history = [
+      { match_key: "o1", match_details: [{ player: "Ene#TFT", role: "Supp" }] },
+      { match_key: "o2", match_details: [{ player: "Ene#TFT", role: "Supp" }] },
+    ];
+    const roles = resolveRoles(formFor(state), replay, { 0: slotKey(0, 1) }, { roleHistory: history });
+    expect(roles[slotKey(0, 1)]).toBe("Supp");
   });
 
   it("turns internal champion ids into readable names", () => {
@@ -222,5 +317,79 @@ describe("choosing the match", () => {
     expect(best.score).toBeGreaterThanOrEqual(8);
     expect(suggestMatches(await load("premadeVsRandoms"), rows)).toEqual([]);
     expect(suggestMatches(await load("noRoles"), rows)).toEqual([]);
+  });
+});
+
+describe("keeping the editor's work when an import is redone", () => {
+  const state = matchState();
+  const replay = {
+    source: "screenshot",
+    teams: [100, 200],
+    players: [
+      { index: 0, team: 100, gameName: "Voidliss", tagLine: null, champion: "ashe", role: null, kills: 6, deaths: 5, assists: 25, ocr: true },
+      { index: 1, team: 100, gameName: "Ene", tagLine: null, champion: "ahri", role: null, kills: 13, deaths: 2, assists: 5, ocr: true },
+    ],
+  };
+  const base = formFor(state);
+  const withExtras = (form) => ({ ...form, resultSide: "team1", bans: { team1: ["Zed", ""], team2: ["", ""] } });
+
+  it("leaves bans, the result and untouched slots as typed while refreshing imported ones", () => {
+    const assign = { 0: slotKey(0, 0), 1: slotKey(0, 1) };
+    const current = withExtras(applyReplayToForm(base, replay, assign, []));
+    current.teams[0].players[4].champion = "Kled"; // typed by hand into a slot the import never fills
+    current.teams[0].players[1].kills = "99"; // an imported slot: the import's value wins
+    const fixed = { ...replay, players: replay.players.map((p) => (p.index === 1 ? { ...p, kills: 14 } : p)) };
+    const next = reapplyReplay(current, base, fixed, assign, assign, [], { roles: { [slotKey(0, 0)]: "Bot", [slotKey(0, 1)]: "Mid" } });
+    expect(next.bans).toEqual({ team1: ["Zed", ""], team2: ["", ""] });
+    expect(next.resultSide).toBe("team1");
+    expect(next.teams[0].players[4].champion).toBe("Kled");
+    expect(next.teams[0].players[1]).toMatchObject({ kills: "14", role: "Mid" });
+    expect(next.teams[0].players[0].role).toBe("Bot");
+  });
+
+  it("puts a slot back as it was when the import no longer fills it", () => {
+    const before = { 0: slotKey(0, 0), 1: slotKey(0, 1) };
+    const after = { 0: slotKey(0, 0), 1: null };
+    const current = applyReplayToForm(base, replay, before, []);
+    const next = reapplyReplay(current, base, replay, after, before, [], { roles: {} });
+    expect(next.teams[0].players[1].champion).toBe("");
+    expect(next.teams[0].players[0].champion).toBe("Ashe");
+  });
+});
+
+describe("past names worth remembering", () => {
+  const state = matchState();
+  const replay = {
+    source: "screenshot",
+    players: [
+      { index: 0, team: 100, gameName: "Lunar", tagLine: null, champion: "ashe", ocr: true },
+      { index: 1, team: 100, gameName: "Ene", tagLine: null, champion: "ahri", ocr: true },
+      { index: 2, team: 100, gameName: "Richgamebuddy", tagLine: null, champion: "ashe", ocr: true },
+      { index: 3, team: 100, gameName: "Xq", tagLine: null, champion: "jinx", ocr: true },
+    ],
+  };
+  const plan = { assign: { 0: slotKey(0, 0), 1: slotKey(0, 1), 2: slotKey(0, 2), 3: null } };
+
+  it("offers only names that don't already belong to the slot they were matched to", () => {
+    const found = pastNameCandidates(replay, plan, state, { 0: slotKey(0, 0) });
+    expect(found).toEqual([
+      { index: 0, key: slotKey(0, 0), name: "Lunar", tag: null, slotPlayer: "Voidliss#NA1", slotName: "Voidliss#NA1", confirmed: true },
+    ]); // Ene and Richgamebuddy are the same names (up to case), Xq has no slot
+  });
+
+  it("marks an assignment the editor didn't make by hand as unconfirmed", () => {
+    expect(pastNameCandidates(replay, plan, state, {})[0].confirmed).toBe(false);
+    expect(pastNameCandidates(replay, plan, state, { 0: slotKey(1, 0) })[0].confirmed).toBe(false); // confirmed for a different slot
+  });
+
+  it("skips a name the roster player is already known by", () => {
+    const known = matchState();
+    known.teams[0].players[0].pastNames = ["Lunar"];
+    expect(pastNameCandidates(replay, plan, known, { 0: slotKey(0, 0) })).toEqual([]);
+  });
+
+  it("carries the tag when the replay has one", () => {
+    const tagged = { ...replay, players: [{ ...replay.players[0], tagLine: "OLD" }] };
+    expect(pastNameCandidates(tagged, plan, state, {})[0]).toMatchObject({ name: "Lunar", tag: "OLD" });
   });
 });

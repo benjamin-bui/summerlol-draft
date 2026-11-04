@@ -24,9 +24,12 @@ export default function PlayerSearchBox({ placeholder = "Search for a player..."
   }, []);
 
   const q = query.trim().toLowerCase();
+  // Someone who has changed their name is still found under the old one; the
+  // old name that matched is shown beside the current one.
+  const formerName = (p) => (p.pastNames || []).find((name) => name.toLowerCase().includes(q));
   const matches = q
     ? players
-        .filter((p) => (p.group || "").toLowerCase().includes(q))
+        .filter((p) => (p.group || "").toLowerCase().includes(q) || formerName(p))
         .sort((a, b) => (a.group || "").localeCompare(b.group || ""))
         .slice(0, 8)
     : [];
@@ -82,6 +85,9 @@ export default function PlayerSearchBox({ placeholder = "Search for a player..."
             matches.map((p) => (
               <div key={p.identityKey || p.group} className="trueskill-search-suggestion" onClick={() => go(p.group)}>
                 <NameWithTag fullName={p.group} />
+                {!(p.group || "").toLowerCase().includes(q) && (
+                  <span className="trueskill-search-former">formerly {formerName(p)}</span>
+                )}
               </div>
             ))
           ) : (

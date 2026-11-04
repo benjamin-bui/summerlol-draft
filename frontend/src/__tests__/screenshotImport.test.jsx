@@ -268,3 +268,105 @@ describe("importing a screenshot from the Match History tab", () => {
     expect(within(dialog).getByLabelText("Player 6 kills")).not.toHaveClass("is-unsure");
   });
 });
+
+describe("the match editor after a screenshot import", () => {
+  async function openEditor() {
+    mockServer(EDITOR);
+    await renderMatchHistory();
+    await screen.findByRole("button", { name: /import screenshot/i });
+    await upload(png());
+    const dialog = await screen.findByRole("dialog", { name: "Import screenshot" });
+    await userEvent.click(within(dialog).getByRole("button", { name: /Voidliss#NA1 vs Yeetor#0828 \(10\/10\)/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: /Continue to match editor/ }));
+    const editor = await screen.findByRole("dialog", { name: /Edit match details/ });
+    await within(editor).findByLabelText("Voidliss#NA1 champion");
+    return editor;
+  }
+
+  it("keeps the whole screenshot on screen for entering bans, and lets it be resized or hidden", async () => {
+    const editor = await openEditor();
+    const viewer = within(editor).getByRole("figure", { name: "Full screenshot" });
+    expect(within(viewer).getByRole("img", { name: "Uploaded scoreboard screenshot" })).toHaveAttribute("src", "blob:screenshot");
+    expect(viewer).toHaveClass("is-pinned");
+    await userEvent.click(within(viewer).getByRole("button", { name: "Actual size" }));
+    expect(viewer.querySelector(".screenshot-viewer-body")).toHaveClass("is-actual-size");
+    await userEvent.click(within(viewer).getByRole("button", { name: "Unpin" }));
+    expect(viewer).not.toHaveClass("is-pinned");
+    expect(within(viewer).getByRole("link", { name: "Open in new tab" })).toHaveAttribute("href", "blob:screenshot");
+    await userEvent.click(within(viewer).getByRole("button", { name: "Hide" }));
+    expect(within(viewer).queryByRole("img")).not.toBeInTheDocument();
+  });
+
+  it("keeps the roles, bans and result you entered when a name or score is corrected", async () => {
+    const editor = await openEditor();
+    await userEvent.selectOptions(within(editor).getByLabelText("Voidliss#NA1 role"), "Supp"); // overrides the guess
+    await userEvent.type(within(editor).getByLabelText("Voidliss#NA1 ban 1"), "Zed");
+    await userEvent.selectOptions(within(editor).getByLabelText("Match result"), "team2");
+
+    const kills = within(editor).getByLabelText("Player 3 kills");
+    await userEvent.clear(kills);
+    await userEvent.type(kills, "7");
+    const name = within(editor).getByLabelText("Player 2 name");
+    await userEvent.type(name, "x");
+
+    expect(within(editor).getByLabelText("RichGamebuddy#NA1 kills")).toHaveValue(7); // the correction landed
+    expect(within(editor).getByLabelText("Voidliss#NA1 role")).toHaveValue("Supp");
+    expect(within(editor).getByLabelText("Voidliss#NA1 ban 1")).toHaveValue("Zed");
+    expect(within(editor).getByLabelText("Match result")).toHaveValue("team2");
+    // The roles guessed for everyone else are still there too.
+    expect(within(editor).getByLabelText("Ene#TFT role")).toHaveValue("Mid");
+  });
+
+  it("keeps roles when an import is re-paired by hand, and can redo them all on request", async () => {
+    const editor = await openEditor();
+    const role = (name) => within(editor).getByLabelText(`${name} role`);
+    expect(role("Voidliss#NA1")).toHaveValue("Bot");
+    await userEvent.selectOptions(role("Voidliss#NA1"), "Supp");
+
+    // Re-pairing someone else's row used to throw away every guessed role.
+    const select = within(editor).getByLabelText(/Roster slot for LightningFst/);
+    await userEvent.selectOptions(select, "");
+    await userEvent.selectOptions(select, "0:4");
+    expect(role("Ene#TFT")).toHaveValue("Mid");
+    expect(role("Voidliss#NA1")).toHaveValue("Supp"); // hand-picked, survives
+
+    await userEvent.click(within(editor).getByRole("button", { name: "Re-assign roles" }));
+    expect(role("Voidliss#NA1")).toHaveValue("Bot"); // back to the guess
+    expect(within(editor).getByText(/Roles re-assigned/)).toBeInTheDocument();
+  });
+
+  it("offers to remember a name matched by hand and sends it with the save", async () => {
+    const editor = await openEditor();
+    const name = within(editor).getByLabelText("Player 4 name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "OldNinja");
+
+    // Renamed beyond recognition, still paired automatically: offered but not assumed.
+    const offer = within(editor).getByRole("checkbox", { name: /Remember .OldNinja. as a past name of Bloodyninja1122#NA1/ });
+    expect(offer).not.toBeChecked();
+    expect(within(editor).getByText(/matched automatically/)).toBeInTheDocument();
+    await userEvent.click(offer);
+
+    await userEvent.click(within(editor).getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const body = JSON.parse(calls.find((c) => c.method === "PUT").body);
+    expect(body.nameMatches).toEqual([{ player: "Bloodyninja1122#NA1", name: "OldNinja", tag: null }]);
+  });
+
+  it("assumes a name is worth remembering once the roster slot was picked by hand, unless unticked", async () => {
+    const editor = await openEditor();
+    const name = within(editor).getByLabelText("Player 4 name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "OldNinja");
+    const select = within(editor).getByLabelText(/Roster slot for OldNinja/);
+    await userEvent.selectOptions(select, "");
+    await userEvent.selectOptions(select, "0:3");
+    const offer = within(editor).getByRole("checkbox", { name: /Remember .OldNinja./ });
+    expect(offer).toBeChecked();
+    await userEvent.click(offer); // changed their mind
+
+    await userEvent.click(within(editor).getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(JSON.parse(calls.find((c) => c.method === "PUT").body)).not.toHaveProperty("nameMatches");
+  });
+});
