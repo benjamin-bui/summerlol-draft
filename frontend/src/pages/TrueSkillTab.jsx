@@ -194,9 +194,6 @@ export default function TrueSkillTab({ active }) {
       <section className="control-panel">
         <h3>Bayesian TrueSkill score, courtesy of Microsoft (or at least what is publically available and trivial to replicate).</h3>
         <p>
-          <strong>Adjusted TrueSkill: </strong>A conservative rating that accounts for uncertainty, particularly for players with few games.
-        </p>
-        <p>
           Note that win probabilities may not properly reflect listed TrueSkill scores. This is particularly common
           for new players with high uncertainty. Win probabilities use estimated skill rather than the adjusted
           rating shown here.

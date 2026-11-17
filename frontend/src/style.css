@@ -1293,6 +1293,25 @@ a.champion-link:hover {
   text-align: right;
   min-width: 0;
 }
+.profile-summary-coplay-value .player-name,
+.profile-summary-coplay-value .player-tag {
+  display: inline;
+}
+.profile-summary-coplay-value .player-link {
+  white-space: nowrap;
+}
+.profile-summary-coplay-value .player-tag {
+  margin-left: 1px;
+}
+.profile-summary-role-select {
+  max-width: 100%;
+  padding: 1px 3px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
 .profile-summary-coplay-value .stat-formula {
   white-space: nowrap;
 }

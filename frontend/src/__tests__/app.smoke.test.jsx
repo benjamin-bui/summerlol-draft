@@ -554,6 +554,69 @@ describe("App smoke test against real data", () => {
     errSpy.mockRestore();
   });
 
+  it("filters player summary and role-specific matchup statistics by tournament", async () => {
+    const baseFetch = global.fetch.getMockImplementation();
+    vi.spyOn(global, "fetch").mockImplementation(async (url, options) => {
+      const response = await baseFetch(url, options);
+      if (!String(url).startsWith("/api/player/")) return response;
+
+      const data = await response.json();
+      const makeGame = (tournament, role, outcome, teammate, opponent, opponentRole) => ({
+        ...data.history[0],
+        year: 2026,
+        tournament,
+        outcome,
+        playerDetails: [{ role, champion: "Ahri" }],
+        details: [
+          { identityKey: data.identityKey, role },
+          { identityKey: opponent, role: opponentRole },
+        ],
+        ownTeam: {
+          ...data.history[0].ownTeam,
+          roster: [
+            { identityKey: data.identityKey, displayName: data.group },
+            { identityKey: teammate, displayName: teammate },
+          ],
+        },
+        opponentTeam: {
+          ...data.history[0].opponentTeam,
+          roster: [{ identityKey: opponent, displayName: opponent }],
+        },
+      });
+      data.history = [
+        makeGame("Summer", "Mid", "win", "SummerMate#NA1", "SummerOpponent#NA1", "Mid"),
+        makeGame("Summer", "Bot", "loss", "SummerMate#NA1", "SummerOpponent#NA1", "Mid"),
+        makeGame("Winter", "Bot", "win", "WinterMate#NA1", "WinterOpponent#NA1", "Bot"),
+      ];
+      data.tournamentSummaries = [
+        { year: 2026, tournament: "Summer", pickOrder: 1, totalPicks: 4 },
+        { year: 2026, tournament: "Winter", pickOrder: 2, totalPicks: 4 },
+      ];
+      return { ...response, json: () => Promise.resolve(data) };
+    });
+
+    const user = userEvent.setup();
+    renderApp("/player/Voidliss-NA1");
+    const summary = await screen.findByRole("heading", { name: "Summary" }, { timeout: 10000 });
+    const summaryBlock = summary.closest("section");
+    const matchupRows = () => [...summaryBlock.querySelectorAll(".profile-summary-coplay > div")];
+
+    expect(screen.getAllByRole("combobox", { name: "Role for win rate against" })[0]).toHaveValue("Bot");
+    expect(summaryBlock.querySelector(".profile-summary-stats > div").textContent).toContain("88%");
+    expect(matchupRows()[0]).toHaveTextContent("WinterMate#NA1");
+    expect(matchupRows()[2]).toHaveTextContent("WinterOpponent#NA1");
+
+    await user.selectOptions(screen.getAllByRole("combobox", { name: "Role for win rate against" })[0], "Mid");
+    expect(matchupRows()[2]).toHaveTextContent("SummerOpponent#NA1");
+
+    await user.selectOptions(document.querySelector(".tournament-filter-select"), "2026::Summer");
+    expect(screen.getAllByRole("combobox", { name: "Role for win rate against" })[0]).toHaveValue("Mid");
+    expect(matchupRows()[0]).toHaveTextContent("SummerMate#NA1");
+    expect(matchupRows()[2]).toHaveTextContent("SummerOpponent#NA1");
+    expect(summaryBlock.querySelector(".profile-summary-stats > div").textContent).toContain("100%");
+    expect(document.querySelector(".profile-summary-roles h4")).toHaveTextContent("(2 games with a role)");
+  });
+
   it.each([
     ["player", "/player/Voidliss-NA1"],
     ["champion", "/champion/syndra"],

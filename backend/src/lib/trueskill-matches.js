@@ -312,7 +312,10 @@ async function computeTrueSkillFromMatches(
             avgConservativeRating: opponentTeam.avg,
             avgMu: opponentTeam.avgMu,
           },
-          details: m.details || [],
+          details: (m.details || []).map((detail) => ({
+            ...detail,
+            identityKey: resolve(detail.player),
+          })),
           playerDetails: (m.details || []).filter(
             (detail) => resolve(detail.player) === key,
           ),

@@ -78,6 +78,34 @@ export function computeCoPlayRecords(history, selfKey) {
   return { withMap, againstMap };
 }
 
+export function computeRoleAgainstRecords(history, role) {
+  const againstMap = new Map();
+  for (const entry of history) {
+    if (entry.playerDetails?.[0]?.role !== role) continue;
+
+    const opponentRoles = new Map(
+      (entry.details || []).map((detail) => [detail.identityKey, detail.role]),
+    );
+    for (const member of entry.opponentTeam?.roster || []) {
+      if (!member.identityKey || opponentRoles.get(member.identityKey) !== role) continue;
+      if (!againstMap.has(member.identityKey)) {
+        againstMap.set(member.identityKey, {
+          identityKey: member.identityKey,
+          name: member.displayName,
+          games: 0,
+          wins: 0,
+          captainGames: 0,
+        });
+      }
+      const rec = againstMap.get(member.identityKey);
+      rec.games += 1;
+      if (entry.outcome === "win") rec.wins += 1;
+      if (member.displayName === entry.opponentTeam?.name) rec.captainGames += 1;
+    }
+  }
+  return againstMap;
+}
+
 // `tieBreak(a, b)` replaces the final random shuffle when callers need a stable
 // result (the champion page, where many champions tie at 100% over few games).
 export function pickExtreme(map, mode, tieBreak = null) {

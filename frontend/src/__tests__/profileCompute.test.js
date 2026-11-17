@@ -1,5 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { computeChampionMatchupRows, computeChampionMatchups, pickExtreme } from "../utils/profileCompute";
+import {
+  computeChampionMatchupRows,
+  computeChampionMatchups,
+  computeRoleAgainstRecords,
+  pickExtreme,
+} from "../utils/profileCompute";
+
+describe("computeRoleAgainstRecords", () => {
+  it("counts only games where both players played the selected role", () => {
+    const history = [
+      {
+        outcome: "win",
+        playerDetails: [{ role: "Mid" }],
+        details: [
+          { identityKey: "opponent", role: "Bot" },
+          { identityKey: "other", role: "Mid" },
+        ],
+        opponentTeam: {
+          roster: [
+            { identityKey: "opponent", displayName: "Opponent#NA1" },
+            { identityKey: "other", displayName: "Other#NA1" },
+          ],
+        },
+      },
+      {
+        outcome: "loss",
+        playerDetails: [{ role: "Mid" }],
+        details: [{ identityKey: "opponent", role: "Mid" }],
+        opponentTeam: {
+          roster: [{ identityKey: "opponent", displayName: "Opponent#NA1" }],
+        },
+      },
+      {
+        outcome: "win",
+        playerDetails: [{ role: "Bot" }],
+        details: [{ identityKey: "opponent", role: "Mid" }],
+        opponentTeam: {
+          roster: [{ identityKey: "opponent", displayName: "Opponent#NA1" }],
+        },
+      },
+    ];
+
+    const against = computeRoleAgainstRecords(history, "Mid");
+
+    expect(against.get("opponent")).toMatchObject({ games: 1, wins: 0 });
+    expect(against.get("other")).toMatchObject({ games: 1, wins: 1 });
+  });
+});
 
 describe("computeChampionMatchups", () => {
   it("keeps Jhin Bot versus Syndra Bot separate from Bot versus Syndra Mid", () => {

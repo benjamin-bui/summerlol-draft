@@ -18,6 +18,7 @@ import {
   computeChampionDiversity,
   computeChampionStats,
   computeCoPlayRecords,
+  computeRoleAgainstRecords,
   historyHasBans,
   ofTotal,
   pickExtreme,
@@ -27,7 +28,7 @@ import {
   tournamentKey,
   tournamentRouteId,
 } from "../utils/profileCompute";
-import { round3, buildPlayerSlug } from "../utils/format";
+import { round3, buildPlayerSlug, ROLES, ROLE_LABELS } from "../utils/format";
 
 function SummaryPlayerLink({ rec }) {
   if (!rec) return <span className="profile-summary-coplay-value stat-formula">{"\u2013"}</span>;
@@ -69,19 +70,48 @@ function DiversityValue({ diversity, rank }) {
   );
 }
 
-function SummaryBlock({ player, tournaments, championStats, history }) {
+function SummaryBlock({ player, tournaments, championStats, history, againstRole, setAgainstRole }) {
   const avgPick = average(tournaments.map(pickPercentile).filter((v) => v != null));
   const avgPlacement = average(tournaments.map(placementPercentile).filter((v) => v != null));
   const diversity = computeChampionDiversity(championStats);
   const { funFacts } = useAppData();
   const championGames = championStats.reduce((sum, c) => sum + (c.games || 0), 0);
   const diversityRank = diversityPercentile(funFacts?.championDiversity, player?.identityKey, diversity, championGames);
-  const { withMap, againstMap } = useMemo(() => computeCoPlayRecords(history, player?.identityKey), [history, player?.identityKey]);
+  const { withMap } = useMemo(() => computeCoPlayRecords(history, player?.identityKey), [history, player?.identityKey]);
   const bestWith = pickExtreme(withMap, "max");
   const worstWith = pickExtreme(withMap, "min");
-  const bestAgainst = pickExtreme(againstMap, "max");
-  const worstAgainst = pickExtreme(againstMap, "min");
+  const roleCounts = new Map(ROLES.map((role) => [role, 0]));
+  for (const entry of history) {
+    const role = entry.playerDetails?.[0]?.role;
+    if (roleCounts.has(role)) roleCounts.set(role, roleCounts.get(role) + 1);
+  }
+  const playedRoles = ROLES.filter((role) => roleCounts.get(role) > 0);
+  const mainRole = [...playedRoles].sort(
+    (a, b) => roleCounts.get(b) - roleCounts.get(a) || ROLES.indexOf(a) - ROLES.indexOf(b),
+  )[0] || null;
+  const selectedAgainstRole = playedRoles.includes(againstRole) ? againstRole : mainRole;
+  const roleAgainstMap = selectedAgainstRole
+    ? computeRoleAgainstRecords(history, selectedAgainstRole)
+    : new Map();
+  const bestAgainst = pickExtreme(roleAgainstMap, "max");
+  const worstAgainst = pickExtreme(roleAgainstMap, "min");
   const fmtPct = (v) => (v != null ? `${Math.round(v)}%` : "\u2013");
+  const againstRoleSelector = (
+    <select
+      className="profile-summary-role-select"
+      aria-label="Role for win rate against"
+      value={selectedAgainstRole || ""}
+      onChange={(event) => setAgainstRole(event.target.value || null)}
+      disabled={!playedRoles.length}
+    >
+      {!playedRoles.length && <option value="">No recorded role</option>}
+      {playedRoles.map((role) => (
+        <option value={role} key={role}>
+          {ROLE_LABELS[role]}{role === mainRole ? " (main)" : ""}
+        </option>
+      ))}
+    </select>
+  );
 
   return (
     <section className="profile-block profile-summary-block">
@@ -111,11 +141,11 @@ function SummaryBlock({ player, tournaments, championStats, history }) {
           <SummaryPlayerLink rec={worstWith} />
         </div>
         <div>
-          <span>Best win rate against</span>
+          <span>Best win rate against in {againstRoleSelector}</span>
           <SummaryPlayerLink rec={bestAgainst} />
         </div>
         <div>
-          <span>Worst win rate against</span>
+          <span>Worst win rate against in {againstRoleSelector}</span>
           <SummaryPlayerLink rec={worstAgainst} />
         </div>
       </div>
@@ -288,6 +318,7 @@ export default function PlayerProfilePage() {
   const [player, setPlayer] = useState(null);
   const [error, setError] = useState(null);
   const [tournamentFilter, setTournamentFilter] = useState(null);
+  const [againstRole, setAgainstRole] = useState(null);
   const [mode, setMode] = useState("with");
   const [selectedKey, setSelectedKey] = useState(null);
   const [selectedMatchKey, setSelectedMatchKey] = useState(null);
@@ -309,6 +340,7 @@ export default function PlayerProfilePage() {
     setPlayer(null);
     setError(null);
     setTournamentFilter(null);
+    setAgainstRole(null);
     setSelectedKey(null);
     setSelectedMatchKey(null);
     setHistoryScrollRequest(0);
@@ -377,6 +409,9 @@ export default function PlayerProfilePage() {
   const tournaments = player.tournamentSummaries || [];
   const history = player.history || [];
   const baseHistory = tournamentFilter ? history.filter((h) => tournamentKey(h) === tournamentFilter) : history;
+  const summaryTournaments = tournamentFilter
+    ? tournaments.filter((t) => tournamentKey(t) === tournamentFilter)
+    : tournaments;
   const { teammates, opponents } = buildCoPlayMaps(history, player.identityKey);
   const pool = mode === "against" ? opponents : teammates;
 
@@ -427,8 +462,22 @@ export default function PlayerProfilePage() {
       </div>
       <div className="profile-layout">
         <aside className="profile-sidebar">
-          <SummaryBlock player={player} tournaments={tournaments} championStats={player.championStats || []} history={history} />
-          <ProfileTournamentFilter tournaments={tournaments} value={tournamentFilter} onChange={setTournamentFilter} />
+          <SummaryBlock
+            player={player}
+            tournaments={summaryTournaments}
+            championStats={computeChampionStats(baseHistory)}
+            history={baseHistory}
+            againstRole={againstRole}
+            setAgainstRole={setAgainstRole}
+          />
+          <ProfileTournamentFilter
+            tournaments={tournaments}
+            value={tournamentFilter}
+            onChange={(value) => {
+              setTournamentFilter(value);
+              setAgainstRole(null);
+            }}
+          />
           <TournamentsBlock tournaments={tournaments} />
           <TrueSkillBlock player={player} tournaments={tournaments} />
           <ProfileChampionsTable championStats={championStats} extras={championExtras} sort={championSort} setSort={setChampionSort} />

@@ -48,6 +48,36 @@ test('computeTrueSkillFromMatches rates both sides and normalizes the winner lab
   assert.equal(beta.history[0].opponent, 'Alpha');
 });
 
+test('player history details include canonical identity keys', async () => {
+  const identityMap = new Map([
+    ['Alpha#NA1', { identityKey: 'alpha', displayName: 'Alpha#NA1' }],
+    ['Beta#NA1', { identityKey: 'beta', displayName: 'Beta#NA1' }],
+  ]);
+  const result = await computeTrueSkillFromMatches(
+    [{
+      year: 2026,
+      tournament: 'Summer',
+      team1: 'Alpha#NA1',
+      team2: 'Beta#NA1',
+      result: 'Alpha#NA1',
+      matchOrder: 1,
+      rowIndex: 0,
+      details: [
+        { player: 'Alpha#NA1', role: 'Mid' },
+        { player: 'Beta#NA1', role: 'Mid' },
+      ],
+    }],
+    [
+      { year: 2026, tournament: 'Summer', captain: 'Alpha#NA1', groupVal: 'Alpha#NA1', identityKey: 'alpha', displayName: 'Alpha#NA1' },
+      { year: 2026, tournament: 'Summer', captain: 'Beta#NA1', groupVal: 'Beta#NA1', identityKey: 'beta', displayName: 'Beta#NA1' },
+    ],
+    identityMap,
+  );
+
+  const alpha = result.players.find((player) => player.identityKey === 'alpha');
+  assert.deepEqual(alpha.history[0].details.map((detail) => detail.identityKey), ['alpha', 'beta']);
+});
+
 test('stage and series metadata does not change per-game TrueSkill results', async () => {
   const matches = [
     { year: 2026, tournament: 'Summer', team1: 'Alpha', team2: 'Beta', result: 'Alpha', matchOrder: 1, rowIndex: 0 },
