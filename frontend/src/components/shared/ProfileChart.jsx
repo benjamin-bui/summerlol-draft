@@ -60,8 +60,6 @@ export default function ProfileChart({ history, onSelectMatch }) {
     x: i + 1,
     matchKey: h.matchKey,
     trueskill: h.conservativeRating,
-    mu: h.mu,
-    sigma: h.sigma,
     outcome: h.outcome,
     opponent: h.opponent,
     year: h.year,
@@ -149,7 +147,7 @@ export default function ProfileChart({ history, onSelectMatch }) {
             >
               <title>
                 {p.year} {p.tournament}
-                {p.matchStage ? ` (${p.matchStage})` : ""} vs {p.opponent}: {p.outcome} (TrueSkill = {p.trueskill}, {"\u03bc"}={p.mu}, {"\u03c3"}={p.sigma})
+                {p.matchStage ? ` (${p.matchStage})` : ""} vs {p.opponent}: {p.outcome} (Adjusted TrueSkill = {p.trueskill})
               </title>
             </circle>
           ))}

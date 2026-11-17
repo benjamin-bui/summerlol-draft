@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { PlayerLink, ChampionLink, BanList, RoleIcon, TrueSkillValue } from "./Cells";
 import { sortByRole, ROLE_LABELS } from "../../utils/format";
 import { tournamentRouteId } from "../../utils/profileCompute";
+import { predictedResultProbability } from "../../utils/predictionStats";
 import MatchDetailEditor from "./MatchDetailEditor";
 import { useAuth } from "../../context/AuthContext";
 
@@ -74,10 +75,11 @@ function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey, onSaved 
   const gameHasBans = (entry.bans?.own?.length || 0) + (entry.bans?.opponent?.length || 0) > 0;
   const changeClass = entry.ratingChange > 0 ? "outcome-win" : entry.ratingChange < 0 ? "outcome-loss" : "";
   const changeLabel = entry.ratingChange > 0 ? `+${entry.ratingChange}` : `${entry.ratingChange}`;
-  const predWinPct = Math.round((entry.predictedWinProb ?? 0) * 100);
+  const resultProbability = predictedResultProbability(entry.predictedWinProb, entry.outcome);
+  const resultProbabilityPct = resultProbability == null ? null : Math.round(resultProbability * 100);
   // toggle, match, matchup, [role], champion/player, K/D/A, result, plus either
   // the rating columns or (champion page) the lane-opponent columns.
-  const columnCount = 6 + (showRole ? 1 : 0) + (showPlayer ? 3 : 2);
+  const columnCount = 6 + (showRole ? 1 : 0) + (showPlayer ? 3 : 1);
 
   return (
     <>
@@ -142,28 +144,17 @@ function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey, onSaved 
             <td className="col-secondary">{entry.laneOpponent ? kdaText(entry.laneOpponent) : "\u2013"}</td>
           </>
         )}
-        <td className="col-result" title={entry.outcome ? `${entry.outcome} (${predWinPct}% predicted win probability)` : undefined}>
+        <td className="col-result" title={resultProbabilityPct == null ? undefined : `${entry.outcome} (${resultProbabilityPct}% predicted result probability)`}>
           {/* Win/loss is carried by the row's color; keep it readable for screen readers too. */}
           <span className="sr-only">{entry.outcome ? `${entry.outcome}, ` : ""}</span>
-          <span className="cell-primary">{predWinPct}%</span>
+          <span className="cell-primary">{resultProbabilityPct == null ? "\u2013" : `${resultProbabilityPct}%`}</span>
         </td>
         {!showPlayer && (
-          <>
-            <td className="col-secondary col-ratings">
-              <span className="cell-primary">{entry.ownTeam?.avgConservativeRating ?? "\u2013"}</span>
-              <span className="cell-secondary">vs {entry.opponentTeam?.avgConservativeRating ?? "\u2013"}</span>
-            </td>
-            <td className="col-secondary col-trueskill">
-              <span className="cell-primary">
-                <TrueSkillValue rating={entry.conservativeRating} /> <span className={changeClass}>{changeLabel}</span>
-              </span>
-              <span className="cell-secondary">
-                {"\u03bc"}
-                {entry.mu ?? "\u2013"} {"\u03c3"}
-                {entry.sigma ?? "\u2013"}
-              </span>
-            </td>
-          </>
+          <td className="col-secondary col-trueskill">
+            <span className="cell-primary">
+              <TrueSkillValue rating={entry.conservativeRating} /> <span className={changeClass}>{changeLabel}</span>
+            </span>
+          </td>
         )}
       </tr>
       {open && (
@@ -225,32 +216,16 @@ function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey, onSaved 
               </div>
               {!showPlayer && (
                 <>
-                <div>
-                  <span>Your Team Avg</span>
-                  <strong>{entry.ownTeam?.avgConservativeRating ?? "\u2013"}</strong>
-                </div>
-                <div>
-                  <span>Opp Avg</span>
-                  <strong>{entry.opponentTeam?.avgConservativeRating ?? "\u2013"}</strong>
-                </div>
-                <div>
-                  <span>TrueSkill</span>
-                  <strong>
-                    <TrueSkillValue rating={entry.conservativeRating} />
-                  </strong>
-                </div>
-                <div>
-                  <span>Change</span>
-                  <strong className={changeClass}>{changeLabel}</strong>
-                </div>
-                <div>
-                  <span>{"\u03bc"}</span>
-                  <strong>{entry.mu ?? "\u2013"}</strong>
-                </div>
-                <div>
-                  <span>{"\u03c3"}</span>
-                  <strong>{entry.sigma ?? "\u2013"}</strong>
-                </div>
+                  <div>
+                    <span>TrueSkill</span>
+                    <strong>
+                      <TrueSkillValue rating={entry.conservativeRating} />
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Change</span>
+                    <strong className={changeClass}>{changeLabel}</strong>
+                  </div>
                 </>
               )}
             </div>
@@ -298,10 +273,9 @@ export default function ProfileHistoryTable({ entries, showRole, showPlayer = fa
                 <th className="col-secondary">Opponent K/D/A</th>
               </>
             )}
-            <th className="col-result">Win Prob.</th>
+            <th className="col-result">Result Probability</th>
             {!showPlayer && (
               <>
-                <th className="col-secondary col-ratings">Avg Rating</th>
                 <th className="col-secondary col-trueskill">TrueSkill</th>
               </>
             )}

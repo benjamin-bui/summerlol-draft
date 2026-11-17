@@ -6,6 +6,15 @@
 // Draws are left out throughout -- a probability of winning says nothing
 // about a game nobody won.
 
+// Convert a team's pre-game win probability into the probability of the
+// recorded result. The prediction model does not provide a draw probability.
+export function predictedResultProbability(predictedWinProbability, outcome) {
+  if (!Number.isFinite(predictedWinProbability)) return null;
+  if (outcome === "win") return predictedWinProbability;
+  if (outcome === "loss") return 1 - predictedWinProbability;
+  return null;
+}
+
 function decisiveGames(matches) {
   return (matches || [])
     .filter(

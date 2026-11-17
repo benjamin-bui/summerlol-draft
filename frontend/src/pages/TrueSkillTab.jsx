@@ -9,6 +9,14 @@ import { TrueSkillValue, SoloQueueRank } from "../components/shared/Cells";
 import { soloQueueSortValueClient } from "../utils/format";
 import { buildNameMatcher } from "../utils/nameMatch";
 import { tournamentRouteIdFromLabel } from "../utils/profileCompute";
+import {
+  filterPlayerHistory,
+  getPlayerGameFilterOptions,
+  roleFilterLabel,
+  summarizePlayerGames,
+  tournamentFilterKey,
+  UNRECORDED_ROLE,
+} from "../utils/playerGameFilters";
 
 const TRUESKILL_COLUMNS = [
   { key: "rank", label: "#", sortable: false, hideable: false, filterable: false },
@@ -42,14 +50,14 @@ const TRUESKILL_COLUMNS = [
   },
   {
     key: "conservativeRating",
-    label: "TrueSkill (μ)",
+    label: "TrueSkill",
     sortable: true,
     hideable: true,
     filterable: true,
     type: "number",
     decimals: 2,
     className: "adj-avg",
-    render: (val, row) => <TrueSkillValue rating={row.conservativeRating} mu={row.mu} />,
+    render: (val, row) => <TrueSkillValue rating={row.conservativeRating} />,
   },
   {
     key: "soloQueueRank",
@@ -82,8 +90,6 @@ const TRUESKILL_COLUMNS = [
     sortValue: (row) => soloQueueSortValueClient(row.premade5x5Rank),
     render: (val) => <SoloQueueRank rank={val} />,
   },
-  { key: "mu", label: "μ", sortable: true, hideable: true, filterable: true, type: "number", decimals: 2, className: "adj-avg", defaultHidden: true },
-  { key: "sigma", label: "σ", sortable: true, hideable: true, filterable: true, type: "number", decimals: 2, defaultHidden: true },
   {
     key: "championDiversity",
     label: "Champion Diversity",
@@ -126,22 +132,38 @@ export default function TrueSkillTab({ active }) {
   const { players, funFacts } = useAppData();
   const [filterText, setFilterText] = useState("");
   const [summary, setSummary] = useState(null);
+  const [selectedTournament, setSelectedTournament] = useState("");
+  const [selectedRole, setSelectedRole] = useState("");
 
-  // Same per-player diversity the Players-tab histogram and profile percentile
-  // use (computed by the backend, players with enough champion-recorded games only).
+  const filterOptions = useMemo(() => getPlayerGameFilterOptions(players), [players]);
+
+  // Preserve the career-wide TrueSkill and ranked ratings while recomputing
+  // game-based statistics from each player's matching history.
   const tableRows = useMemo(() => {
     const byKey = new Map((funFacts?.championDiversity?.players || []).map((d) => [d.key, d]));
     const minGames = funFacts?.championDiversity?.minGames;
-    return players.map((p) => {
+    const hasFilters = !!selectedTournament || !!selectedRole;
+    return players.flatMap((p) => {
       const d = byKey.get(p.identityKey);
-      return {
+      if (!Array.isArray(p.history) || !p.history.length) {
+        if (hasFilters) return [];
+        return [{
+          ...p,
+          championDiversity: d ? d.diversity : null,
+          championDiversityGames: d ? d.games : null,
+          championDiversityMinGames: minGames,
+        }];
+      }
+
+      const history = filterPlayerHistory(p.history, selectedTournament, selectedRole);
+      if (!history.length) return [];
+      return [{
         ...p,
-        championDiversity: d ? d.diversity : null,
-        championDiversityGames: d ? d.games : null,
+        ...summarizePlayerGames(history, minGames),
         championDiversityMinGames: minGames,
-      };
+      }];
     });
-  }, [players, funFacts]);
+  }, [players, funFacts, selectedTournament, selectedRole]);
 
   const externalFilter = useMemo(() => {
     if (!filterText.trim()) return null;
@@ -172,18 +194,12 @@ export default function TrueSkillTab({ active }) {
       <section className="control-panel">
         <h3>Bayesian TrueSkill score, courtesy of Microsoft (or at least what is publically available and trivial to replicate).</h3>
         <p>
-          <strong>TrueSkill: </strong>Conservative TrueSkill score μ - σ; intended to deflate players with a small number of games and high uncertainty.
-        </p>
-        <p>
-          <strong>μ: </strong>Estimated skill score. Everyone starts at 1000.
-        </p>
-        <p>
-          <strong>σ: </strong>Uncertainty in player skill. Everyone starts at μ/3
+          <strong>Adjusted TrueSkill: </strong>A conservative rating that accounts for uncertainty, particularly for players with few games.
         </p>
         <p>
           Note that win probabilities may not properly reflect listed TrueSkill scores. This is particularly common
-          when there are new players with high uncertainty. Win probabilities are calculated based on the estimated
-          skill score, not the conservative skill score.
+          for new players with high uncertainty. Win probabilities use estimated skill rather than the adjusted
+          rating shown here.
         </p>
       </section>
 
@@ -200,6 +216,39 @@ export default function TrueSkillTab({ active }) {
         onApply={applyFilter}
         summary={summary && <span className={`name-filter-summary${summary.startsWith("Matched all") ? "" : " has-misses"}`}>{summary}</span>}
       />
+
+      <div className="player-game-filters" aria-label="Filter player statistics by game">
+        <label>
+          Tournament
+          <select
+            aria-label="Filter by tournament"
+            value={selectedTournament}
+            onChange={(event) => setSelectedTournament(event.target.value)}
+          >
+            <option value="">All tournaments</option>
+            {filterOptions.tournaments.map((tournament) => (
+              <option value={tournamentFilterKey(tournament)} key={tournamentFilterKey(tournament)}>
+                {tournament.tournament} {tournament.year}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Role
+          <select aria-label="Filter by role" value={selectedRole} onChange={(event) => setSelectedRole(event.target.value)}>
+            <option value="">All roles</option>
+            {filterOptions.roles.map((role) => (
+              <option value={role} key={role}>{roleFilterLabel(role)}</option>
+            ))}
+            {filterOptions.hasUnrecordedRole && (
+              <option value={UNRECORDED_ROLE}>{roleFilterLabel(UNRECORDED_ROLE)}</option>
+            )}
+          </select>
+        </label>
+      </div>
+      <p className="player-game-filter-note">
+        Game counts, win rates, and champion diversity use the selected games. TrueSkill and ranked queue ratings remain career-wide.
+      </p>
 
       <DataTable
         columns={TRUESKILL_COLUMNS}

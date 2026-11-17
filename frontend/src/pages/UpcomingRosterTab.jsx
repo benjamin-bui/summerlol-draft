@@ -38,7 +38,7 @@ export default function UpcomingRosterTab({ active, onTitle }) {
               </h4>
               <div className="profile-summary">
                 <span>
-                  Avg Entry TrueSkill: {team.avgEntryRating !== null ? <TrueSkillValue rating={team.avgEntryRating} /> : "\u2013"} ({team.ratedCount}/
+                  Avg Entry Adjusted TrueSkill: {team.avgEntryRating !== null ? <TrueSkillValue rating={team.avgEntryRating} /> : "\u2013"} ({team.ratedCount}/
                   {team.totalCount} rated)
                 </span>
                 <span>Draft IQ: {team.draftIQ !== null ? (team.draftIQ > 0 ? "+" : "") + team.draftIQ : "\u2013"}</span>
@@ -70,7 +70,7 @@ export default function UpcomingRosterTab({ active, onTitle }) {
                       </td>
                       <td>
                         {p.conservativeRating !== null ? (
-                          <TrueSkillValue rating={p.conservativeRating} mu={p.mu} />
+                          <TrueSkillValue rating={p.conservativeRating} />
                         ) : (
                           <span className="stat-formula">Unrated (No games yet)</span>
                         )}

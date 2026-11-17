@@ -44,7 +44,8 @@ describe("App smoke test against real data", () => {
     expect((await screen.findAllByText(/Voidliss/i, {}, { timeout: 10000 })).length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: /Williams College Player Rankings/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Players" })).toBeInTheDocument();
-    expect(document.querySelector(".tab-panel.active .trueskill-ratings .trueskill-mu .rating-number")).toBeInTheDocument();
+    expect(document.querySelector(".tab-panel.active .trueskill-cell .rating-number")).toBeInTheDocument();
+    expect(document.querySelector(".tab-panel.active .trueskill-mu")).not.toBeInTheDocument();
     expect(within(document.querySelector(".tab-panel.active")).queryByPlaceholderText("Search for a champion...")).not.toBeInTheDocument();
     expect(errSpy).not.toHaveBeenCalled();
     errSpy.mockRestore();
@@ -524,8 +525,11 @@ describe("App smoke test against real data", () => {
     expect(await screen.findByText("Summary", {}, { timeout: 10000 })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Tournaments" })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Search for a champion...")).not.toBeInTheDocument();
-    const trueSkillBlock = screen.getByRole("heading", { name: "TrueSkill" }).closest("section");
+    const trueSkillBlock = screen.getByRole("heading", { name: "Adjusted TrueSkill" }).closest("section");
     expect(trueSkillBlock).toBeInTheDocument();
+    const historyTable = document.querySelector(".profile-main .profile-history-table");
+    expect(within(historyTable).getByRole("columnheader", { name: "TrueSkill" })).toBeInTheDocument();
+    expect(within(historyTable).queryByRole("columnheader", { name: "Avg Rating" })).not.toBeInTheDocument();
     expect(within(trueSkillBlock).getByRole("link", { name: "Winter 2026" })).toHaveAttribute("href", "/?tab=tournaments&tournament=2026-winter");
     const roleBreakdown = document.querySelector(".profile-summary-roles");
     expect(roleBreakdown).toBeInTheDocument();
@@ -540,11 +544,12 @@ describe("App smoke test against real data", () => {
     await waitFor(() => {
       expect(document.querySelectorAll(".profile-history-table .history-row-flash")).toHaveLength(1);
     });
-    // The player's expanded roster tables keep their TrueSkill column.
+    // The player's expanded roster tables show only adjusted TrueSkill.
     await userEvent.setup().click(document.querySelector(".profile-history-table button.roster-toggle"));
     const rosterHeaders = [...document.querySelectorAll(".match-details-table")].map((t) => [...t.querySelectorAll("th")].map((th) => th.textContent));
     expect(rosterHeaders.length).toBe(2);
     for (const headers of rosterHeaders) expect(headers).toContain("TrueSkill");
+    expect(document.querySelector(".profile-main .trueskill-mu")).not.toBeInTheDocument();
     expect(errSpy).not.toHaveBeenCalled();
     errSpy.mockRestore();
   });

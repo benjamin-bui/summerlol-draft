@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import DataTable from "../components/table/DataTable";
 import { TrueSkillValue } from "../components/shared/Cells";
+import { predictedResultProbability } from "../utils/predictionStats";
 
 const TEAM_BALANCE_COLUMNS = [
   { key: "year", label: "Year", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
@@ -44,18 +45,23 @@ function TeamMatchDetail({ row }) {
                 <th>Opponent(s)</th>
                 <th>Result</th>
                 <th>Stage</th>
-                <th>Win Prob. %</th>
+                <th>Result Probability</th>
               </tr>
             </thead>
             <tbody>
               {matches.map((m, i) => {
                 const outcomeClass = m.outcome === "win" ? "outcome-win" : m.outcome === "loss" ? "outcome-loss" : "outcome-draw";
+                const resultProbability = predictedResultProbability(m.predictedWinProb, m.outcome);
                 return (
                   <tr key={i}>
                     <td>{m.opponentName}</td>
                     <td className={outcomeClass}>{m.outcome}</td>
                     <td>{m.matchStage || "\u2013"}</td>
-                    <td>{Math.round((m.predictedWinProb ?? 0) * 100)}%</td>
+                    <td>
+                      {resultProbability == null
+                        ? "\u2013"
+                        : `${Math.round(resultProbability * 100)}%`}
+                    </td>
                   </tr>
                 );
               })}

@@ -64,7 +64,7 @@ export default function FunFacts({ ff }) {
           )}
           {ff.peakRating && (
             <li>
-              <strong>Highest TrueSkill ever reached:</strong> {ff.peakRating.displayName},{" "}
+              <strong>Highest adjusted TrueSkill ever reached:</strong> {ff.peakRating.displayName},{" "}
               {ff.peakRating.conservativeRating} ({ff.peakRating.tournament} {ff.peakRating.year})
             </li>
           )}

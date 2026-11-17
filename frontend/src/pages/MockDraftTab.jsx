@@ -39,7 +39,7 @@ const MOCK_PLAYER_COLUMNS = [
     type: "number",
     decimals: 2,
     className: "adj-avg",
-    render: (val, row) => <TrueSkillValue rating={row.conservativeRating} mu={row.mu} />,
+    render: (val, row) => <TrueSkillValue rating={row.conservativeRating} />,
   },
   {
     key: "soloQueueRank",
@@ -72,8 +72,6 @@ const MOCK_PLAYER_COLUMNS = [
     sortValue: (row) => soloQueueSortValueClient(row.premade5x5Rank),
     render: (val) => <SoloQueueRank rank={val} />,
   },
-  { key: "mu", label: "\u03bc", sortable: true, hideable: true, filterable: true, type: "number", decimals: 2, defaultHidden: true },
-  { key: "sigma", label: "\u03c3", sortable: true, hideable: true, filterable: true, type: "number", decimals: 2, defaultHidden: true },
   { key: "wins", label: "Wins", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
   { key: "losses", label: "Losses", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
   {

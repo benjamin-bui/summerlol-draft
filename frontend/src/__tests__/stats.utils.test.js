@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { diversityPercentile, freedmanDiaconisHistogram, quantile } from "../utils/diversityStats";
-import { predictionStats } from "../utils/predictionStats";
+import { predictedResultProbability, predictionStats } from "../utils/predictionStats";
 
 describe("quantile", () => {
   it("interpolates like numpy's default", () => {
@@ -69,6 +69,14 @@ describe("diversityPercentile", () => {
 const m = (p, winner) => ({ predictedWinProbTeam1: p, winner });
 
 describe("predictionStats", () => {
+  it("uses the predicted probability of the actual result, and leaves draws unknown", () => {
+    expect(predictedResultProbability(0.8, "win")).toBe(0.8);
+    expect(predictedResultProbability(0.8, "loss")).toBeCloseTo(0.2);
+    expect(predictedResultProbability(0.8, "draw")).toBeNull();
+    expect(predictedResultProbability(0.8, null)).toBeNull();
+    expect(predictedResultProbability(undefined, "win")).toBeNull();
+  });
+
   it("computes Brier score, skill vs a coin flip, and favorite accuracy", () => {
     const s = predictionStats([m(0.8, "team1"), m(0.7, "team2"), m(0.5, "team1")]);
     // (0.2^2 + 0.7^2 + 0.5^2) / 3

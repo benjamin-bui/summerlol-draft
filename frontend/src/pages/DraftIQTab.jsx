@@ -191,7 +191,7 @@ export default function DraftIQTab({ active }) {
         <h3>Draft IQ</h3>
         <p>
           <strong>Value:</strong> For every draft pick ever made, we rank all players in that tournament’s draft class
-          by their TrueSkill entering that tournament. Value = (entering-skill rank) - (actual pick order). Positive
+          by their adjusted TrueSkill entering that tournament. Value = (entering-skill rank) - (actual pick order). Positive
           means a player went later than their skill justified - a steal. Negative means they went earlier - a reach.
         </p>
         <p>
@@ -206,8 +206,8 @@ export default function DraftIQTab({ active }) {
         </p>
         <p>
           Excluded data: Data from the first tournament is excluded because all players started at the same
-          TrueSkill level. New players joining later tournaments are not excluded and are assessed at the default
-          TrueSkill value.
+          adjusted TrueSkill level. New players joining later tournaments are not excluded and are assessed at the default
+          adjusted TrueSkill value.
         </p>
       </section>
 

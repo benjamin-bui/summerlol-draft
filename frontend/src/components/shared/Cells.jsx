@@ -168,24 +168,13 @@ export function RankBadge({ input }) {
   return <img src={`/icons/${tierName}.webp`} alt={`${displayName} rank badge`} className="rank-badge" />;
 }
 
-export function TrueSkillValue({ rating, mu }) {
+export function TrueSkillValue({ rating }) {
   if (rating === null || rating === undefined) return <>{"–"}</>;
   const formatRating = (n) => <span className="rating-number">{Math.round(n)}</span>;
-  if (mu === null || mu === undefined || Number.isNaN(mu)) {
-    return (
-      <span className="trueskill-cell">
-        <RankBadge input={rating} />
-        {formatRating(rating)}
-      </span>
-    );
-  }
   return (
     <span className="trueskill-cell">
       <RankBadge input={rating} />
-      <span className="trueskill-ratings">
-        {formatRating(rating)}
-        <span className="trueskill-mu">({formatRating(mu)})</span>
-      </span>
+      {formatRating(rating)}
     </span>
   );
 }

@@ -7,6 +7,7 @@ import TournamentStructureEditor from "../components/shared/TournamentStructureE
 import TournamentFunFacts from "../components/shared/TournamentFunFacts";
 import { ordinal, pct, pctOrLessThanOne, sortByRole } from "../utils/format";
 import { layoutBracket } from "../utils/bracketLayout";
+import { predictedResultProbability } from "../utils/predictionStats";
 import { useAuth } from "../context/AuthContext";
 
 function playerLinkProps(displayName, identityKey) {
@@ -359,7 +360,7 @@ function TeamCard({ team }) {
               <td>
                 <PlayerLink {...playerLinkProps(m.displayName, m.identityKey)} />
               </td>
-              <td title={m.entryRank != null ? `TrueSkill entering the tournament: ${Math.round(m.entryRating)}` : undefined}>
+              <td title={m.entryRank != null ? `Adjusted TrueSkill entering the tournament: ${Math.round(m.entryRating)}` : undefined}>
                 {m.entryRank != null ? `#${m.entryRank}` : "\u2013"}
               </td>
             </tr>
@@ -373,7 +374,7 @@ function TeamCard({ team }) {
 function TeamsBlock({ t }) {
   const pool = t.entryRankPoolSize;
   const legend = pool
-    ? `Pick = draft pick number (captains aren't picked). Entering rank = TrueSkill rank among all ${pool} players entering this tournament (#1 = best).`
+    ? `Pick = draft pick number (captains aren't picked). Entering rank = adjusted TrueSkill rank among all ${pool} players entering this tournament (#1 = best).`
     : `Pick = draft pick number (captains aren't picked). Entering rank isn't available \u2014 there were no earlier games to rate anyone from.`;
   return (
     <section className="profile-block">
@@ -819,7 +820,7 @@ function MatchRosterTable({ side, won, hasDetails, showBans, hasRoles, championF
     <div className="match-roster">
       <strong className="match-roster-name">{side.name}</strong>
       {result && <> {result}</>} <span className="stat-formula">
-        avg TrueSkill <TrueSkillValue rating={side.avg} mu={side.avgMu} />
+        average adjusted TrueSkill <TrueSkillValue rating={side.avg} />
       </span>
       {showBans && <BanList bans={side.bans} highlightKey={championFilterKey} />}
       <table className="match-details-table">
@@ -955,8 +956,8 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                 <th>Team 1</th>
                 <th>Team 2</th>
                 <th>Winner</th>
-                <th className="col-narrow" title="Pre-match predicted win probability of the winner">
-                  Result Prob.
+                <th className="col-narrow" title="Pre-match predicted probability of the recorded match result">
+                  Result Probability
                 </th>
               </tr>
             </thead>
@@ -990,7 +991,10 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                         const t1Won = m.winner === "team1";
                         const t2Won = m.winner === "team2";
                         const winnerSide = t1Won ? m.team1 : t2Won ? m.team2 : null;
-                        const winProb = t1Won ? m.predictedWinProbTeam1 : t2Won ? 1 - m.predictedWinProbTeam1 : null;
+                        const resultProbability = predictedResultProbability(
+                          m.predictedWinProbTeam1,
+                          t1Won ? "win" : t2Won ? "loss" : "draw",
+                        );
                         const isUpset = upsetKey && m.matchKey === upsetKey;
                         const isOpen = expandedKeys.has(m.matchKey || i);
                         const isFlashing = flashKey === (m.matchKey || i);
@@ -1020,7 +1024,9 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                                 <PlayerLink {...playerLinkProps(m.team2.name, m.team2.key)} />
                               </td>
                               <td>{winnerSide ? <PlayerLink {...playerLinkProps(winnerSide.name, winnerSide.key)} /> : "Draw"}</td>
-                              <td className="col-narrow">{winProb != null ? pctOrLessThanOne(winProb) : "\u2013"}</td>
+                              <td className="col-narrow">
+                                {resultProbability != null ? pctOrLessThanOne(resultProbability) : "\u2013"}
+                              </td>
                             </tr>
                             {isOpen && (
                               <tr key={`${m.matchKey || i}-detail`} className="roster-detail-row">

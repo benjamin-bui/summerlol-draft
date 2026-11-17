@@ -53,7 +53,7 @@ function MatchRosterDetail({ row, onEdit }) {
     const hasDetails = !!row.match_details?.length;
     return (
       <div className="match-roster">
-        <strong className="match-roster-name">{name}</strong> - avg TrueSkill: <TrueSkillValue rating={team?.avg} mu={team?.avgMu} />
+        <strong className="match-roster-name">{name}</strong> - average adjusted TrueSkill: <TrueSkillValue rating={team?.avg} />
         {hasBans && <BanList bans={bans} />}
         <table className="match-details-table">
           <thead>
@@ -80,7 +80,7 @@ function MatchRosterDetail({ row, onEdit }) {
                     {member.displayName}
                   </td>
                   <td>
-                    <TrueSkillValue rating={member.conservativeRating} mu={member.mu} />
+                    <TrueSkillValue rating={member.conservativeRating} />
                   </td>
                   {hasDetails && (
                     <>

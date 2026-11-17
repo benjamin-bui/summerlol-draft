@@ -175,9 +175,9 @@ function TrueSkillBlock({ player, tournaments }) {
   const withEntry = tournaments.filter((t) => t.entryConservativeRating != null);
   return (
     <section className="profile-block">
-      <h3>TrueSkill</h3>
+      <h3>Adjusted TrueSkill</h3>
       <div className="profile-current-rank">
-        <TrueSkillValue rating={player.conservativeRating} mu={player.mu} />
+        <TrueSkillValue rating={player.conservativeRating} />
         <span className="stat-formula">
           #{player.overallRank ?? "\u2013"} of {player.totalPlayers ?? "\u2013"} overall
         </span>
@@ -188,7 +188,7 @@ function TrueSkillBlock({ player, tournaments }) {
             <tr>
               <th>Tournament</th>
               <th>Entering rank</th>
-              <th>Entering rating</th>
+              <th>Entering adjusted TrueSkill</th>
             </tr>
           </thead>
           <tbody>

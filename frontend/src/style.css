@@ -391,6 +391,35 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   align-items: center;
 }
+.player-game-filters {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 18px 0 4px;
+}
+.player-game-filters label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.player-game-filters select {
+  min-width: 150px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  padding: 7px 9px;
+}
+.player-game-filter-note {
+  margin: 4px 0 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
 /* ---- Year checkboxes ---- */
 
 .year-checkboxes {
@@ -875,15 +904,6 @@ header {
   display: inline-flex;
   align-items: center; /* This handles the vertical centering */
 }
-.trueskill-ratings {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.25em;
-}
-.trueskill-mu {
-  white-space: nowrap;
-}
-
 .rank-badge {
   /* 1em equals the exact font size of the surrounding text. 
      1.2em makes it just a tiny bit larger than the text for readability. */
@@ -1435,7 +1455,7 @@ a.champion-link:hover {
 }
 /* Shared stacked-cell pattern -- a bold primary line with a smaller muted
    line underneath, used the same way in every consolidated column (Match,
-   Matchup, Result, Avg Rating, TrueSkill) so desktop and mobile read
+   Matchup, Result, TrueSkill) so desktop and mobile read
    consistently instead of desktop spreading the same facts across many
    separate flat columns. */
 .cell-primary {
@@ -1481,8 +1501,8 @@ a.champion-link:hover {
 }
 
 /* Match history, phone-width: only the toggle, Match (year + tournament +
-   stage), Champion, K/D/A, and Result stay as actual columns -- Matchup,
-   Avg Rating, and TrueSkill move into the "extra stats" grid inside the
+   stage), Champion, K/D/A, and Result stay as actual columns -- Matchup
+   and TrueSkill move into the "extra stats" grid inside the
    expanded row instead of sitting in mostly-blank columns that force the
    table wider than the screen. */
 @media (max-width: 520px) {
