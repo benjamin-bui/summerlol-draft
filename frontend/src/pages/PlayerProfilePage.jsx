@@ -131,7 +131,7 @@ function SummaryBlock({ player, tournaments, championStats, history, againstRole
         </div>
       </div>
       <RoleBreakdown history={history} />
-      <div className="profile-summary-coplay">
+      <div className="profile-summary-coplay player-profile-summary-coplay">
         <div>
           <span>Highest win rate with</span>
           <SummaryPlayerLink rec={bestWith} />

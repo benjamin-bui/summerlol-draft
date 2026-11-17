@@ -1285,9 +1285,17 @@ a.champion-link:hover {
   font-size: 0.85rem;
   line-height: 1.5;
 }
+.player-profile-summary-coplay > div {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
 .profile-summary-coplay > div > span:first-child {
   color: var(--muted);
   flex-shrink: 0;
+}
+.player-profile-summary-coplay .profile-summary-coplay-value {
+  text-align: left;
 }
 .profile-summary-coplay-value {
   text-align: right;
