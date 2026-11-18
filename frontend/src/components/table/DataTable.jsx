@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import FilterPopover from "./FilterPopover";
+import TablePagination from "./TablePagination";
 import { applyColumnFilters, formatCell, sortRows } from "./tableLogic";
 import { PlayerLink } from "../shared/Cells";
 
@@ -179,47 +180,17 @@ export default function DataTable({
         />
       )}
       {pagination && (
-        <div className="table-footer">
-          <div className="table-footer-spacer" />
-          <div className="table-page-size">
-            {pagination.pageSizeOptions.map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                className={`page-size-btn ${(opt === "all" ? pageSize === "all" : pageSize === opt) ? "active" : ""}`}
-                onClick={() => {
-                  setPageSize(opt);
-                  setPage(1);
-                }}
-              >
-                {opt === "all" ? "All" : opt}
-              </button>
-            ))}
-          </div>
-          <div className="table-pagination">
-            <button
-              type="button"
-              className="page-nav-btn"
-              disabled={clampedPage <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              {"\u2039"} Prev
-            </button>
-            <span className="page-indicator">
-              {total === 0 ? 0 : startIndex + 1}
-              {"\u2013"}
-              {Math.min(total, startIndex + effectivePageSize)} of {total}
-            </span>
-            <button
-              type="button"
-              className="page-nav-btn"
-              disabled={clampedPage >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next {"\u203a"}
-            </button>
-          </div>
-        </div>
+        <TablePagination
+          page={clampedPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          pageSizeOptions={pagination.pageSizeOptions}
+          onPageChange={setPage}
+          onPageSizeChange={(option) => {
+            setPageSize(option);
+            setPage(1);
+          }}
+        />
       )}
     </>
   );

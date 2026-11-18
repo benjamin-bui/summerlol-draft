@@ -909,7 +909,7 @@ function groupMatchesByStructure(shown) {
     }));
 }
 
-function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onToggleExpand, flashKey, canEdit, onSaved }) {
+function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onToggleExpand, onToggleExpandAll, flashKey, canEdit, onSaved }) {
   const [editingMatch, setEditingMatch] = useState(null);
   if (!t.matches.length) {
     return (
@@ -921,6 +921,8 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
   }
   const upsetKey = t.summary.biggestUpset?.matchKey;
   const shown = t.matches.map((m, i) => ({ m, i })).filter(({ m }) => !championFilterKey || matchHasChampion(m, championFilterKey));
+  const shownKeys = shown.map(({ m, i }) => m.matchKey || i);
+  const allExpanded = shownKeys.every((key) => expandedKeys.has(key));
   const groupedMatches = groupMatchesByStructure(shown);
   const filterChampion = championFilterKey ? t.championStats.find((c) => c.key === championFilterKey) : null;
   const count = championFilterKey ? `${shown.length} of ${t.matches.length}, in play order` : `${t.matches.length}, in play order`;
@@ -938,6 +940,13 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
           </span>
           <button type="button" className="tournament-clear-filter" onClick={onClearFilter}>
             Clear filter
+          </button>
+        </div>
+      )}
+      {shown.length > 0 && (
+        <div className="tournament-match-actions">
+          <button type="button" className="columns-btn" aria-expanded={allExpanded} onClick={() => onToggleExpandAll(shownKeys)}>
+            {allExpanded ? "Collapse all" : "Expand all"}
           </button>
         </div>
       )}
@@ -1179,6 +1188,18 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
     });
   }
 
+  function toggleExpandAll(keys) {
+    setExpandedKeys((previous) => {
+      const next = new Set(previous);
+      const collapse = keys.every((key) => previous.has(key));
+      keys.forEach((key) => {
+        if (collapse) next.delete(key);
+        else next.add(key);
+      });
+      return next;
+    });
+  }
+
   function jumpToMatch(matchKey) {
     setChampionFilterKey(null);
     setMainTab("results");
@@ -1282,6 +1303,7 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
               onClearFilter={() => setChampionFilterKey(null)}
               expandedKeys={expandedKeys}
               onToggleExpand={toggleExpand}
+              onToggleExpandAll={toggleExpandAll}
               flashKey={flashKey}
               canEdit={canEdit}
               onSaved={refreshTournaments}

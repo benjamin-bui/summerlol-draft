@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import TablePagination from "../table/TablePagination";
 import { PlayerLink, ChampionLink, BanList, RoleIcon, TrueSkillValue } from "./Cells";
 import { sortByRole, ROLE_LABELS } from "../../utils/format";
 import { tournamentRouteId } from "../../utils/profileCompute";
@@ -62,8 +63,7 @@ function RosterTable({ team, name, bans, gameHasBans, gameHasRoles, hasDetails, 
   );
 }
 
-function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey, onSaved }) {
-  const [open, setOpen] = useState(false);
+function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey, onSaved, open, onToggle }) {
   const [editing, setEditing] = useState(false);
   const { canEdit } = useAuth();
   const rowClass = entry.outcome === "win" ? "row-win" : entry.outcome === "loss" ? "row-loss" : "row-draw";
@@ -88,7 +88,7 @@ function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey, onSaved 
         className={`history-row ${rowClass}${entry.matchKey === highlightedMatchKey ? " history-row-flash" : ""}`}
       >
         <td className="col-toggle">
-          <button className="roster-toggle" aria-expanded={open} aria-label="Show match details" onClick={() => setOpen((o) => !o)}>
+          <button className="roster-toggle" aria-expanded={open} aria-label="Show match details" onClick={onToggle}>
             {open ? "\u25bc" : "\u25b6"}
           </button>
         </td>
@@ -253,47 +253,108 @@ function HistoryRow({ entry, showRole, showPlayer, highlightedMatchKey, onSaved 
 // dropped.
 export default function ProfileHistoryTable({ entries, showRole, showPlayer = false, highlightedMatchKey, onSaved }) {
   if (!entries.length) return <p>No matching games.</p>;
+  return <PaginatedProfileHistoryTable entries={entries} showRole={showRole} showPlayer={showPlayer} highlightedMatchKey={highlightedMatchKey} onSaved={onSaved} />;
+}
+
+function PaginatedProfileHistoryTable({ entries, showRole, showPlayer, highlightedMatchKey, onSaved }) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(40);
+  const [expandedRows, setExpandedRows] = useState(() => new Set());
+  const total = entries.length;
+  const maxPageSize = Math.min(120, Math.max(40, Math.ceil(total / 40) * 40));
+  const pageSizeOptions = useMemo(() => {
+    const options = [40, 80, 120].filter((size) => size <= maxPageSize);
+    if (total > 120) options.push("all");
+    return options;
+  }, [maxPageSize, total]);
+  const effectivePageSizeSetting = pageSizeOptions.includes(pageSize) ? pageSize : maxPageSize;
+  const effectivePageSize = effectivePageSizeSetting === "all" ? total : effectivePageSizeSetting;
+  const totalPages = Math.max(1, Math.ceil(total / effectivePageSize));
+  const clampedPage = Math.min(page, totalPages);
+  const startIndex = (clampedPage - 1) * effectivePageSize;
+  const pageEntries = entries.slice(startIndex, startIndex + effectivePageSize);
+  const allExpanded = entries.every((entry, index) => expandedRows.has(entry.matchKey || index));
+
+  function toggleAllRows() {
+    setExpandedRows((previous) => {
+      const next = new Set(previous);
+      entries.forEach((entry, index) => {
+        const key = entry.matchKey || index;
+        if (allExpanded) next.delete(key);
+        else next.add(key);
+      });
+      return next;
+    });
+  }
+
   return (
-    <div className="table-section profile-history-section">
-      <table className="profile-history-table">
-        <thead>
-          <tr>
-            <th className="col-toggle">
-              <span className="sr-only">Expand</span>
-            </th>
-            <th className="col-match">Match</th>
-            <th className="col-secondary col-matchup">Matchup</th>
-            {showRole && <th className="col-secondary col-role">Role</th>}
-            <th>{showPlayer ? "Player" : "Champion"}</th>
-            <th>K/D/A</th>
-            {showPlayer && (
-              <>
-                <th>Opponent Player</th>
-                <th className="col-secondary">Lane Opponent</th>
-                <th className="col-secondary">Opponent K/D/A</th>
-              </>
-            )}
-            <th className="col-result">Result Probability</th>
-            {!showPlayer && (
-              <>
-                <th className="col-secondary col-trueskill">TrueSkill</th>
-              </>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry, i) => (
-            <HistoryRow
-              entry={entry}
-              showRole={showRole}
-              showPlayer={showPlayer}
-              highlightedMatchKey={highlightedMatchKey}
-              onSaved={onSaved}
-              key={entry.matchKey || i}
-            />
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="profile-history-controls">
+        <button type="button" className="columns-btn" aria-expanded={allExpanded} onClick={toggleAllRows}>
+          {allExpanded ? "Collapse all" : "Expand all"}
+        </button>
+      </div>
+      <div className="table-section profile-history-section">
+        <table className="profile-history-table">
+          <thead>
+            <tr>
+              <th className="col-toggle">
+                <span className="sr-only">Expand</span>
+              </th>
+              <th className="col-match">Match</th>
+              <th className="col-secondary col-matchup">Matchup</th>
+              {showRole && <th className="col-secondary col-role">Role</th>}
+              <th>{showPlayer ? "Player" : "Champion"}</th>
+              <th>K/D/A</th>
+              {showPlayer && (
+                <>
+                  <th>Opponent Player</th>
+                  <th className="col-secondary">Lane Opponent</th>
+                  <th className="col-secondary">Opponent K/D/A</th>
+                </>
+              )}
+              <th className="col-result">Result Probability</th>
+              {!showPlayer && <th className="col-secondary col-trueskill">TrueSkill</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {pageEntries.map((entry, localIndex) => {
+              const index = startIndex + localIndex;
+              const key = entry.matchKey || index;
+              return (
+                <HistoryRow
+                  entry={entry}
+                  showRole={showRole}
+                  showPlayer={showPlayer}
+                  highlightedMatchKey={highlightedMatchKey}
+                  onSaved={onSaved}
+                  open={expandedRows.has(key)}
+                  onToggle={() => {
+                    setExpandedRows((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(key)) next.delete(key);
+                      else next.add(key);
+                      return next;
+                    });
+                  }}
+                  key={key}
+                />
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <TablePagination
+        page={clampedPage}
+        totalPages={totalPages}
+        pageSize={effectivePageSizeSetting}
+        pageSizeOptions={pageSizeOptions}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+      />
+    </>
   );
 }

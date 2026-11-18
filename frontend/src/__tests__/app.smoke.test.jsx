@@ -203,6 +203,10 @@ describe("App smoke test against real data", () => {
     const user = userEvent.setup();
     renderApp("/?tab=tournaments");
     await screen.findByText("Team rosters", {}, { timeout: 10000 });
+    await user.click(screen.getByRole("button", { name: "Expand all" }));
+    expect([...document.querySelectorAll(".tournament-matches-table .roster-toggle")].every((button) => button.getAttribute("aria-expanded") === "true")).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Collapse all" }));
+    expect([...document.querySelectorAll(".tournament-matches-table .roster-toggle")].every((button) => button.getAttribute("aria-expanded") === "false")).toBe(true);
     await user.click(screen.getByRole("tab", { name: "Results" }));
 
     expect((await screen.findAllByText("(1W-0L)")).length).toBeGreaterThan(0);

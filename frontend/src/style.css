@@ -642,10 +642,18 @@ input[type="range"]::-moz-range-thumb {
   overflow-x: auto;
 }
 .profile-history-section {
-  margin-top: 16px;
+  margin-top: 0;
 }
 .profile-history-section .profile-history-table {
   margin-top: 0;
+}
+.profile-history-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin: 16px 0 8px;
+}
+.tournament-match-actions {
+  margin: 8px 0;
 }
 
 /* ---- Table pagination footer ---- */
@@ -689,9 +697,31 @@ input[type="range"]::-moz-range-thumb {
   justify-self: end;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
   font-size: 0.82rem;
   color: var(--muted);
+}
+.page-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.page-jump-input {
+  width: 4ch;
+  padding: 4px 2px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+}
+.page-jump-input:focus {
+  border-color: var(--accent-dim);
+  outline: 1px solid var(--accent-dim);
 }
 .page-nav-btn {
   background: var(--panel);
