@@ -87,6 +87,16 @@ export const editorApi = {
       csrfToken,
       body: { placements },
     }),
+  getTeamRoster: (year, tournament, captainKey, captainName) => {
+    const query = new URLSearchParams({ captainKey, captainName });
+    return sendJson(`/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/roster?${query}`);
+  },
+  saveTeamRoster: (year, tournament, body, csrfToken) =>
+    sendJson(`/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/roster`, {
+      method: "PUT",
+      csrfToken,
+      body,
+    }),
   createSeries: (year, tournament, body, csrfToken) =>
     sendJson(`/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/series`, {
       method: "POST",

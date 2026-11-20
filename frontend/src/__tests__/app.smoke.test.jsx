@@ -215,6 +215,57 @@ describe("App smoke test against real data", () => {
     expect(within(betaCard).queryByText("Discrepancy: +0.5")).not.toBeInTheDocument();
   });
 
+  it("opens and saves a team roster modal for authorized tournament editors", async () => {
+    const baseFetch = global.fetch.getMockImplementation();
+    let savedBody;
+    vi.spyOn(global, "fetch").mockImplementation(async (url, options = {}) => {
+      const path = String(url);
+      const json = (data) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) });
+      if (path.startsWith("/api/auth/me")) {
+        return json({ enabled: true, authenticated: true, canEdit: true, user: { email: "editor@example.com" }, csrfToken: "test-csrf" });
+      }
+      if (path.startsWith("/api/editor/tournaments/2026/Summer/roster")) {
+        if (options.method === "PUT") {
+          savedBody = JSON.parse(options.body);
+          return json({ ...savedBody, players: [] });
+        }
+        return json({
+          captainKey: "p18",
+          captainName: "Voidliss#NA1",
+          baseRev: "roster-rev",
+          players: [{ name: "Ene#TFT", pickOrder: 1 }],
+        });
+      }
+      return baseFetch(url, options);
+    });
+
+    const user = userEvent.setup();
+    renderApp("/?tab=tournaments");
+    await screen.findByText("Team rosters", {}, { timeout: 10000 });
+    await user.click(screen.getAllByRole("button", { name: "Edit roster" })[0]);
+    const dialog = await screen.findByRole("dialog", { name: "Edit roster for Voidliss#NA1" });
+    expect(await within(dialog).findByLabelText("Pick 1")).toHaveValue("Ene#TFT");
+    expect(dialog.querySelector('datalist option[value="Ene#TFT"]')).not.toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Add player" }));
+    await user.type(within(dialog).getByLabelText("Pick 2"), "New Player");
+    await user.click(within(dialog).getByRole("button", { name: "Save roster" }));
+
+    await waitFor(() => expect(savedBody).toMatchObject({
+      captainKey: "p18",
+      captainName: "Voidliss#NA1",
+      baseRev: "roster-rev",
+      players: ["Ene#TFT", "New Player"],
+    }));
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/editor/tournaments/2026/Summer/roster",
+      expect.objectContaining({
+        method: "PUT",
+        headers: expect.objectContaining({ "X-CSRF-Token": "test-csrf" }),
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit roster for Voidliss#NA1" })).not.toBeInTheDocument());
+  });
+
   it("shows cumulative Swiss records and title-cased formats in tournament results", async () => {
     const baseFetch = global.fetch.getMockImplementation();
     vi.spyOn(global, "fetch").mockImplementation(async (url, options) => {

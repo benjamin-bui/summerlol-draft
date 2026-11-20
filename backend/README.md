@@ -181,6 +181,14 @@ Data behavior worth knowing:
   numbers; player/champion histories show the same context. This organization
   is display-only: TrueSkill still processes every game independently, and
   stages do not calculate pairings, advancement, or bracket progression.
+- **Tournaments -> Teams -> Edit roster** lets authorized editors update a
+  team's drafted players and pick order in the canonical `rows` table. The
+  modal offers known database player names as autocomplete suggestions and also
+  accepts typed names. The captain and recorded match lineups are left
+  unchanged. The editor reads and saves through
+  `/api/editor/tournaments/:year/:tournament/roster`; existing rows retain
+  their other fields, duplicate players are rejected, and a conflict is
+  returned if another editor changed the roster after it was opened.
 - A **round-robin** stage can also be split into groups: the editor sets how
   many groups there are, names them, and allocates each team to one (or uses
   **Suggest from games**, which groups teams that played each other). The

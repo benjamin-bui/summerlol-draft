@@ -3333,6 +3333,25 @@ th[data-champion-sort]:focus-visible {
 .structure-editor {
   width: min(980px, 100%);
 }
+.team-roster-editor {
+  width: min(700px, 100%);
+}
+.team-roster-edit-launch {
+  margin: 0 0 8px;
+}
+.team-roster-edit-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.team-roster-edit-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
 .structure-tournament-select,
 .structure-series-form label {
   display: flex;
@@ -3341,6 +3360,18 @@ th[data-champion-sort]:focus-visible {
   min-width: 0;
   color: var(--muted);
   font-size: 0.88rem;
+}
+.team-roster-edit-row input {
+  color: var(--text);
+}
+@media (max-width: 520px) {
+  .team-roster-edit-row {
+    grid-template-columns: 54px minmax(0, 1fr);
+  }
+  .team-roster-edit-row button {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 .structure-tournament-select {
   max-width: 420px;

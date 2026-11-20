@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { useAppData } from "../context/AppDataContext";
 import { PlayerLink, ChampionLink, BanList, RoleIcon, TrueSkillValue } from "../components/shared/Cells";
 import MatchDetailEditor from "../components/shared/MatchDetailEditor";
+import TeamRosterEditor from "../components/shared/TeamRosterEditor";
 import TournamentStructureEditor from "../components/shared/TournamentStructureEditor";
 import TournamentFunFacts from "../components/shared/TournamentFunFacts";
 import { ordinal, pct, pctOrLessThanOne, sortByRole } from "../utils/format";
@@ -333,7 +334,7 @@ function ChampionsBlock({ t, championSort, setChampionSort, championFilterKey, o
   );
 }
 
-function TeamCard({ team, suggestedPlacement, showSuggested }) {
+function TeamCard({ team, suggestedPlacement, showSuggested, canEdit, onEditRoster }) {
   const record = team.games ? `${team.wins}-${team.losses}${team.draws ? `-${team.draws}` : ""}` : "\u2013";
   const discrepancy = team.placement == null ? null : team.placement - suggestedPlacement;
   return (
@@ -352,6 +353,13 @@ function TeamCard({ team, suggestedPlacement, showSuggested }) {
           {team.winRate != null ? ` \u00b7 ${pct(team.winRate)}` : ""}
         </span>
       </header>
+      {canEdit && (
+        <div className="team-roster-edit-launch">
+          <button type="button" className="columns-btn" onClick={() => onEditRoster(team)}>
+            Edit roster
+          </button>
+        </div>
+      )}
       {showSuggested && suggestedPlacement != null && (
         <p className="tournament-placement-comparison">
           <span>Suggested: {ordinal(suggestedPlacement)}</span>
@@ -387,7 +395,7 @@ function TeamCard({ team, suggestedPlacement, showSuggested }) {
   );
 }
 
-function TeamsBlock({ t }) {
+function TeamsBlock({ t, canEdit, onEditRoster }) {
   const [showSuggested, setShowSuggested] = useState(false);
   const pool = t.entryRankPoolSize;
   const placementSuggestion = tournamentPlacementSuggestion(t);
@@ -425,6 +433,8 @@ function TeamsBlock({ t }) {
             key={i}
             suggestedPlacement={suggestedByTeam.get(team.captainKey)}
             showSuggested={showSuggested}
+            canEdit={canEdit}
+            onEditRoster={onEditRoster}
           />
         ))}
       </div>
@@ -1185,8 +1195,8 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
 }
 
 export default function TournamentsTab({ active, selectedTournamentId, selectedMatchKey, onSelectionChange }) {
-  const { loadTrueskill } = useAppData();
-  const { canEdit } = useAuth();
+  const { loadTrueskill, players } = useAppData();
+  const { canEdit, csrfToken } = useAuth();
   const [tournaments, setTournaments] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [refreshError, setRefreshError] = useState(null);
@@ -1195,6 +1205,7 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
   const [flashKey, setFlashKey] = useState(null);
   const [expandedKeys, setExpandedKeys] = useState(() => new Set());
   const [editingStructure, setEditingStructure] = useState(false);
+  const [editingRoster, setEditingRoster] = useState(null);
   const [mainTab, setMainTab] = useState("teams");
   const lastExternalMatchKey = useRef(null);
 
@@ -1236,7 +1247,16 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
       setTournaments(data.tournaments || []);
       setRefreshError(null);
     } catch (error) {
-      setRefreshError(`Match was saved, but the tournament view could not refresh: ${error.message}`);
+      setRefreshError(`Changes were saved, but the tournament view could not refresh: ${error.message}`);
+    }
+  }
+
+  async function refreshAfterRosterSaved() {
+    await refreshTournaments();
+    try {
+      await loadTrueskill(true);
+    } catch (error) {
+      setRefreshError(`Roster was saved, but player suggestions could not refresh: ${error.message}`);
     }
   }
 
@@ -1379,7 +1399,11 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
             </div>
             {mainTab === "teams" ? (
               <div role="tabpanel" id="tournament-teams-panel" aria-labelledby="tournament-teams-tab">
-                <TeamsBlock t={t} />
+                <TeamsBlock
+                  t={t}
+                  canEdit={canEdit}
+                  onEditRoster={(team) => setEditingRoster({ team, year: t.year, tournament: t.tournament })}
+                />
               </div>
             ) : (
               <div role="tabpanel" id="tournament-results-panel" aria-labelledby="tournament-results-tab">
@@ -1412,6 +1436,17 @@ export default function TournamentsTab({ active, selectedTournamentId, selectedM
           }))}
           onClose={() => setEditingStructure(false)}
           onChanged={refreshTournaments}
+        />
+      )}
+      {canEdit && editingRoster && (
+        <TeamRosterEditor
+          year={editingRoster.year}
+          tournament={editingRoster.tournament}
+          team={editingRoster.team}
+          players={players}
+          csrfToken={csrfToken}
+          onClose={() => setEditingRoster(null)}
+          onSaved={refreshAfterRosterSaved}
         />
       )}
     </section>

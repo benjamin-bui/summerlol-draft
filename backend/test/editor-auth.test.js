@@ -233,6 +233,10 @@ test("anonymous visitors are refused by every editing route and nothing changes"
     assert.deepEqual(await res.json(), { error: "Sign in required" });
   }
   assert.equal((await browser.request("/api/editor/anything-else")).status, 401);
+  assert.equal(
+    (await browser.request("/api/editor/tournaments/2026/Summer/roster?captainKey=Cap1&captainName=Cap1")).status,
+    401,
+  );
   assert.equal(dump(app.db), before);
   assert.deepEqual(await browser.me(), {
     enabled: true, authenticated: false, canEdit: false, user: null, csrfToken: null,
@@ -321,6 +325,24 @@ test("an authorized editor can sign in, load a match, and save changes", async (
   assert.match(audit.before_json, /"kills":1/);
   assert.match(audit.after_json, /"kills":5/);
   assert.equal(app.db.prepare("SELECT edited_by_sub FROM match_detail_edits WHERE match_key = ?").get(MATCH_KEY).edited_by_sub, "user-1");
+
+  const rosterPath = "/api/editor/tournaments/2026/Summer/roster?captainKey=Cap1&captainName=Cap1";
+  const rosterResponse = await browser.request(rosterPath);
+  assert.equal(rosterResponse.status, 200);
+  const roster = await rosterResponse.json();
+  assert.deepEqual(roster.players.map((player) => player.name), ["A1", "A2"]);
+  const rosterSave = await browser.request("/api/editor/tournaments/2026/Summer/roster", {
+    method: "PUT",
+    headers: sameOriginHeaders(app, me.csrfToken),
+    body: {
+      captainKey: "Cap1",
+      captainName: "Cap1",
+      baseRev: roster.baseRev,
+      players: ["A2", "A1"],
+    },
+  });
+  assert.equal(rosterSave.status, 200, JSON.stringify(await rosterSave.clone().json()));
+  assert.deepEqual((await rosterSave.json()).players.map((player) => player.name), ["A2", "A1"]);
 });
 
 test("signing in successfully is not enough: people off the allowlist get no session", async (t) => {

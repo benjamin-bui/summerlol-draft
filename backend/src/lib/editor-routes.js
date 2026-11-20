@@ -23,6 +23,7 @@ const {
   updateGameRounds,
   updateGameStructure,
 } = require("./tournament-structure");
+const { TeamRosterError, readTeamRoster, saveTeamRoster } = require("./team-roster-editor");
 
 function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
   const router = express.Router();
@@ -80,6 +81,39 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
       );
     } catch (error) {
       sendStructureError(res, error);
+    }
+  });
+
+  router.get(`${prefix}/tournaments/:year/:tournament/roster`, (req, res) => {
+    try {
+      res.json(
+        readTeamRoster(
+          db,
+          Number(req.params.year),
+          req.params.tournament,
+          req.query.captainKey,
+          req.query.captainName,
+          identities(),
+        ),
+      );
+    } catch (error) {
+      sendTeamRosterError(res, error);
+    }
+  });
+
+  router.put(`${prefix}/tournaments/:year/:tournament/roster`, (req, res) => {
+    try {
+      const state = saveTeamRoster(
+        db,
+        Number(req.params.year),
+        req.params.tournament,
+        req.body,
+        identities(),
+      );
+      console.log(`[editor] ${req.editor.sub} updated roster for ${req.params.year} ${req.params.tournament}`);
+      res.json(state);
+    } catch (error) {
+      sendTeamRosterError(res, error);
     }
   });
 
@@ -188,6 +222,14 @@ function sendStructureError(res, error) {
   }
   console.error("[editor] unexpected tournament structure error:", error);
   return res.status(500).json({ error: "Could not update tournament structure" });
+}
+
+function sendTeamRosterError(res, error) {
+  if (error instanceof TeamRosterError) {
+    return res.status(error.status).json({ error: error.message });
+  }
+  console.error("[editor] unexpected tournament roster error:", error);
+  return res.status(500).json({ error: "Could not update tournament roster" });
 }
 
 module.exports = { createEditorRouter };
