@@ -11,6 +11,7 @@ import {
   tournamentTeams,
 } from "../../utils/roundRobinGroups";
 import { sortMatchesByTournamentStructure } from "../../utils/matchOrdering";
+import { suggestBracketPlacements } from "../../utils/bracketLayout";
 
 const STAGE_FORMATS = [
   ["round-robin", "Round robin"],
@@ -30,6 +31,55 @@ function editableStages(stages) {
 
 function placementValuesFor(teams = []) {
   return Object.fromEntries(teams.map((team) => [team.captainKey, team.placement == null ? "" : String(team.placement)]));
+}
+
+function suggestedPlacementsForStructure(structure) {
+  const stages = (structure?.stages || [])
+    .filter((stage) => ["single-elimination", "double-elimination"].includes(stage.format))
+    .sort((a, b) => (a.stageOrder ?? 0) - (b.stageOrder ?? 0));
+  const stage = stages.at(-1);
+  if (!stage) return null;
+
+  const teamByName = new Map();
+  for (const team of structure.teams || []) {
+    teamByName.set(team.captainName.trim().toLowerCase(), team);
+  }
+  const seriesById = new Map((structure.series || []).map((series) => [series.seriesId, series]));
+  const groups = new Map();
+  for (const game of (structure.games || []).filter((item) => item.stageId === stage.stageId)) {
+    const id = game.seriesId || game.matchKey;
+    const series = game.seriesId ? seriesById.get(game.seriesId) : null;
+    if (!groups.has(id)) {
+      groups.set(id, {
+        seriesId: game.seriesId || null,
+        roundLabel: series?.roundLabel || null,
+        bestOf: series?.bestOf || null,
+        games: [],
+      });
+    }
+    const normalize = (name) => String(name || "").trim().toLowerCase();
+    const result = normalize(game.result);
+    const team1 = { key: normalize(game.team1), name: game.team1 };
+    const team2 = { key: normalize(game.team2), name: game.team2 };
+    groups.get(id).games.push({
+      matchKey: game.matchKey,
+      order: game.matchOrder,
+      stage: game.matchStage,
+      round: game.round,
+      section: game.section,
+      team1,
+      team2,
+      winner: result === normalize(game.team1) ? "team1" : result === normalize(game.team2) ? "team2" : "draw",
+    });
+  }
+  const suggestions = suggestBracketPlacements([...groups.values()], stage.format);
+  if (!suggestions) return null;
+  const placements = new Map();
+  for (const suggestion of suggestions) {
+    const team = teamByName.get(String(suggestion.name).trim().toLowerCase());
+    if (team) placements.set(team.captainKey, suggestion.placement);
+  }
+  return placements.size === suggestions.length ? { stage, placements } : null;
 }
 
 function scopeKey(row) {
@@ -292,6 +342,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const addTeam1Name = seriesSides?.team1 || addTeam1;
   const addTeam2Name = seriesSides?.team2 || addTeam2;
   const canInsertGame = addSeriesId || (addTeam1 && addTeam2 && addTeam1 !== addTeam2);
+  const bracketSuggestion = suggestedPlacementsForStructure(structure);
   const visibleGames = sortMatchesByTournamentStructure(structure?.games || []).filter(
     (game) =>
       gameStageFilter === "all" ||
@@ -387,7 +438,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
 
             <section className="structure-section">
               <h3>Team placements</h3>
-              <p className="stat-formula">Set each team&apos;s final numeric placement directly in the draft data. Clear a value to remove its placement.</p>
+              <p className="stat-formula">Set each team&apos;s final placement directly in the draft data. Use whole or half-step values; tied finishes can average the places they share. Clear a value to remove its placement.</p>
               <div className="structure-placement-list">
                 {(structure.teams || []).map((team) => (
                   <label className="structure-placement-row" key={team.captainKey}>
@@ -395,7 +446,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                     <input
                       type="number"
                       min="1"
-                      step="1"
+                      step="0.5"
                       aria-label={`${team.captainName} placement`}
                       value={placementValues[team.captainKey] ?? ""}
                       onChange={(event) => setPlacementValues((current) => ({
@@ -407,6 +458,18 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                 ))}
               </div>
               <div className="structure-actions">
+                <button
+                  type="button"
+                  className="columns-btn"
+                  disabled={busy || !bracketSuggestion}
+                  title={bracketSuggestion ? `Fill placements suggested by ${bracketSuggestion.stage.name}` : "A complete, decisive elimination bracket is needed to suggest placements"}
+                  onClick={() => setPlacementValues((current) => ({
+                    ...current,
+                    ...Object.fromEntries(bracketSuggestion.placements),
+                  }))}
+                >
+                  Suggest placements from bracket
+                </button>
                 <button
                   type="button"
                   className="columns-btn"

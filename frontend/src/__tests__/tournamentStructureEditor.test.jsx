@@ -288,6 +288,75 @@ describe("TournamentStructureEditor", () => {
     ));
   });
 
+  it("fills placements from a completed elimination bracket", async () => {
+    const user = userEvent.setup();
+    const teams = ["Alpha", "Beta", "Gamma", "Delta"].map((captainName) => ({
+      captainKey: `${captainName.toLowerCase()}-key`,
+      captainName,
+      placement: null,
+    }));
+    const game = (matchKey, matchOrder, team1, team2, result, round) => ({
+      matchKey,
+      matchOrder,
+      stageId: "playoffs",
+      matchStage: round,
+      round,
+      section: null,
+      seriesId: null,
+      team1,
+      team2,
+      result,
+    });
+    const bracketStructure = {
+      ...structure,
+      teams,
+      stages: [{
+        stageId: "playoffs",
+        name: "Playoffs",
+        format: "single-elimination",
+        stageOrder: 2,
+        groups: [],
+      }],
+      series: [],
+      games: [
+        game("semi-1", 1, "Alpha", "Beta", "Alpha", "Semifinals"),
+        game("semi-2", 2, "Gamma", "Delta", "Gamma", "Semifinals"),
+        game("final", 3, "Alpha", "Gamma", "Alpha", "Final"),
+      ],
+    };
+    vi.spyOn(editorApi, "getTournamentStructure").mockResolvedValue(bracketStructure);
+    const save = vi.spyOn(editorApi, "saveTournamentPlacements").mockResolvedValue(bracketStructure);
+    render(
+      <TournamentStructureEditor
+        rows={[{ year: 2026, tournament: "Summer" }]}
+        onChanged={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "Tournament structure" });
+    const suggestButton = within(dialog).getByRole("button", { name: "Suggest placements from bracket" });
+    expect(suggestButton).toBeEnabled();
+    await user.click(suggestButton);
+    expect(within(dialog).getByLabelText("Alpha placement")).toHaveValue(1);
+    expect(within(dialog).getByLabelText("Gamma placement")).toHaveValue(2);
+    expect(within(dialog).getByLabelText("Beta placement")).toHaveValue(3.5);
+    expect(within(dialog).getByLabelText("Delta placement")).toHaveValue(3.5);
+
+    await user.click(within(dialog).getByRole("button", { name: "Save placements" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(
+      2026,
+      "Summer",
+      [
+        { captainKey: "alpha-key", placement: 1 },
+        { captainKey: "beta-key", placement: 3.5 },
+        { captainKey: "gamma-key", placement: 2 },
+        { captainKey: "delta-key", placement: 3.5 },
+      ],
+      null,
+    ));
+  });
+
   it("suggests groups from the stage's games and hides the groups editor for other formats", async () => {
     const user = userEvent.setup();
     vi.spyOn(editorApi, "getTournamentStructure").mockResolvedValue({

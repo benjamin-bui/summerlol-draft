@@ -134,8 +134,8 @@ describe("bracket layout", () => {
     expect(suggestions.map(({ name, placement }) => [name, placement])).toEqual([
       ["Alpha", 1],
       ["Gamma", 2],
-      ["Beta", 3],
-      ["Delta", 3],
+      ["Beta", 3.5],
+      ["Delta", 3.5],
     ]);
   });
 

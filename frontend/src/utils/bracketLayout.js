@@ -231,6 +231,10 @@ export function suggestBracketPlacements(seriesGroups, format) {
     placements.set(team.key, { key: team.key, name: team.name, placement });
     return true;
   };
+  const assignTied = (teams, firstPlacement) => {
+    const averagePlacement = firstPlacement + (teams.length - 1) / 2;
+    return teams.every((team) => assign(team, averagePlacement));
+  };
   const losersByColumn = (matches) => {
     const groups = new Map();
     for (const node of matches) {
@@ -250,9 +254,7 @@ export function suggestBracketPlacements(seriesGroups, format) {
     if (!assign(champion, 1)) return null;
     let nextPlacement = 2;
     for (const eliminated of losersByColumn(nodes)) {
-      for (const team of eliminated) {
-        if (!assign(team, nextPlacement)) return null;
-      }
+      if (!assignTied(eliminated, nextPlacement)) return null;
       nextPlacement += eliminated.length;
     }
   } else {
@@ -267,9 +269,7 @@ export function suggestBracketPlacements(seriesGroups, format) {
     if (!assign(finalNode.teams[1 - finalNode.winnerSide], 2)) return null;
     let nextPlacement = 3;
     for (const eliminated of losersByColumn(lowerNodes)) {
-      for (const team of eliminated) {
-        if (!assign(team, nextPlacement)) return null;
-      }
+      if (!assignTied(eliminated, nextPlacement)) return null;
       nextPlacement += eliminated.length;
     }
   }

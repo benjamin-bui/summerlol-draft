@@ -465,7 +465,7 @@ function readTournamentTeams(db, year, tournament, matches, identityMap) {
       .all(year, tournament);
     for (const row of draftRows) {
       const team = addTeam(row.captain);
-      if (team.placement == null && Number.isInteger(row.placement) && row.placement > 0) {
+      if (team.placement == null && Number.isFinite(row.placement) && row.placement > 0) {
         team.placement = row.placement;
       }
     }
@@ -559,8 +559,8 @@ function saveTeamPlacements(db, year, tournament, body, editor, identityMap) {
     if (!teams.has(item.captainKey)) {
       throw new StructureValidationError(`Team not found in tournament: ${item.captainKey}`);
     }
-    if (item.placement !== null && (!Number.isInteger(item.placement) || item.placement < 1)) {
-      throw new StructureValidationError("Placements must be positive whole numbers or null");
+    if (item.placement !== null && (!Number.isFinite(item.placement) || item.placement < 1 || !Number.isInteger(item.placement * 2))) {
+      throw new StructureValidationError("Placements must be positive whole or half-step numbers, or null");
     }
     if (requested.has(item.captainKey)) {
       throw new StructureValidationError("Each team may only be assigned once per request");

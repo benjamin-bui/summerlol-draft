@@ -105,22 +105,22 @@ test("team placements update draft rows, are audited, and can be cleared", () =>
       ["Beta", { identityKey: "beta-key", displayName: "Beta" }],
     ]);
     assert.throws(() => saveTeamPlacements(db, 2026, "Summer", {
-      placements: [{ captainKey: "alpha-key", placement: 1.5 }],
-    }, editor, identityMap), /positive whole numbers/);
+      placements: [{ captainKey: "alpha-key", placement: 1.25 }],
+    }, editor, identityMap), /positive whole or half-step numbers/);
 
     const saved = saveTeamPlacements(db, 2026, "Summer", {
       placements: [
-        { captainKey: "alpha-key", placement: 3 },
+        { captainKey: "alpha-key", placement: 3.5 },
         { captainKey: "beta-key", placement: 1 },
       ],
     }, editor, identityMap);
     assert.deepEqual(
       saved.teams.map(({ captainKey, placement }) => [captainKey, placement]),
-      [["beta-key", 1], ["alpha-key", 3]],
+      [["beta-key", 1], ["alpha-key", 3.5]],
     );
     assert.deepEqual(
       db.prepare(`SELECT "Rank" FROM rows WHERE "Captain" = 'Alpha' ORDER BY "Player"`).all().map((row) => row.Rank),
-      ["3", "3"],
+      ["3.5", "3.5"],
     );
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tournament_structure_audit").get().n, 1);
 

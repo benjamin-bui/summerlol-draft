@@ -170,8 +170,10 @@ Data behavior worth knowing:
   order and format stages, assign games to stages, group selected games into a
   series, ungroup them, and insert a game with a selected result before a chosen
   match order or at the end of an existing series. It also lets editors set
-  numeric team placements directly in the draft rows' `Rank` column; clearing a
-  value clears that database placement. Placement edits survive ordinary
+  team placements directly in the draft rows' `Rank` column (positive whole
+  numbers or half-step averages for tied finishes); it can also fill placements
+  suggested by a complete elimination bracket. Clearing a value clears that
+  database placement. Placement edits survive ordinary
   ID-based CSV re-ingestion. Insertion shifts later match
   orders (including simultaneous games) while preserving their relative order,
   and those shifts survive CSV re-ingestion.

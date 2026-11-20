@@ -208,11 +208,11 @@ describe("App smoke test against real data", () => {
     await user.click(toggle);
 
     const betaCard = screen.getByRole("link", { name: "Beta" }).closest(".tournament-team-card");
-    expect(within(betaCard).getByText("Suggested: 3rd")).toBeInTheDocument();
+    expect(within(betaCard).getByText("Suggested: #3.5")).toBeInTheDocument();
     expect(within(betaCard).getByText("Recorded: 4th")).toBeInTheDocument();
-    expect(within(betaCard).getByText("Discrepancy: +1")).toBeInTheDocument();
+    expect(within(betaCard).getByText("Discrepancy: +0.5")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Hide suggested placements" }));
-    expect(within(betaCard).queryByText("Discrepancy: +1")).not.toBeInTheDocument();
+    expect(within(betaCard).queryByText("Discrepancy: +0.5")).not.toBeInTheDocument();
   });
 
   it("shows cumulative Swiss records and title-cased formats in tournament results", async () => {
