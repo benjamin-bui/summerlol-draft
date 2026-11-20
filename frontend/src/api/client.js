@@ -81,6 +81,12 @@ export const editorApi = {
       csrfToken,
       body: { stages },
     }),
+  saveTournamentPlacements: (year, tournament, placements, csrfToken) =>
+    sendJson(`/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/placements`, {
+      method: "PUT",
+      csrfToken,
+      body: { placements },
+    }),
   createSeries: (year, tournament, body, csrfToken) =>
     sendJson(`/api/editor/tournaments/${year}/${encodeURIComponent(tournament)}/series`, {
       method: "POST",

@@ -137,6 +137,17 @@ function ensureTournamentStructureSchema(db) {
       PRIMARY KEY (group_id, team)
     );
 
+    CREATE TABLE IF NOT EXISTS tournament_team_placement_overrides (
+      year INTEGER NOT NULL,
+      tournament TEXT NOT NULL,
+      captain_key TEXT NOT NULL,
+      placement INTEGER NOT NULL CHECK (placement >= 1),
+      edited_by_sub TEXT NOT NULL,
+      edited_by_email TEXT,
+      edited_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (year, tournament, captain_key)
+    );
+
     CREATE TABLE IF NOT EXISTS tournament_structure_audit (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       year INTEGER NOT NULL,
@@ -367,7 +378,72 @@ function replaceStageGroups(db, stageId, groups, editor) {
   }
 }
 
-function readTournamentStructure(db, year, tournament) {
+function readTournamentTeams(db, year, tournament, matches, identityMap) {
+  const teams = new Map();
+  const resolveCaptain = (name) => {
+    const identity = identityMap?.get(name);
+    return {
+      captainKey: identity?.identityKey || name,
+      captainName: identity?.displayName || name,
+    };
+  };
+  const addTeam = (name) => {
+    if (typeof name !== "string" || !name.trim()) return null;
+    const resolved = resolveCaptain(name);
+    if (!teams.has(resolved.captainKey)) {
+      teams.set(resolved.captainKey, {
+        ...resolved,
+        placement: null,
+      });
+    } else if (resolved.captainName !== name) {
+      teams.get(resolved.captainKey).captainName = resolved.captainName;
+    }
+    return teams.get(resolved.captainKey);
+  };
+
+  for (const match of matches) {
+    addTeam(match.team1);
+    addTeam(match.team2);
+  }
+
+  const hasRowsTable = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'rows'")
+    .get();
+  if (hasRowsTable) {
+    const draftRows = db
+      .prepare(
+        `SELECT "Captain" AS captain, CAST("Rank" AS REAL) AS placement
+         FROM rows
+         WHERE CAST("Year" AS INTEGER) = ?
+           AND COALESCE("Tournament", 'Summer') = ?
+           AND "Captain" IS NOT NULL AND "Captain" != ''`,
+      )
+      .all(year, tournament);
+    for (const row of draftRows) {
+      const team = addTeam(row.captain);
+      if (team.placement == null && Number.isInteger(row.placement) && row.placement > 0) {
+        team.placement = row.placement;
+      }
+    }
+  }
+
+  const overrides = db
+    .prepare(
+      `SELECT captain_key AS captainKey, placement
+       FROM tournament_team_placement_overrides
+       WHERE year = ? AND tournament = ?`,
+    )
+    .all(year, tournament);
+  const overrideByKey = new Map(overrides.map((item) => [item.captainKey, item.placement]));
+  for (const team of teams.values()) {
+    if (overrideByKey.has(team.captainKey)) team.placement = overrideByKey.get(team.captainKey);
+  }
+  return [...teams.values()].sort(
+    (a, b) => (a.placement ?? Infinity) - (b.placement ?? Infinity) || a.captainName.localeCompare(b.captainName),
+  );
+}
+
+function readTournamentStructure(db, year, tournament, identityMap) {
   const stages = db
     .prepare(
       `SELECT s.stage_id AS stageId, s.year, s.tournament,
@@ -391,6 +467,7 @@ function readTournamentStructure(db, year, tournament) {
        ORDER BY match_order, csv_row_index`,
     )
     .all(year, tournament);
+  const teams = readTournamentTeams(db, year, tournament, matches, identityMap);
   const structure = structureForMatches(db, matches);
   const seriesRows = db
     .prepare(
@@ -413,6 +490,7 @@ function readTournamentStructure(db, year, tournament) {
   return {
     year,
     tournament,
+    teams,
     stages,
     series: seriesRows.map((series) => ({
       ...series,
@@ -428,16 +506,78 @@ function readTournamentStructure(db, year, tournament) {
   };
 }
 
-function snapshotStructure(db, year, tournament) {
-  return JSON.stringify(readTournamentStructure(db, year, tournament));
+function saveTeamPlacements(db, year, tournament, body, editor, identityMap) {
+  validateScope(db, year, tournament);
+  if (!body || !Array.isArray(body.placements)) {
+    throw new StructureValidationError("Placements must be a list");
+  }
+  const teams = new Set(
+    readTournamentStructure(db, year, tournament, identityMap).teams.map((team) => team.captainKey),
+  );
+  const requested = new Map();
+  for (const item of body.placements) {
+    if (!item || typeof item !== "object" || Array.isArray(item) || typeof item.captainKey !== "string" || !item.captainKey) {
+      throw new StructureValidationError("Each placement must identify a team");
+    }
+    if (!teams.has(item.captainKey)) {
+      throw new StructureValidationError(`Team not found in tournament: ${item.captainKey}`);
+    }
+    if (item.placement !== null && (!Number.isInteger(item.placement) || item.placement < 1)) {
+      throw new StructureValidationError("Placements must be positive whole numbers or null");
+    }
+    if (requested.has(item.captainKey)) {
+      throw new StructureValidationError("Each team may only be assigned once per request");
+    }
+    requested.set(item.captainKey, item.placement);
+  }
+
+  const before = snapshotStructure(db, year, tournament, identityMap);
+  db.transaction(() => {
+    const remove = db.prepare(
+      `DELETE FROM tournament_team_placement_overrides
+       WHERE year = ? AND tournament = ? AND captain_key = ?`,
+    );
+    const upsert = db.prepare(
+      `INSERT INTO tournament_team_placement_overrides
+       (year, tournament, captain_key, placement, edited_by_sub, edited_by_email)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(year, tournament, captain_key) DO UPDATE SET
+         placement = excluded.placement,
+         edited_by_sub = excluded.edited_by_sub,
+         edited_by_email = excluded.edited_by_email,
+         edited_at = datetime('now')`,
+    );
+    for (const [captainKey, placement] of requested) {
+      if (placement == null) remove.run(year, tournament, captainKey);
+      else upsert.run(year, tournament, captainKey, placement, editor.sub, editor.email);
+    }
+    auditStructure(db, year, tournament, editor, before, identityMap);
+  })();
+  return readTournamentStructure(db, year, tournament, identityMap);
 }
 
-function auditStructure(db, year, tournament, editor, before) {
+function readTeamPlacementOverrides(db) {
+  return new Map(
+    db
+      .prepare(
+        `SELECT year, tournament, captain_key AS captainKey, placement
+         FROM tournament_team_placement_overrides`,
+      )
+      .all()
+      .map((row) => [`${row.year}::${row.tournament}::${row.captainKey}`, row.placement]),
+  );
+}
+
+function snapshotStructure(db, year, tournament, identityMap) {
+  return JSON.stringify(readTournamentStructure(db, year, tournament, identityMap));
+}
+
+function auditStructure(db, year, tournament, editor, before, identityMap) {
   db.prepare(
     `INSERT INTO tournament_structure_audit
        (year, tournament, edited_by_sub, edited_by_email, before_json, after_json)
      VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(year, tournament, editor.sub, editor.email, before, snapshotStructure(db, year, tournament));
+  ).run(year, tournament, editor.sub, editor.email, before, snapshotStructure(db, year, tournament, identityMap));
 }
 
 function validateScope(db, year, tournament) {
@@ -910,7 +1050,9 @@ module.exports = {
   ensureDefaultStages,
   ensureTournamentStructureSchema,
   readAllStageGroups,
+  readTeamPlacementOverrides,
   readTournamentStructure,
+  saveTeamPlacements,
   saveStages,
   structureForMatches,
   BRACKET_SECTIONS,

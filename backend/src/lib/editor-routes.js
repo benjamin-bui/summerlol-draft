@@ -17,6 +17,7 @@ const {
   addGameToSeries,
   addTournamentGame,
   createSeries,
+  saveTeamPlacements,
   readTournamentStructure,
   saveStages,
   updateGameRounds,
@@ -57,6 +58,24 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
           db,
           Number(req.params.year),
           req.params.tournament,
+          identities(),
+        ),
+      );
+    } catch (error) {
+      sendStructureError(res, error);
+    }
+  });
+
+  router.put(`${prefix}/tournaments/:year/:tournament/placements`, (req, res) => {
+    try {
+      res.json(
+        saveTeamPlacements(
+          db,
+          Number(req.params.year),
+          req.params.tournament,
+          req.body,
+          req.editor,
+          identities(),
         ),
       );
     } catch (error) {
@@ -66,15 +85,9 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
 
   router.put(`${prefix}/tournaments/:year/:tournament/stages`, (req, res) => {
     try {
-      res.json(
-        saveStages(
-          db,
-          Number(req.params.year),
-          req.params.tournament,
-          req.body,
-          req.editor,
-        ),
-      );
+      const year = Number(req.params.year);
+      saveStages(db, year, req.params.tournament, req.body, req.editor);
+      res.json(readTournamentStructure(db, year, req.params.tournament, identities()));
     } catch (error) {
       sendStructureError(res, error);
     }
@@ -82,15 +95,9 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
 
   router.post(`${prefix}/tournaments/:year/:tournament/series`, (req, res) => {
     try {
-      res.status(201).json(
-        createSeries(
-          db,
-          Number(req.params.year),
-          req.params.tournament,
-          req.body,
-          req.editor,
-        ),
-      );
+      const year = Number(req.params.year);
+      createSeries(db, year, req.params.tournament, req.body, req.editor);
+      res.status(201).json(readTournamentStructure(db, year, req.params.tournament, identities()));
     } catch (error) {
       sendStructureError(res, error);
     }
@@ -98,15 +105,9 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
 
   router.put(`${prefix}/tournaments/:year/:tournament/games`, (req, res) => {
     try {
-      res.json(
-        updateGameStructure(
-          db,
-          Number(req.params.year),
-          req.params.tournament,
-          req.body,
-          req.editor,
-        ),
-      );
+      const year = Number(req.params.year);
+      updateGameStructure(db, year, req.params.tournament, req.body, req.editor);
+      res.json(readTournamentStructure(db, year, req.params.tournament, identities()));
     } catch (error) {
       sendStructureError(res, error);
     }
@@ -121,7 +122,7 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
         req.body,
         req.editor,
       );
-      res.status(201).json(readTournamentStructure(db, Number(req.params.year), req.params.tournament));
+      res.status(201).json(readTournamentStructure(db, Number(req.params.year), req.params.tournament, identities()));
     } catch (error) {
       sendStructureError(res, error);
     }
@@ -129,15 +130,9 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
 
   router.put(`${prefix}/tournaments/:year/:tournament/rounds`, (req, res) => {
     try {
-      res.json(
-        updateGameRounds(
-          db,
-          Number(req.params.year),
-          req.params.tournament,
-          req.body,
-          req.editor,
-        ),
-      );
+      const year = Number(req.params.year);
+      updateGameRounds(db, year, req.params.tournament, req.body, req.editor);
+      res.json(readTournamentStructure(db, year, req.params.tournament, identities()));
     } catch (error) {
       sendStructureError(res, error);
     }
@@ -145,16 +140,9 @@ function createEditorRouter({ db, requireEditor, loadIdentityMap }) {
 
   router.post(`${prefix}/tournaments/:year/:tournament/series/:seriesId/games`, (req, res) => {
     try {
-      res.status(201).json(
-        addGameToSeries(
-          db,
-          Number(req.params.year),
-          req.params.tournament,
-          req.params.seriesId,
-          req.body,
-          req.editor,
-        ),
-      );
+      const year = Number(req.params.year);
+      addGameToSeries(db, year, req.params.tournament, req.params.seriesId, req.body, req.editor);
+      res.status(201).json(readTournamentStructure(db, year, req.params.tournament, identities()));
     } catch (error) {
       sendStructureError(res, error);
     }

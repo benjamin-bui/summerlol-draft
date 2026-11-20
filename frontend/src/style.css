@@ -3370,6 +3370,26 @@ th[data-champion-sort]:focus-visible {
 .structure-stage + .structure-stage {
   margin-top: 6px;
 }
+.structure-placement-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px 12px;
+}
+.structure-placement-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.structure-placement-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.structure-placement-row input[type="number"] {
+  width: 76px;
+}
 .structure-groups {
   margin: 0 0 12px 10px;
   padding: 8px 0 8px 12px;

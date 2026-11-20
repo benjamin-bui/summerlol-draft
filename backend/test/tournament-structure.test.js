@@ -12,6 +12,7 @@ const {
   ensureDefaultStages,
   ensureTournamentStructureSchema,
   readTournamentStructure,
+  saveTeamPlacements,
   saveStages,
   updateGameRounds,
 } = require("../src/lib/tournament-structure");
@@ -77,6 +78,54 @@ test("stages and series group games for display without removing individual game
     assert.equal(structure.series.length, 1);
     assert.deepEqual(structure.series[0].games.map((game) => game.gameNumber), [1, 2]);
     assert.deepEqual(structure.games.map((game) => game.stage.stageName), ["Tournament", "Tournament"]);
+  } finally {
+    db.close();
+  }
+});
+
+test("team placement overrides are saved, audited, and removable", () => {
+  const db = createDb();
+  try {
+    insertGame(db, 1, { team1: "Alpha", team2: "Beta" });
+    db.exec(`CREATE TABLE rows (
+      "Player" TEXT,
+      "Captain" TEXT,
+      "Tournament" TEXT,
+      "Year" TEXT,
+      "Rank" TEXT
+    )`);
+    db.prepare(
+      `INSERT INTO rows ("Player", "Captain", "Tournament", "Year", "Rank")
+       VALUES ('Alpha', 'Alpha', 'Summer', '2026', '2')`,
+    ).run();
+    const identityMap = new Map([
+      ["Alpha", { identityKey: "alpha-key", displayName: "Alpha" }],
+      ["Beta", { identityKey: "beta-key", displayName: "Beta" }],
+    ]);
+    assert.throws(() => saveTeamPlacements(db, 2026, "Summer", {
+      placements: [{ captainKey: "alpha-key", placement: 1.5 }],
+    }, editor, identityMap), /positive whole numbers/);
+
+    const saved = saveTeamPlacements(db, 2026, "Summer", {
+      placements: [
+        { captainKey: "alpha-key", placement: 3 },
+        { captainKey: "beta-key", placement: 1 },
+      ],
+    }, editor, identityMap);
+    assert.deepEqual(
+      saved.teams.map(({ captainKey, placement }) => [captainKey, placement]),
+      [["beta-key", 1], ["alpha-key", 3]],
+    );
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tournament_structure_audit").get().n, 1);
+
+    const cleared = saveTeamPlacements(db, 2026, "Summer", {
+      placements: [
+        { captainKey: "alpha-key", placement: null },
+        { captainKey: "beta-key", placement: null },
+      ],
+    }, editor, identityMap);
+    assert.deepEqual(cleared.teams.map((team) => team.placement), [2, null]);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tournament_team_placement_overrides").get().n, 0);
   } finally {
     db.close();
   }

@@ -28,6 +28,10 @@ function editableStages(stages) {
   }));
 }
 
+function placementValuesFor(teams = []) {
+  return Object.fromEntries(teams.map((team) => [team.captainKey, team.placement == null ? "" : String(team.placement)]));
+}
+
 function scopeKey(row) {
   return `${row.year}::${row.tournament || ""}`;
 }
@@ -149,6 +153,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const selected = tournaments.find((item) => scopeKey(item) === selectedScope) || tournaments[0];
   const [structure, setStructure] = useState(null);
   const [stages, setStages] = useState([]);
+  const [placementValues, setPlacementValues] = useState({});
   const [selectedGames, setSelectedGames] = useState([]);
   const [roundName, setRoundName] = useState("");
   const [bracketSection, setBracketSection] = useState("upper");
@@ -175,6 +180,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
       const next = await editorApi.getTournamentStructure(scope.year, scope.tournament);
       setStructure(next);
       setStages(editableStages(next.stages));
+      setPlacementValues(placementValuesFor(next.teams));
       setSelectedGames([]);
       setGameStageFilter("all");
       setGroupStageId(next.stages[0]?.stageId || "");
@@ -195,6 +201,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
       if (cancelled) return;
       setStructure(next);
       setStages(editableStages(next.stages));
+      setPlacementValues(placementValuesFor(next.teams));
       setSelectedGames([]);
       setGameStageFilter("all");
       setGroupStageId(next.stages[0]?.stageId || "");
@@ -219,6 +226,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
       if (next?.stages && next?.games) {
         setStructure(next);
         setStages(editableStages(next.stages));
+        setPlacementValues(placementValuesFor(next.teams));
         setGroupStageId(next.stages[0]?.stageId || "");
         setAddSeriesId(next.series.find((series) => series.games.length)?.seriesId || "");
         setAddStageId(next.stages[0]?.stageId || "");
@@ -366,6 +374,47 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
               <div className="structure-actions">
                 <button type="button" className="columns-btn" onClick={addStage}>Add stage</button>
                 <button type="button" className="columns-btn" disabled={busy} onClick={() => run(() => editorApi.saveTournamentStages(selected.year, selected.tournament, stages.map((stage) => ({ ...stage, groups: groupsPayload(stage) })), csrfToken))}>Save stages</button>
+              </div>
+            </section>
+
+            <section className="structure-section">
+              <h3>Team placements</h3>
+              <p className="stat-formula">Set each team&apos;s final numeric placement. Clear a value to use the imported placement again.</p>
+              <div className="structure-placement-list">
+                {(structure.teams || []).map((team) => (
+                  <label className="structure-placement-row" key={team.captainKey}>
+                    <span>{team.captainName}</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      aria-label={`${team.captainName} placement`}
+                      value={placementValues[team.captainKey] ?? ""}
+                      onChange={(event) => setPlacementValues((current) => ({
+                        ...current,
+                        [team.captainKey]: event.target.value,
+                      }))}
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="structure-actions">
+                <button
+                  type="button"
+                  className="columns-btn"
+                  disabled={busy || !(structure.teams || []).length}
+                  onClick={() => run(() => editorApi.saveTournamentPlacements(
+                    selected.year,
+                    selected.tournament,
+                    (structure.teams || []).map((team) => ({
+                      captainKey: team.captainKey,
+                      placement: placementValues[team.captainKey] === "" ? null : Number(placementValues[team.captainKey]),
+                    })),
+                    csrfToken,
+                  ))}
+                >
+                  Save placements
+                </button>
               </div>
             </section>
 

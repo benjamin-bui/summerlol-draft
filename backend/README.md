@@ -161,7 +161,9 @@ Data behavior worth knowing:
 - **Match History -> Manage tournament structure** lets authorized editors
   order and format stages, assign games to stages, group selected games into a
   series, ungroup them, and insert a game with a selected result before a chosen
-  match order or at the end of an existing series. Insertion shifts later match
+  match order or at the end of an existing series. It also lets editors set
+  numeric team placements; clearing a value restores the imported placement.
+  Placement overrides survive CSV re-ingestion. Insertion shifts later match
   orders (including simultaneous games) while preserving their relative order,
   and those shifts survive CSV re-ingestion.
   The Tournaments tab displays stages, series, and per-series game
