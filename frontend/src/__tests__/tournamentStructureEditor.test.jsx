@@ -288,9 +288,9 @@ describe("TournamentStructureEditor", () => {
     ));
   });
 
-  it("fills placements from a completed elimination bracket", async () => {
+  it("fills placements for qualifiers and earlier-stage teams", async () => {
     const user = userEvent.setup();
-    const teams = ["Alpha", "Beta", "Gamma", "Delta"].map((captainName) => ({
+    const teams = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"].map((captainName) => ({
       captainKey: `${captainName.toLowerCase()}-key`,
       captainName,
       placement: null,
@@ -310,13 +310,22 @@ describe("TournamentStructureEditor", () => {
     const bracketStructure = {
       ...structure,
       teams,
-      stages: [{
-        stageId: "playoffs",
-        name: "Playoffs",
-        format: "single-elimination",
-        stageOrder: 2,
-        groups: [],
-      }],
+      stages: [
+        {
+          stageId: "groups",
+          name: "Group Stage",
+          format: "round-robin",
+          stageOrder: 1,
+          groups: [{ groupId: "group-a", name: "Group A", teams: ["Epsilon"] }],
+        },
+        {
+          stageId: "playoffs",
+          name: "Playoffs",
+          format: "single-elimination",
+          stageOrder: 2,
+          groups: [],
+        },
+      ],
       series: [],
       games: [
         game("semi-1", 1, "Alpha", "Beta", "Alpha", "Semifinals"),
@@ -335,13 +344,14 @@ describe("TournamentStructureEditor", () => {
     );
 
     const dialog = await screen.findByRole("dialog", { name: "Tournament structure" });
-    const suggestButton = within(dialog).getByRole("button", { name: "Suggest placements from bracket" });
+    const suggestButton = within(dialog).getByRole("button", { name: "Suggest placements from results" });
     expect(suggestButton).toBeEnabled();
     await user.click(suggestButton);
     expect(within(dialog).getByLabelText("Alpha placement")).toHaveValue(1);
     expect(within(dialog).getByLabelText("Gamma placement")).toHaveValue(2);
     expect(within(dialog).getByLabelText("Beta placement")).toHaveValue(3.5);
     expect(within(dialog).getByLabelText("Delta placement")).toHaveValue(3.5);
+    expect(within(dialog).getByLabelText("Epsilon placement")).toHaveValue(5);
 
     await user.click(within(dialog).getByRole("button", { name: "Save placements" }));
     await waitFor(() => expect(save).toHaveBeenCalledWith(
@@ -352,6 +362,7 @@ describe("TournamentStructureEditor", () => {
         { captainKey: "beta-key", placement: 3.5 },
         { captainKey: "gamma-key", placement: 2 },
         { captainKey: "delta-key", placement: 3.5 },
+        { captainKey: "epsilon-key", placement: 5 },
       ],
       null,
     ));

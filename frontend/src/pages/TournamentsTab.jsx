@@ -6,7 +6,12 @@ import MatchDetailEditor from "../components/shared/MatchDetailEditor";
 import TournamentStructureEditor from "../components/shared/TournamentStructureEditor";
 import TournamentFunFacts from "../components/shared/TournamentFunFacts";
 import { ordinal, pct, pctOrLessThanOne, sortByRole } from "../utils/format";
-import { layoutBracket, suggestBracketPlacements } from "../utils/bracketLayout";
+import {
+  combineStagePlacements,
+  layoutBracket,
+  suggestBracketPlacements,
+  suggestRoundPlacements,
+} from "../utils/bracketLayout";
 import { predictedResultProbability } from "../utils/predictionStats";
 import { sortMatchesByTournamentStructure } from "../utils/matchOrdering";
 import { useAuth } from "../context/AuthContext";
@@ -385,8 +390,8 @@ function TeamCard({ team, suggestedPlacement, showSuggested }) {
 function TeamsBlock({ t }) {
   const [showSuggested, setShowSuggested] = useState(false);
   const pool = t.entryRankPoolSize;
-  const bracketSuggestion = tournamentBracketSuggestion(t);
-  const suggestedByTeam = new Map((bracketSuggestion?.placements || []).map((item) => [item.key, item.placement]));
+  const placementSuggestion = tournamentPlacementSuggestion(t);
+  const suggestedByTeam = new Map((placementSuggestion?.placements || []).map((item) => [item.key, item.placement]));
   const legend = pool
     ? `Pick = draft pick number (captains aren't picked). Entering rank = adjusted TrueSkill rank among all ${pool} players entering this tournament (#1 = best).`
     : `Pick = draft pick number (captains aren't picked). Entering rank isn't available \u2014 there were no earlier games to rate anyone from.`;
@@ -398,19 +403,19 @@ function TeamsBlock({ t }) {
         <button
           type="button"
           className="columns-btn"
-          disabled={!bracketSuggestion?.placements}
+          disabled={!placementSuggestion?.placements}
           aria-pressed={showSuggested}
-          title={bracketSuggestion?.placements ? undefined : "A complete, decisive elimination bracket is needed to suggest placements"}
+          title={placementSuggestion?.placements ? undefined : "Tournament stage results are needed to suggest placements"}
           onClick={() => setShowSuggested((shown) => !shown)}
         >
           {showSuggested ? "Hide suggested placements" : "Show suggested placements"}
         </button>
-        {bracketSuggestion?.placements ? (
+        {placementSuggestion?.placements ? (
           <span className="stat-formula">
-            From {bracketSuggestion.stage.name}. Tied exits share a place; discrepancy is recorded rank minus suggested rank (positive means the recorded placement is worse).
+            From {placementSuggestion.stageNames.join(", ")}. Tied results share a place; discrepancy is recorded rank minus suggested rank (positive means the recorded placement is worse).
           </span>
         ) : (
-          <span className="stat-formula">Suggestions require one complete elimination bracket with decisive results.</span>
+          <span className="stat-formula">Suggestions use stage progression and match wins where available.</span>
         )}
       </div>
       <div className="tournament-teams">
@@ -461,14 +466,44 @@ function resultStages(t) {
   }));
 }
 
-function tournamentBracketSuggestion(t) {
-  const stage = resultStages(t)
-    .filter((item) => /^(single|double)-elimination$/.test(item.format || ""))
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-    .at(-1);
-  if (!stage) return null;
-  const placements = suggestBracketPlacements(stage.groups, stage.format);
-  return placements ? { stage, placements } : null;
+function tournamentPlacementSuggestion(t) {
+  const stages = resultStages(t)
+    .filter((stage) => ["single-elimination", "double-elimination", "round-robin", "swiss"].includes(stage.format))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const stageResults = [];
+  for (const stage of stages) {
+    const roundRobinGroups = stage.roundRobin?.groups || [];
+    const groups = [
+      ...roundRobinGroups.flatMap((group) => group.seriesGroups || []),
+      ...(stage.groups || []),
+    ].map((group) => ({
+      ...group,
+      games: (group.games || []).map((game) => ({
+        ...game,
+        winner: game.winner === 0 ? "team1" : game.winner === 1 ? "team2" : game.winner,
+      })),
+    }));
+    let placements;
+    if (/^(single|double)-elimination$/.test(stage.format || "")) {
+      placements = suggestBracketPlacements(groups, stage.format);
+      if (groups.length && !placements) return null;
+    } else {
+      const participants = roundRobinGroups.flatMap((group) =>
+        (group.standings || []).map((team) => ({
+          key: team.key,
+          name: team.name,
+          wins: team.matchWins,
+        })),
+      );
+      placements = suggestRoundPlacements(groups, participants);
+    }
+    if (placements?.length) stageResults.push({ order: stage.order, name: stage.name, placements });
+  }
+  if (!stageResults.length) return null;
+  return {
+    stageNames: stageResults.map((stage) => stage.name).filter(Boolean),
+    placements: combineStagePlacements(stageResults),
+  };
 }
 
 function formatStageFormat(format) {

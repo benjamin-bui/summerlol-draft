@@ -272,6 +272,16 @@ describe("App smoke test against real data", () => {
           groups: [makeGroup("Final", playoff)],
         },
       ];
+      const existingTeams = new Map(tournament.teams.map((team) => [team.captainName, team]));
+      tournament.teams = Object.entries(teams).map(([name, side]) => {
+        const existing = existingTeams.get(name);
+        return {
+          ...existing,
+          captainKey: side.key,
+          captainName: name,
+          roster: existing?.roster || [],
+        };
+      });
       return {
         ok: true,
         status: 200,
@@ -282,6 +292,13 @@ describe("App smoke test against real data", () => {
     const user = userEvent.setup();
     renderApp("/?tab=tournaments");
     await screen.findByText("Team rosters", {}, { timeout: 10000 });
+    const suggestionsToggle = screen.getByRole("button", { name: "Show suggested placements" });
+    expect(suggestionsToggle).toBeEnabled();
+    await user.click(suggestionsToggle);
+    const gammaCard = screen.getByRole("link", { name: "Gamma" }).closest(".tournament-team-card");
+    const betaCard = screen.getByRole("link", { name: "Beta" }).closest(".tournament-team-card");
+    expect(within(gammaCard).getByText("Suggested: 3rd")).toBeInTheDocument();
+    expect(within(betaCard).getByText("Suggested: 4th")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Expand all" }));
     expect([...document.querySelectorAll(".tournament-matches-table .roster-toggle")].every((button) => button.getAttribute("aria-expanded") === "true")).toBe(true);
     await user.click(screen.getByRole("button", { name: "Collapse all" }));

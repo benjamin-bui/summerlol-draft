@@ -11,7 +11,11 @@ import {
   tournamentTeams,
 } from "../../utils/roundRobinGroups";
 import { sortMatchesByTournamentStructure } from "../../utils/matchOrdering";
-import { suggestBracketPlacements } from "../../utils/bracketLayout";
+import {
+  combineStagePlacements,
+  suggestBracketPlacements,
+  suggestRoundPlacements,
+} from "../../utils/bracketLayout";
 
 const STAGE_FORMATS = [
   ["round-robin", "Round robin"],
@@ -35,51 +39,85 @@ function placementValuesFor(teams = []) {
 
 function suggestedPlacementsForStructure(structure) {
   const stages = (structure?.stages || [])
-    .filter((stage) => ["single-elimination", "double-elimination"].includes(stage.format))
+    .filter((stage) => ["single-elimination", "double-elimination", "round-robin", "swiss"].includes(stage.format))
     .sort((a, b) => (a.stageOrder ?? 0) - (b.stageOrder ?? 0));
-  const stage = stages.at(-1);
-  if (!stage) return null;
+  if (!stages.length) return null;
 
   const teamByName = new Map();
+  const normalize = (name) => String(name || "").trim().toLowerCase();
   for (const team of structure.teams || []) {
-    teamByName.set(team.captainName.trim().toLowerCase(), team);
+    teamByName.set(normalize(team.captainName), team);
   }
   const seriesById = new Map((structure.series || []).map((series) => [series.seriesId, series]));
-  const groups = new Map();
-  for (const game of (structure.games || []).filter((item) => item.stageId === stage.stageId)) {
-    const id = game.seriesId || game.matchKey;
-    const series = game.seriesId ? seriesById.get(game.seriesId) : null;
-    if (!groups.has(id)) {
-      groups.set(id, {
-        seriesId: game.seriesId || null,
-        roundLabel: series?.roundLabel || null,
-        bestOf: series?.bestOf || null,
-        games: [],
+  const getTeam = (name) => {
+    const team = teamByName.get(normalize(name));
+    return team
+      ? { key: team.captainKey, name: team.captainName }
+      : { key: normalize(name), name: String(name || "") };
+  };
+  const stageResults = [];
+  for (const stage of stages) {
+    const groups = new Map();
+    for (const game of (structure.games || []).filter((item) => item.stageId === stage.stageId)) {
+      const id = game.seriesId || game.matchKey;
+      const series = game.seriesId ? seriesById.get(game.seriesId) : null;
+      if (!groups.has(id)) {
+        groups.set(id, {
+          seriesId: game.seriesId || null,
+          roundLabel: series?.roundLabel || null,
+          bestOf: series?.bestOf || null,
+          games: [],
+        });
+      }
+      const result = normalize(game.result);
+      const team1 = getTeam(game.team1);
+      const team2 = getTeam(game.team2);
+      groups.get(id).games.push({
+        matchKey: game.matchKey,
+        order: game.matchOrder,
+        stage: game.matchStage,
+        round: game.round,
+        section: game.section,
+        team1,
+        team2,
+        winner: result === normalize(game.team1) ? "team1" : result === normalize(game.team2) ? "team2" : "draw",
       });
     }
-    const normalize = (name) => String(name || "").trim().toLowerCase();
-    const result = normalize(game.result);
-    const team1 = { key: normalize(game.team1), name: game.team1 };
-    const team2 = { key: normalize(game.team2), name: game.team2 };
-    groups.get(id).games.push({
-      matchKey: game.matchKey,
-      order: game.matchOrder,
-      stage: game.matchStage,
-      round: game.round,
-      section: game.section,
-      team1,
-      team2,
-      winner: result === normalize(game.team1) ? "team1" : result === normalize(game.team2) ? "team2" : "draw",
-    });
+    const stageGroups = [...groups.values()];
+    let placements = null;
+    if (["single-elimination", "double-elimination"].includes(stage.format)) {
+      placements = suggestBracketPlacements(stageGroups, stage.format);
+      if (stageGroups.length && !placements) return null;
+    } else {
+      const participants = new Map();
+      const addParticipant = (team, wins) => {
+        const resolved = typeof team === "string" ? getTeam(team) : team;
+        if (resolved.key == null) return;
+        if (!participants.has(resolved.key)) {
+          participants.set(resolved.key, { ...resolved, ...(Number.isFinite(wins) ? { wins } : {}) });
+        }
+      };
+      if (stage.format === "round-robin") {
+        for (const group of stage.groups || []) {
+          for (const team of group.teams || []) addParticipant(team);
+        }
+      }
+      for (const group of stageGroups) {
+        const first = group.games[0];
+        if (first) {
+          addParticipant(first.team1);
+          addParticipant(first.team2);
+        }
+      }
+      placements = suggestRoundPlacements(stageGroups, [...participants.values()]);
+    }
+    if (placements?.length) stageResults.push({ order: stage.stageOrder, placements });
   }
-  const suggestions = suggestBracketPlacements([...groups.values()], stage.format);
-  if (!suggestions) return null;
-  const placements = new Map();
-  for (const suggestion of suggestions) {
-    const team = teamByName.get(String(suggestion.name).trim().toLowerCase());
-    if (team) placements.set(team.captainKey, suggestion.placement);
-  }
-  return placements.size === suggestions.length ? { stage, placements } : null;
+  if (!stageResults.length) return null;
+  return {
+    stage: stages.find((item) => item.stageOrder === stageResults.at(-1).order) || stages.at(-1),
+    placements: combineStagePlacements(stageResults),
+  };
 }
 
 function scopeKey(row) {
@@ -342,7 +380,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const addTeam1Name = seriesSides?.team1 || addTeam1;
   const addTeam2Name = seriesSides?.team2 || addTeam2;
   const canInsertGame = addSeriesId || (addTeam1 && addTeam2 && addTeam1 !== addTeam2);
-  const bracketSuggestion = suggestedPlacementsForStructure(structure);
+  const placementSuggestion = suggestedPlacementsForStructure(structure);
   const visibleGames = sortMatchesByTournamentStructure(structure?.games || []).filter(
     (game) =>
       gameStageFilter === "all" ||
@@ -461,14 +499,14 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                 <button
                   type="button"
                   className="columns-btn"
-                  disabled={busy || !bracketSuggestion}
-                  title={bracketSuggestion ? `Fill placements suggested by ${bracketSuggestion.stage.name}` : "A complete, decisive elimination bracket is needed to suggest placements"}
+                  disabled={busy || !placementSuggestion}
+                  title={placementSuggestion ? `Fill placements suggested by ${placementSuggestion.stage.name}` : "Completed tournament stage results are needed to suggest placements"}
                   onClick={() => setPlacementValues((current) => ({
                     ...current,
-                    ...Object.fromEntries(bracketSuggestion.placements),
+                    ...Object.fromEntries(placementSuggestion.placements.map(({ key, placement }) => [key, placement])),
                   }))}
                 >
-                  Suggest placements from bracket
+                  Suggest placements from results
                 </button>
                 <button
                   type="button"

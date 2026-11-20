@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_METRICS,
   bracketCardHeight,
+  combineStagePlacements,
   layoutBracket,
   suggestBracketPlacements,
+  suggestRoundPlacements,
 } from "../utils/bracketLayout";
 
 const team = (name) => ({ key: name.toLowerCase(), name });
@@ -165,6 +167,60 @@ describe("bracket layout", () => {
       match(2, "Gamma", "Delta", "Gamma", { round: "Semifinals" }),
     ], "single-elimination")).toBeNull();
     expect(suggestBracketPlacements([], "round-robin")).toBeNull();
+  });
+
+  it("ranks round-robin teams by match wins and shares tied placements", () => {
+    const standings = suggestRoundPlacements([
+      match(1, "Alpha", "Beta", "Alpha", { round: "Round 1" }),
+      match(2, "Beta", "Gamma", "Beta", { round: "Round 1" }),
+      match(3, "Alpha", "Gamma", "Alpha", { round: "Round 1" }),
+    ]);
+    expect(standings.map(({ name, placement }) => [name, placement])).toEqual([
+      ["Alpha", 1],
+      ["Beta", 2],
+      ["Gamma", 3],
+    ]);
+  });
+
+  it("ranks teams that reach later Swiss rounds above early exits", () => {
+    const standings = suggestRoundPlacements([
+      match(1, "Alpha", "Beta", "Alpha", { round: "Round 1" }),
+      match(2, "Gamma", "Delta", "Gamma", { round: "Round 1" }),
+      match(3, "Alpha", "Gamma", "Gamma", { round: "Round 2" }),
+    ]);
+    expect(standings.map(({ name, placement }) => [name, placement])).toEqual([
+      ["Gamma", 1],
+      ["Alpha", 2],
+      ["Beta", 3.5],
+      ["Delta", 3.5],
+    ]);
+  });
+
+  it("places non-qualifiers below teams ranked in the later stage", () => {
+    const combined = combineStagePlacements([
+      {
+        order: 1,
+        placements: [
+          { key: "a", name: "Alpha", placement: 1 },
+          { key: "b", name: "Beta", placement: 2 },
+          { key: "c", name: "Gamma", placement: 3 },
+          { key: "d", name: "Delta", placement: 4 },
+        ],
+      },
+      {
+        order: 2,
+        placements: [
+          { key: "a", name: "Alpha", placement: 1 },
+          { key: "b", name: "Beta", placement: 2 },
+        ],
+      },
+    ]);
+    expect(combined.map(({ name, placement }) => [name, placement])).toEqual([
+      ["Alpha", 1],
+      ["Beta", 2],
+      ["Gamma", 3],
+      ["Delta", 4],
+    ]);
   });
 
   it("orders simultaneous first-round matches by where their winners go, whatever order the data lists them", () => {

@@ -277,3 +277,101 @@ export function suggestBracketPlacements(seriesGroups, format) {
   if (placements.size !== teams.size) return null;
   return [...placements.values()].sort((a, b) => a.placement - b.placement || a.name.localeCompare(b.name));
 }
+
+export function suggestRoundPlacements(seriesGroups, participants = []) {
+  const teams = new Map();
+  for (const team of participants) {
+    if (team?.key == null) continue;
+    teams.set(team.key, {
+      key: team.key,
+      name: team.name || String(team.key),
+      wins: Number.isFinite(team.wins) ? team.wins : 0,
+      progress: 0,
+      hasRecordedWins: Number.isFinite(team.wins),
+    });
+  }
+
+  const groups = (seriesGroups || []).filter((group) => group.games?.length);
+  const roundOrders = new Map();
+  const roundForGroup = new Map();
+  for (const group of groups) {
+    const first = group.games[0];
+    const order = Math.min(...group.games.map((game) => Number(game.order) || 0));
+    const stageLabel = first.stage;
+    const stageIsRound = typeof stageLabel === "string" && /\b(round|week|day)\s*\d+|\b(?:r|w)\d+\b/i.test(stageLabel);
+    const label = first.round || group.games.find((game) => game.round)?.round || group.roundLabel || (stageIsRound ? stageLabel : null);
+    const roundKey = label ? `label:${String(label).trim().toLowerCase()}` : `order:${order}`;
+    roundOrders.set(roundKey, Math.min(roundOrders.get(roundKey) ?? Infinity, order));
+    roundForGroup.set(group, roundKey);
+
+    const sides = [first.team1, first.team2];
+    for (const side of sides) {
+      if (side?.key == null || teams.has(side.key)) continue;
+      teams.set(side.key, { key: side.key, name: side.name || String(side.key), wins: 0, progress: 0, hasRecordedWins: false });
+    }
+
+    const gameWins = [0, 0];
+    for (const game of group.games) {
+      if (game.winner === "team1" || game.winner === 0) gameWins[0] += 1;
+      else if (game.winner === "team2" || game.winner === 1) gameWins[1] += 1;
+    }
+    if (gameWins[0] !== gameWins[1]) {
+      const winner = teams.get(sides[gameWins[0] > gameWins[1] ? 0 : 1]?.key);
+      if (winner && !winner.hasRecordedWins) winner.wins += 1;
+    }
+  }
+
+  const roundRank = new Map(
+    [...roundOrders.entries()]
+      .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
+      .map(([key], index) => [key, index + 1]),
+  );
+  for (const group of groups) {
+    const progress = roundRank.get(roundForGroup.get(group));
+    for (const side of [group.games[0].team1, group.games[0].team2]) {
+      const team = teams.get(side?.key);
+      if (team) team.progress = Math.max(team.progress, progress);
+    }
+  }
+
+  const ranked = [...teams.values()].sort(
+    (a, b) => b.progress - a.progress || b.wins - a.wins || a.name.localeCompare(b.name),
+  );
+  const placements = [];
+  for (let start = 0; start < ranked.length;) {
+    let end = start + 1;
+    while (
+      end < ranked.length &&
+      ranked[end].progress === ranked[start].progress &&
+      ranked[end].wins === ranked[start].wins
+    ) end += 1;
+    const placement = ((start + 1) + end) / 2;
+    for (const team of ranked.slice(start, end)) placements.push({ key: team.key, name: team.name, placement });
+    start = end;
+  }
+  return placements;
+}
+
+export function combineStagePlacements(stageResults) {
+  const latestStageByTeam = new Map();
+  for (const stage of stageResults || []) {
+    for (const team of stage.placements || []) {
+      const current = latestStageByTeam.get(team.key);
+      if (!current || stage.order > current.order) {
+        latestStageByTeam.set(team.key, { ...team, order: stage.order });
+      }
+    }
+  }
+  const ranked = [...latestStageByTeam.values()].sort(
+    (a, b) => b.order - a.order || a.placement - b.placement || a.name.localeCompare(b.name),
+  );
+  const placements = [];
+  for (let start = 0; start < ranked.length;) {
+    let end = start + 1;
+    while (end < ranked.length && ranked[end].order === ranked[start].order && ranked[end].placement === ranked[start].placement) end += 1;
+    const placement = ((start + 1) + end) / 2;
+    for (const team of ranked.slice(start, end)) placements.push({ key: team.key, name: team.name, placement });
+    start = end;
+  }
+  return placements;
+}
