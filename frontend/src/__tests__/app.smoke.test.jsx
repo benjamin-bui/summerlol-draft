@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import ProfileHistoryTable from "../components/shared/ProfileHistoryTable";
 
+vi.mock("../utils/screenshotImport", () => ({ readScreenshotFile: vi.fn() }));
+
 // This suite renders the real app (with a real DOM via jsdom) against
 // snapshots of the *actual* production API responses, and clicks through
 // every tab plus a player profile page. Unlike the earlier logic-only smoke
@@ -27,6 +29,15 @@ afterEach(() => {
 });
 
 describe("App smoke test against real data", () => {
+  it("does not display the internal match order in Match History", async () => {
+    const user = userEvent.setup();
+    renderApp("/");
+    await user.click(screen.getByRole("button", { name: "Match History" }));
+
+    expect(await screen.findByRole("columnheader", { name: /Match Stage/ })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Match Order" })).not.toBeInTheDocument();
+  });
+
   it.each([
     ["player", "/player/Voidliss-NA1"],
     ["champion", "/champion/syndra"],
@@ -134,6 +145,74 @@ describe("App smoke test against real data", () => {
     expect(screen.getByText("Team rosters")).toBeInTheDocument();
     expect(errSpy).not.toHaveBeenCalled();
     errSpy.mockRestore();
+  });
+
+  it("shows bracket-suggested placements and recorded-placement discrepancies", async () => {
+    const baseFetch = global.fetch.getMockImplementation();
+    vi.spyOn(global, "fetch").mockImplementation(async (url, options) => {
+      const response = await baseFetch(url, options);
+      if (!String(url).startsWith("/api/tournaments")) return response;
+      const data = JSON.parse(JSON.stringify(await response.json()));
+      const tournament = data.tournaments.find((item) => item.id === "2026-summer");
+      const team = (name) => ({ key: name.toLowerCase(), name, roster: [] });
+      const game = (order, a, b, winner, round) => ({
+        matchKey: `bracket-${order}`,
+        order,
+        round,
+        section: "upper",
+        team1: team(a),
+        team2: team(b),
+        winner,
+      });
+      const series = (order, a, b, winner, round) => ({
+        seriesId: `series-${order}`,
+        roundLabel: round,
+        bestOf: 1,
+        games: [game(order, a, b, winner, round)],
+      });
+      tournament.stages = [{
+        stageId: "playoffs",
+        name: "Playoffs",
+        format: "single-elimination",
+        order: 1,
+        groups: [
+          series(1, "Alpha", "Beta", "team1", "Semifinals"),
+          series(2, "Gamma", "Delta", "team1", "Semifinals"),
+          series(3, "Alpha", "Gamma", "team1", "Final"),
+        ],
+      }];
+      tournament.teams = [
+        ["Alpha", 1],
+        ["Gamma", 2],
+        ["Beta", 4],
+        ["Delta", 3],
+      ].map(([captainName, placement]) => ({
+        captainKey: captainName.toLowerCase(),
+        captainName,
+        placement,
+        games: 0,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        winRate: null,
+        roster: [],
+      }));
+      return { ok: true, status: 200, json: () => Promise.resolve(data) };
+    });
+
+    const user = userEvent.setup();
+    renderApp("/?tab=tournaments");
+    await screen.findByText("Team rosters", {}, { timeout: 10000 });
+    const toggle = screen.getByRole("button", { name: "Show suggested placements" });
+    expect(toggle).toBeEnabled();
+    await user.click(toggle);
+
+    const betaCard = screen.getByRole("link", { name: "Beta" }).closest(".tournament-team-card");
+    expect(within(betaCard).getByText("Suggested: 3rd")).toBeInTheDocument();
+    expect(within(betaCard).getByText("Recorded: 4th")).toBeInTheDocument();
+    expect(within(betaCard).getByText("Discrepancy: +1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Hide suggested placements" }));
+    expect(within(betaCard).queryByText("Discrepancy: +1")).not.toBeInTheDocument();
   });
 
   it("shows cumulative Swiss records and title-cased formats in tournament results", async () => {
@@ -334,7 +413,7 @@ describe("App smoke test against real data", () => {
     expect(screen.getByRole("heading", { name: "Group B" })).toBeInTheDocument();
   });
 
-  it("lays round-robin rounds out as rows, deriving rounds from match order when unlabeled", async () => {
+  it("keeps unlabeled round-robin games in an unassigned round", async () => {
     const baseFetch = global.fetch.getMockImplementation();
     vi.spyOn(global, "fetch").mockImplementation(async (url, options) => {
       const response = await baseFetch(url, options);
@@ -350,8 +429,8 @@ describe("App smoke test against real data", () => {
         bestOf: null,
         games: [{ ...source, matchKey: `rr-${order}-${team1.key}`, order, stage: null, team1, team2, winner: "team1" }],
       });
-      // A series label ("Quarterfinal") names the series, not a round, and an
-      // explicitly assigned round wins over the match-order fallback.
+      // A series label ("Quarterfinal") names the series, not a round. An
+      // explicitly assigned round still groups this game.
       const assigned = series(3, b, d);
       assigned.roundLabel = "Quarterfinal";
       assigned.games[0].round = "Playoff Week";
@@ -378,12 +457,11 @@ describe("App smoke test against real data", () => {
     await screen.findByText("Team rosters", {}, { timeout: 10000 });
     await user.click(screen.getByRole("tab", { name: "Results" }));
 
-    const roundOne = (await screen.findByRole("heading", { name: "Round 1" })).closest(".tournament-results-round");
-    const roundTwo = screen.getByRole("heading", { name: "Round 2" }).closest(".tournament-results-round");
-    expect(roundOne.querySelectorAll(".tournament-result-card")).toHaveLength(2);
-    expect(roundTwo.querySelectorAll(".tournament-result-card")).toHaveLength(1);
-    expect(roundOne.closest(".tournament-results-rounds")).toHaveClass("is-rows");
-    expect(screen.queryByRole("heading", { name: "Games" })).not.toBeInTheDocument();
+    const unassignedRound = (await screen.findByRole("heading", { name: "Unassigned round" })).closest(".tournament-results-round");
+    expect(unassignedRound.querySelectorAll(".tournament-result-card")).toHaveLength(3);
+    expect(unassignedRound.closest(".tournament-results-rounds")).toHaveClass("is-rows");
+    expect(screen.queryByRole("heading", { name: "Round 1" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Round 2" })).not.toBeInTheDocument();
     const playoff = screen.getByRole("heading", { name: "Playoff Week" }).closest(".tournament-results-round");
     expect(playoff.querySelectorAll(".tournament-result-card")).toHaveLength(1);
     expect(screen.queryByRole("heading", { name: "Quarterfinal" })).not.toBeInTheDocument();

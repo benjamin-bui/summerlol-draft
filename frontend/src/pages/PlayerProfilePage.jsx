@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAppData } from "../context/AppDataContext";
 import { diversityPercentile } from "../utils/diversityStats";
+import { sortMatchesByTournamentStructure } from "../utils/matchOrdering";
 import { NameWithTag, TrueSkillValue, SoloQueueRank } from "../components/shared/Cells";
 import PlayerSearchBox from "../components/shared/PlayerSearchBox";
 import ProfileChart from "../components/shared/ProfileChart";
@@ -425,7 +426,7 @@ export default function PlayerProfilePage() {
   const championExtras = historyHasBans(history) ? ["bannedAgainst"] : [];
   const championStats =
     selectedKey || tournamentFilter ? computeChampionStats(filteredHistory) : player.championStats || [];
-  const historyDescending = [...filteredHistory].reverse();
+  const historyDescending = sortMatchesByTournamentStructure(filteredHistory).reverse();
   const showRole = history.some((e) => e.playerDetails?.[0]?.role);
 
   const title = player.group || player.identityKey || "Player";

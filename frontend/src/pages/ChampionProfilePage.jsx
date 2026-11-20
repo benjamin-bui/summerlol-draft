@@ -11,6 +11,7 @@ import ProfileTournamentFilter from "../components/shared/ProfileTournamentFilte
 import RoleBreakdown from "../components/shared/RoleBreakdown";
 import { useGoBack } from "../hooks/useGoBack";
 import { ROLE_LABELS, ROLES } from "../utils/format";
+import { sortMatchesByTournamentStructure } from "../utils/matchOrdering";
 import { computeChampionMatchupRows, computeChampionMatchups, computeChampionPlayers, computeChampionTournaments, pickExtreme, tournamentKey, tournamentRouteId } from "../utils/profileCompute";
 
 const byChampionName = (a, b) => a.champion.localeCompare(b.champion);
@@ -176,7 +177,7 @@ export default function ChampionProfilePage() {
   );
   const players = useMemo(() => computeChampionPlayers(filteredHistory), [filteredHistory]);
   const matchupRows = useMemo(() => computeChampionMatchupRows(filteredHistory), [filteredHistory]);
-  const historyDescending = useMemo(() => [...filteredHistory].reverse(), [filteredHistory]);
+  const historyDescending = useMemo(() => sortMatchesByTournamentStructure(filteredHistory).reverse(), [filteredHistory]);
 
   const backButton = (
     <button className="player-profile-back" onClick={goBack}>

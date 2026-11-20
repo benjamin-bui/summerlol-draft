@@ -7,10 +7,10 @@ import {
   groupIndexOfTeam,
   groupsPayload,
   resizeGroups,
-  roundsFromMatchOrder,
   suggestGroups,
   tournamentTeams,
 } from "../../utils/roundRobinGroups";
+import { sortMatchesByTournamentStructure } from "../../utils/matchOrdering";
 
 const STAGE_FORMATS = [
   ["round-robin", "Round robin"],
@@ -292,7 +292,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
   const addTeam1Name = seriesSides?.team1 || addTeam1;
   const addTeam2Name = seriesSides?.team2 || addTeam2;
   const canInsertGame = addSeriesId || (addTeam1 && addTeam2 && addTeam1 !== addTeam2);
-  const visibleGames = (structure?.games || []).filter(
+  const visibleGames = sortMatchesByTournamentStructure(structure?.games || []).filter(
     (game) =>
       gameStageFilter === "all" ||
       (gameStageFilter === "unassigned" ? !game.stageId : game.stageId === gameStageFilter),
@@ -302,6 +302,14 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
     return series
       ? `${series.roundLabel || "Series"} · Game ${game.gameNumber}${series.bestOf ? ` of ${series.bestOf}` : ""}`
       : "Standalone game";
+  };
+  const insertPositionLabel = (order) => {
+    const games = (structure?.games || []).filter((game) => game.matchOrder === order);
+    const description = games.map((game) => {
+      const stageName = game.stage?.stageName || "Unassigned stage";
+      return `${stageName} · ${currentLabel(game)} · ${game.team1} vs ${game.team2}`;
+    }).join("; ");
+    return `Before ${description || "existing game"}`;
   };
 
   return (
@@ -379,7 +387,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
 
             <section className="structure-section">
               <h3>Team placements</h3>
-              <p className="stat-formula">Set each team&apos;s final numeric placement. Clear a value to use the imported placement again.</p>
+              <p className="stat-formula">Set each team&apos;s final numeric placement directly in the draft data. Clear a value to remove its placement.</p>
               <div className="structure-placement-list">
                 {(structure.teams || []).map((team) => (
                   <label className="structure-placement-row" key={team.captainKey}>
@@ -494,7 +502,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                 {visibleGames.map((game) => (
                   <label className="structure-game-row" key={game.matchKey}>
                     <input type="checkbox" checked={selectedGames.includes(game.matchKey)} onChange={() => toggleGame(game.matchKey)} />
-                    <span>#{game.matchOrder} {game.team1} vs {game.team2}</span>
+                    <span>{game.team1} vs {game.team2}</span>
                     <span className="stat-formula">{game.stage?.stageName || "No stage"} · {currentLabel(game)}{game.round ? ` · ${game.round}` : ""}{game.section ? ` · ${SECTION_LABELS[game.section]}` : ""}</span>
                   </label>
                 ))}
@@ -544,15 +552,6 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                   })), csrfToken), { clearSelection: true })}
                 >
                   Set round on selected games
-                </button>
-                <button
-                  type="button"
-                  className="columns-btn"
-                  disabled={busy || selectedGames.length === 0}
-                  title="Games played at the same time (same match order) share a round"
-                  onClick={() => run(() => editorApi.updateGameRounds(selected.year, selected.tournament, roundsFromMatchOrder(selectedGames.map((key) => gameByKey.get(key)).filter(Boolean)), csrfToken), { clearSelection: true })}
-                >
-                  Number rounds from match order
                 </button>
                 <label>
                   Bracket section
@@ -645,9 +644,9 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                 <label>Insert position
                   <select aria-label="Insert position" value={insertBeforeOrder} onChange={(event) => setInsertBeforeOrder(event.target.value)}>
                     {orderedMatchOrders.map((order) => (
-                      <option key={order} value={order}>Before match #{order}</option>
+                      <option key={order} value={order}>{insertPositionLabel(order)}</option>
                     ))}
-                    <option value="end">At end (match #{maxMatchOrder + 1})</option>
+                    <option value="end">At end of structure</option>
                   </select>
                 </label>
                 <button
@@ -668,7 +667,7 @@ export default function TournamentStructureEditor({ rows, onClose, onChanged }) 
                 </button>
               </div>
               <p className="stat-formula">
-                Insert standalone games or add one to an existing series. Later match orders shift to make room.
+                Insert standalone games or add one to an existing series. Later games shift to make room.
               </p>
             </section>
           </>

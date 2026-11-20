@@ -6,8 +6,9 @@ import MatchDetailEditor from "../components/shared/MatchDetailEditor";
 import TournamentStructureEditor from "../components/shared/TournamentStructureEditor";
 import TournamentFunFacts from "../components/shared/TournamentFunFacts";
 import { ordinal, pct, pctOrLessThanOne, sortByRole } from "../utils/format";
-import { layoutBracket } from "../utils/bracketLayout";
+import { layoutBracket, suggestBracketPlacements } from "../utils/bracketLayout";
 import { predictedResultProbability } from "../utils/predictionStats";
+import { sortMatchesByTournamentStructure } from "../utils/matchOrdering";
 import { useAuth } from "../context/AuthContext";
 
 function playerLinkProps(displayName, identityKey) {
@@ -53,7 +54,7 @@ function UpsetRow({ u, onJump }) {
       </div>
     );
   }
-  const where = [u.matchStage || null, u.matchOrder != null ? `match ${u.matchOrder}` : null].filter(Boolean).join(" \u00b7 ");
+  const where = [u.stageName || u.matchStage || null, u.round || u.seriesRound || null].filter(Boolean).join(" \u00b7 ");
   const avgs = u.winnerAvg != null && u.loserAvg != null ? ` (avg TrueSkill ${Math.round(u.winnerAvg)} vs ${Math.round(u.loserAvg)})` : "";
   return (
     <div className="tournament-stack">
@@ -327,8 +328,9 @@ function ChampionsBlock({ t, championSort, setChampionSort, championFilterKey, o
   );
 }
 
-function TeamCard({ team }) {
+function TeamCard({ team, suggestedPlacement, showSuggested }) {
   const record = team.games ? `${team.wins}-${team.losses}${team.draws ? `-${team.draws}` : ""}` : "\u2013";
+  const discrepancy = team.placement == null ? null : team.placement - suggestedPlacement;
   return (
     <article className="tournament-team-card">
       <header className="tournament-team-head">
@@ -345,6 +347,15 @@ function TeamCard({ team }) {
           {team.winRate != null ? ` \u00b7 ${pct(team.winRate)}` : ""}
         </span>
       </header>
+      {showSuggested && suggestedPlacement != null && (
+        <p className="tournament-placement-comparison">
+          <span>Suggested: {ordinal(suggestedPlacement)}</span>
+          <span>Recorded: {team.placement == null ? "not set" : ordinal(team.placement)}</span>
+          <span>
+            Discrepancy: {discrepancy == null ? "not available" : discrepancy === 0 ? "matches" : `${discrepancy > 0 ? "+" : ""}${discrepancy}`}
+          </span>
+        </p>
+      )}
       <table>
         <thead>
           <tr>
@@ -372,7 +383,10 @@ function TeamCard({ team }) {
 }
 
 function TeamsBlock({ t }) {
+  const [showSuggested, setShowSuggested] = useState(false);
   const pool = t.entryRankPoolSize;
+  const bracketSuggestion = tournamentBracketSuggestion(t);
+  const suggestedByTeam = new Map((bracketSuggestion?.placements || []).map((item) => [item.key, item.placement]));
   const legend = pool
     ? `Pick = draft pick number (captains aren't picked). Entering rank = adjusted TrueSkill rank among all ${pool} players entering this tournament (#1 = best).`
     : `Pick = draft pick number (captains aren't picked). Entering rank isn't available \u2014 there were no earlier games to rate anyone from.`;
@@ -380,9 +394,33 @@ function TeamsBlock({ t }) {
     <section className="profile-block">
       <h3>Team rosters</h3>
       <p className="stat-formula tournament-note">{legend}</p>
+      <div className="tournament-placement-tools">
+        <button
+          type="button"
+          className="columns-btn"
+          disabled={!bracketSuggestion?.placements}
+          aria-pressed={showSuggested}
+          title={bracketSuggestion?.placements ? undefined : "A complete, decisive elimination bracket is needed to suggest placements"}
+          onClick={() => setShowSuggested((shown) => !shown)}
+        >
+          {showSuggested ? "Hide suggested placements" : "Show suggested placements"}
+        </button>
+        {bracketSuggestion?.placements ? (
+          <span className="stat-formula">
+            From {bracketSuggestion.stage.name}. Tied exits share a place; discrepancy is recorded rank minus suggested rank (positive means the recorded placement is worse).
+          </span>
+        ) : (
+          <span className="stat-formula">Suggestions require one complete elimination bracket with decisive results.</span>
+        )}
+      </div>
       <div className="tournament-teams">
         {t.teams.map((team, i) => (
-          <TeamCard team={team} key={i} />
+          <TeamCard
+            team={team}
+            key={i}
+            suggestedPlacement={suggestedByTeam.get(team.captainKey)}
+            showSuggested={showSuggested}
+          />
         ))}
       </div>
     </section>
@@ -421,6 +459,16 @@ function resultStages(t) {
     ...stage,
     groups: [...stage.groups.values()],
   }));
+}
+
+function tournamentBracketSuggestion(t) {
+  const stage = resultStages(t)
+    .filter((item) => /^(single|double)-elimination$/.test(item.format || ""))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .at(-1);
+  if (!stage) return null;
+  const placements = suggestBracketPlacements(stage.groups, stage.format);
+  return placements ? { stage, placements } : null;
 }
 
 function formatStageFormat(format) {
@@ -504,7 +552,7 @@ function swissRoundResults(groups, records, { sort = true } = {}) {
   return { records: new Map(records), groups: sortedGroups };
 }
 
-function SeriesResultCard({ group, index, records, onJump }) {
+function SeriesResultCard({ group, records, onJump }) {
   const games = [...group.games].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const first = games[0];
   if (!first) return null;
@@ -525,7 +573,7 @@ function SeriesResultCard({ group, index, records, onJump }) {
       wins[winnerKey === (teams[0].key || teams[0].name) ? 0 : 1] += 1;
     }
   }
-  const label = group.roundLabel || (group.seriesId ? `Series ${index + 1}` : `Game ${first.order ?? index + 1}`);
+  const label = group.roundLabel || first.round || first.stage || (group.seriesId ? "Series" : "Match");
 
   return (
     <article className="tournament-result-card">
@@ -560,7 +608,7 @@ function SeriesResultCard({ group, index, records, onJump }) {
               key={game.matchKey || gameIndex}
               onClick={() => onJump(game.matchKey)}
               disabled={!game.matchKey}
-              title={`View match ${game.order ?? ""}`}
+              title="View match details"
             >
               {games.length > 1 ? `Game ${game.gameNumber || gameIndex + 1}: ` : ""}
               {winner}
@@ -579,24 +627,25 @@ function SeriesResultCard({ group, index, records, onJump }) {
 // shows the running record (round-robin); null shows no records.
 function ResultRounds({ seriesGroups, mode = null, layout = "columns", onJump }) {
   const rows = layout === "rows";
-  const orderOf = (group) => group.games[0]?.order ?? 0;
-  // Row layout (round-robin) is keyed by the round the editor assigned to the
-  // games -- a series takes its first game's. Series label/stage text are not
-  // used, since those name the series, not a round. Games with no assigned
-  // round fall back to match order: games sharing a match order were played
-  // together, so each distinct order is one "Round N".
+  // Row layout uses only explicit tournament rounds. Unassigned games stay in
+  // one clearly labeled bucket rather than implying rounds from match order.
   const explicitRound = (group) => group.games.find((game) => game.round)?.round || null;
-  const unassignedOrders = [
-    ...new Set(seriesGroups.filter((group) => !explicitRound(group)).map(orderOf)),
-  ].sort((a, b) => a - b);
   const rounds = new Map();
   const records = new Map();
-  const entries = seriesGroups.map((group, groupIndex) => ({ group, groupIndex }));
-  if (rows) entries.sort((a, b) => orderOf(a.group) - orderOf(b.group));
+  let entries = seriesGroups.map((group, groupIndex) => ({ group, groupIndex }));
+  if (rows) {
+    const ordered = sortMatchesByTournamentStructure(entries.map(({ group, groupIndex }) => ({
+      ...group.games[0],
+      matchOrder: group.games[0]?.order,
+      round: explicitRound(group) || group.roundLabel,
+      _groupIndex: groupIndex,
+    })));
+    entries = ordered.map(({ _groupIndex }) => entries[_groupIndex]);
+  }
   entries.forEach(({ group, groupIndex }) => {
     const first = group.games[0];
     const roundName = rows
-      ? explicitRound(group) || `Round ${unassignedOrders.indexOf(orderOf(group)) + 1}`
+      ? explicitRound(group) || "Unassigned round"
       : group.roundLabel || first?.stage || (group.seriesId ? `Series ${groupIndex + 1}` : "Games");
     if (!rounds.has(roundName)) rounds.set(roundName, []);
     rounds.get(roundName).push({ group, groupIndex });
@@ -617,7 +666,6 @@ function ResultRounds({ seriesGroups, mode = null, layout = "columns", onJump })
               <SeriesResultCard
                 key={group.seriesId || group.games[0]?.matchKey || groupIndex}
                 group={group}
-                index={groupIndex}
                 records={roundRecords}
                 onJump={onJump}
               />
@@ -740,7 +788,7 @@ function EliminationBracket({ seriesGroups, onJump }) {
                     key={game.matchKey || gameIndex}
                     onClick={() => onJump(game.matchKey)}
                     disabled={!game.matchKey}
-                    title={`View match ${game.order ?? ""}`}
+                    title="View match details"
                   >
                     {node.games.length > 1 ? `Game ${game.gameNumber || gameIndex + 1}: ` : ""}
                     {winner}
@@ -901,12 +949,22 @@ function groupMatchesByStructure(shown) {
   }
   return [...stages.values()]
     .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
-    .map((stage) => ({
-      ...stage,
-      groups: [...stage.groups.values()].sort(
-        (a, b) => (a.matches[0].m.order ?? 0) - (b.matches[0].m.order ?? 0),
-      ),
-    }));
+    .map((stage) => {
+      const groups = [...stage.groups.values()];
+      const firstMatchByGroup = groups.map((group) => {
+        const first = group.matches[0].m;
+        return {
+          ...first,
+          matchOrder: first.order,
+          round: group.matches.find(({ m }) => m.round)?.m.round || group.roundLabel,
+          _group: group,
+        };
+      });
+      return {
+        ...stage,
+        groups: sortMatchesByTournamentStructure(firstMatchByGroup).map((match) => match._group),
+      };
+    });
 }
 
 function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onToggleExpand, onToggleExpandAll, flashKey, canEdit, onSaved }) {
@@ -925,7 +983,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
   const allExpanded = shownKeys.every((key) => expandedKeys.has(key));
   const groupedMatches = groupMatchesByStructure(shown);
   const filterChampion = championFilterKey ? t.championStats.find((c) => c.key === championFilterKey) : null;
-  const count = championFilterKey ? `${shown.length} of ${t.matches.length}, in play order` : `${t.matches.length}, in play order`;
+  const count = championFilterKey ? `${shown.length} of ${t.matches.length}, in tournament structure order` : `${t.matches.length}, in tournament structure order`;
 
   return (
     <section className="profile-block tournament-matches" id="tournamentMatches">
@@ -958,10 +1016,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                 <th className="col-toggle">
                   <span className="sr-only">Expand</span>
                 </th>
-                <th className="col-narrow" title="Match Order from the match data">
-                  #
-                </th>
-                <th className="col-narrow">Stage</th>
+                <th className="col-narrow">Round / Match</th>
                 <th>Team 1</th>
                 <th>Team 2</th>
                 <th>Winner</th>
@@ -974,7 +1029,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
               {groupedMatches.map((stage) => (
                 <Fragment key={stage.id}>
                   <tr className="tournament-stage-heading">
-                    <th colSpan={7} scope="rowgroup">
+                    <th colSpan={6} scope="rowgroup">
                       {stage.name}
                       {stage.format && <span className="stat-formula">{" \u00b7 "}{formatStageFormat(stage.format)}</span>}
                     </th>
@@ -983,7 +1038,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                     <Fragment key={group.id}>
                       {group.seriesId && (
                         <tr className="tournament-series-heading">
-                          <th colSpan={7} scope="rowgroup">
+                          <th colSpan={6} scope="rowgroup">
                             {group.roundLabel || "Series"}
                             {group.bestOf ? <span className="stat-formula">{" \u00b7 "}Best of {group.bestOf}</span> : null}
                             <span className="stat-formula">
@@ -1024,8 +1079,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                                   {isOpen ? "\u25bc" : "\u25b6"}
                                 </button>
                               </td>
-                              <td className="col-narrow">{m.order ?? "\u2013"}</td>
-                              <td className="col-narrow">{m.gameNumber ? `Game ${m.gameNumber}` : m.stage || "\u2013"}</td>
+                              <td className="col-narrow">{m.round || m.seriesRound || (m.gameNumber ? `Game ${m.gameNumber}` : m.stage || "\u2013")}</td>
                               <td className={t1Won ? "tournament-winner" : ""}>
                                 <PlayerLink {...playerLinkProps(m.team1.name, m.team1.key)} />
                               </td>
@@ -1039,7 +1093,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                             </tr>
                             {isOpen && (
                               <tr key={`${m.matchKey || i}-detail`} className="roster-detail-row">
-                                <td colSpan={7}>
+                                <td colSpan={6}>
                                   <div className="match-rosters">
                                     {canEdit && m.matchKey && (
                                       <div className="match-editor-launch">
@@ -1070,7 +1124,7 @@ function MatchesBlock({ t, championFilterKey, onClearFilter, expandedKeys, onTog
                                   {editingMatch?.matchKey === m.matchKey && (
                                     <MatchDetailEditor
                                       matchKey={m.matchKey}
-                                      title={`${m.team1.name} vs ${m.team2.name} \u00b7 ${t.label} \u00b7 ${m.stage || `Match ${m.order ?? ""}`}`}
+                                      title={`${m.team1.name} vs ${m.team2.name} \u00b7 ${t.label} \u00b7 ${m.round || m.seriesRound || m.stage || "Match"}`}
                                       onClose={() => setEditingMatch(null)}
                                       onSaved={onSaved}
                                     />

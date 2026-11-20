@@ -56,7 +56,11 @@ Tournament,Year,Captain,Player,Pick Order,Rank
 
 Match CSV requires `Year,Tournament,Team 1,Team 2,Result,Match Order`;
 `Match Stage` is optional. Match order must be an integer and determines
-chronological order within a tournament. Optional structure columns are
+the TrueSkill calculation sequence and remains required for stable match
+identity. It is not shown in match history. Player/champion histories and
+tournament match lists use tournament stage order and assigned rounds when
+available; incomplete or custom round labels fall back to the recorded match
+order. Optional structure columns are
 `Stage ID,Stage Name,Stage Format,Stage Order,Series ID,Series Round,Best Of`.
 Use stable IDs for stages and series across rows. Supported stage formats are
 `round-robin`, `swiss`, `single-elimination`, `double-elimination`, and
@@ -88,7 +92,11 @@ npm test
 ```
 
 Draft ingestion synchronizes rows by ID and removes rows no longer present in
-an ID-bearing CSV. Pass `--fresh` to `ingest-csv` to recreate the draft table.
+an ID-bearing CSV. `Rank` is seeded from the CSV when a row is first imported;
+subsequent ID-based imports preserve the database value so team placements
+edited in the app remain canonical. Pass `--fresh` to `ingest-csv` to recreate
+the draft table and reseed placements. A CSV without IDs replaces the rows
+table, so use an ID-bearing source to preserve database-managed placements.
 Match ingestion rebuilds the imported match list, while retaining games added
 in the editor and details/bans with match keys that still exist. Match-details
 ingestion replaces the details and bans tables, except details explicitly
@@ -162,8 +170,9 @@ Data behavior worth knowing:
   order and format stages, assign games to stages, group selected games into a
   series, ungroup them, and insert a game with a selected result before a chosen
   match order or at the end of an existing series. It also lets editors set
-  numeric team placements; clearing a value restores the imported placement.
-  Placement overrides survive CSV re-ingestion. Insertion shifts later match
+  numeric team placements directly in the draft rows' `Rank` column; clearing a
+  value clears that database placement. Placement edits survive ordinary
+  ID-based CSV re-ingestion. Insertion shifts later match
   orders (including simultaneous games) while preserving their relative order,
   and those shifts survive CSV re-ingestion.
   The Tournaments tab displays stages, series, and per-series game

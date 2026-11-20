@@ -83,7 +83,7 @@ test("stages and series group games for display without removing individual game
   }
 });
 
-test("team placement overrides are saved, audited, and removable", () => {
+test("team placements update draft rows, are audited, and can be cleared", () => {
   const db = createDb();
   try {
     insertGame(db, 1, { team1: "Alpha", team2: "Beta" });
@@ -96,7 +96,9 @@ test("team placement overrides are saved, audited, and removable", () => {
     )`);
     db.prepare(
       `INSERT INTO rows ("Player", "Captain", "Tournament", "Year", "Rank")
-       VALUES ('Alpha', 'Alpha', 'Summer', '2026', '2')`,
+       VALUES ('Alpha', 'Alpha', 'Summer', '2026', '2'),
+              ('Alpha teammate', 'Alpha', 'Summer', '2026', '2'),
+              ('Beta', 'Beta', 'Summer', '2026', '1')`,
     ).run();
     const identityMap = new Map([
       ["Alpha", { identityKey: "alpha-key", displayName: "Alpha" }],
@@ -116,6 +118,10 @@ test("team placement overrides are saved, audited, and removable", () => {
       saved.teams.map(({ captainKey, placement }) => [captainKey, placement]),
       [["beta-key", 1], ["alpha-key", 3]],
     );
+    assert.deepEqual(
+      db.prepare(`SELECT "Rank" FROM rows WHERE "Captain" = 'Alpha' ORDER BY "Player"`).all().map((row) => row.Rank),
+      ["3", "3"],
+    );
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tournament_structure_audit").get().n, 1);
 
     const cleared = saveTeamPlacements(db, 2026, "Summer", {
@@ -124,8 +130,55 @@ test("team placement overrides are saved, audited, and removable", () => {
         { captainKey: "beta-key", placement: null },
       ],
     }, editor, identityMap);
-    assert.deepEqual(cleared.teams.map((team) => team.placement), [2, null]);
-    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tournament_team_placement_overrides").get().n, 0);
+    assert.deepEqual(cleared.teams.map((team) => team.placement), [null, null]);
+    assert.deepEqual(
+      db.prepare(`SELECT "Rank" FROM rows WHERE "Captain" = 'Alpha'`).all().map((row) => row.Rank),
+      [null, null],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("legacy placement overrides migrate into draft rows", () => {
+  const db = createDb();
+  try {
+    insertGame(db, 1, { team1: "Alpha", team2: "Beta" });
+    db.exec(`CREATE TABLE rows (
+      "Player" TEXT,
+      "Captain" TEXT,
+      "Tournament" TEXT,
+      "Year" TEXT,
+      "Rank" TEXT
+    )`);
+    db.prepare(
+      `INSERT INTO rows ("Player", "Captain", "Tournament", "Year", "Rank")
+       VALUES ('Alpha', 'Alpha', 'Summer', '2026', '1')`,
+    ).run();
+    db.exec(`CREATE TABLE tournament_team_placement_overrides (
+      year INTEGER NOT NULL,
+      tournament TEXT NOT NULL,
+      captain_key TEXT NOT NULL,
+      placement INTEGER NOT NULL,
+      edited_by_sub TEXT NOT NULL,
+      edited_by_email TEXT,
+      edited_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (year, tournament, captain_key)
+    )`);
+    db.prepare(
+      `INSERT INTO tournament_team_placement_overrides
+       (year, tournament, captain_key, placement, edited_by_sub)
+       VALUES (2026, 'Summer', 'alpha-key', 2, 'editor-1')`,
+    ).run();
+
+    ensureTournamentStructureSchema(db, new Map([
+      ["Alpha", { identityKey: "alpha-key" }],
+    ]));
+    assert.equal(db.prepare(`SELECT "Rank" FROM rows WHERE "Captain" = 'Alpha'`).get().Rank, "2");
+    assert.equal(
+      db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'tournament_team_placement_overrides'").get(),
+      undefined,
+    );
   } finally {
     db.close();
   }

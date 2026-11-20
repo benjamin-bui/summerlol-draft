@@ -2081,6 +2081,25 @@ td:has(.pick-detail) {
   font-size: 0.75rem;
   font-weight: 600;
 }
+.tournament-placement-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.tournament-placement-comparison {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.tournament-placement-comparison span:first-child {
+  color: var(--accent);
+  font-weight: 600;
+}
 .tournament-team-card table {
   width: 100%;
   border-collapse: collapse;

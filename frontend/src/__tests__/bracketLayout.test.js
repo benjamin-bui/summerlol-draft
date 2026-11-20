@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_METRICS, bracketCardHeight, layoutBracket } from "../utils/bracketLayout";
+import {
+  DEFAULT_METRICS,
+  bracketCardHeight,
+  layoutBracket,
+  suggestBracketPlacements,
+} from "../utils/bracketLayout";
 
 const team = (name) => ({ key: name.toLowerCase(), name });
 // One single-game series: `winner` is the winning team's name.
@@ -118,6 +123,48 @@ describe("bracket layout", () => {
 
   it("returns an empty layout for no series", () => {
     expect(layoutBracket([])).toMatchObject({ nodes: [], edges: [], headers: [], width: 0, height: 0 });
+  });
+
+  it("suggests single-elimination placements and ties teams eliminated in the same round", () => {
+    const suggestions = suggestBracketPlacements([
+      match(1, "Alpha", "Beta", "Alpha", { round: "Semifinals" }),
+      match(2, "Gamma", "Delta", "Gamma", { round: "Semifinals" }),
+      match(3, "Alpha", "Gamma", "Alpha", { round: "Final" }),
+    ], "single-elimination");
+    expect(suggestions.map(({ name, placement }) => [name, placement])).toEqual([
+      ["Alpha", 1],
+      ["Gamma", 2],
+      ["Beta", 3],
+      ["Delta", 3],
+    ]);
+  });
+
+  it("suggests double-elimination placements from the grand final and lower-bracket exits", () => {
+    const upper = { section: "upper" };
+    const lower = { section: "lower" };
+    const final = { section: "final" };
+    const suggestions = suggestBracketPlacements([
+      match(1, "Alpha", "Beta", "Alpha", { ...upper, round: "UB Semifinal" }),
+      match(2, "Gamma", "Delta", "Gamma", { ...upper, round: "UB Semifinal" }),
+      match(3, "Alpha", "Gamma", "Alpha", { ...upper, round: "UB Final" }),
+      match(4, "Beta", "Delta", "Beta", { ...lower, round: "LB Round 1" }),
+      match(5, "Beta", "Gamma", "Gamma", { ...lower, round: "LB Final" }),
+      match(6, "Alpha", "Gamma", "Alpha", { ...final, round: "Grand Final" }),
+    ], "double-elimination");
+    expect(suggestions.map(({ name, placement }) => [name, placement])).toEqual([
+      ["Alpha", 1],
+      ["Gamma", 2],
+      ["Beta", 3],
+      ["Delta", 4],
+    ]);
+  });
+
+  it("does not suggest placements for incomplete or non-elimination results", () => {
+    expect(suggestBracketPlacements([
+      match(1, "Alpha", "Beta", "Alpha", { round: "Semifinals" }),
+      match(2, "Gamma", "Delta", "Gamma", { round: "Semifinals" }),
+    ], "single-elimination")).toBeNull();
+    expect(suggestBracketPlacements([], "round-robin")).toBeNull();
   });
 
   it("orders simultaneous first-round matches by where their winners go, whatever order the data lists them", () => {

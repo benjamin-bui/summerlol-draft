@@ -88,7 +88,8 @@ test('stage and series metadata does not change per-game TrueSkill results', asy
     matches.map((match, index) => ({
       ...match,
       stageId: 'stage-1',
-      stage: { stageName: 'Finals', stageFormat: 'single-elimination', stageOrder: 1 },
+      stage: { stageName: index === 0 ? 'Finals' : 'Groups', stageFormat: 'single-elimination', stageOrder: index === 0 ? 2 : 1 },
+      round: index === 0 ? 'Final' : 'Round 1',
       seriesId: 'series-1',
       series: { roundLabel: 'Final', bestOf: 3 },
       gameNumber: index + 1,
@@ -116,4 +117,6 @@ test('stage and series metadata does not change per-game TrueSkill results', asy
   });
   assert.deepEqual(resultSignature(structured), resultSignature(plain));
   assert.deepEqual(structured.games.map((game) => game.gameNumber), [1, 2]);
+  assert.deepEqual(structured.games.map((game) => game.matchOrder), [1, 2]);
+  assert.deepEqual(structured.games.map((game) => game.stageOrder), [2, 1]);
 });

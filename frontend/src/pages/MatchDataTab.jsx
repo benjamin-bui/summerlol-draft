@@ -10,6 +10,7 @@ import { ReplayError, readReplayFile } from "../utils/roflReplay";
 import { readScreenshotFile } from "../utils/screenshotImport";
 import { useAuth } from "../context/AuthContext";
 import { sortByRole } from "../utils/format";
+import { sortMatchesByTournamentStructure } from "../utils/matchOrdering";
 
 const SCREENSHOT_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const SCREENSHOT_MAX_BYTES = 8 * 1024 * 1024;
@@ -24,23 +25,35 @@ const MATCH_DATA_COLUMNS = [
     filterType: "checkbox",
     type: "number",
     decimals: 0,
-    sortValue: (row) => {
-      const summerFirst = String(row.tournament || "").toLowerCase() === "summer" ? 1 : 0;
-      return Number(row.year || 0) * 1000000000 + summerFirst * 10000000 + Number(row.match_order || 0);
-    },
+    sortValue: (row) => row.__structureOrder ?? Number(row.match_order || 0),
   },
   { key: "tournament", label: "Tournament", sortable: true, hideable: true, filterable: true, type: "string", filterType: "checkbox" },
   { key: "team1", label: "Team 1", sortable: true, hideable: true, filterable: true, type: "string" },
   { key: "team2", label: "Team 2", sortable: true, hideable: true, filterable: true, type: "string" },
   { key: "result", label: "Result", sortable: true, hideable: true, filterable: true, type: "string" },
-  { key: "match_order", label: "Match Order", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
   { key: "match_stage", label: "Match Stage", sortable: true, hideable: true, filterable: true, type: "string" },
   { key: "stage_name", label: "Tournament Stage", sortable: true, hideable: true, filterable: true, type: "string" },
+  { key: "round", label: "Round", sortable: true, hideable: true, filterable: true, type: "string" },
+  { key: "section", label: "Bracket Section", sortable: true, hideable: true, filterable: true, type: "string" },
   { key: "series_round", label: "Series / Round", sortable: true, hideable: true, filterable: true, type: "string" },
   { key: "best_of", label: "Best Of", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
   { key: "game_number", label: "Game In Series", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0 },
   { key: "csv_row_index", label: "CSV Row", sortable: true, hideable: true, filterable: true, type: "number", decimals: 0, defaultHidden: true },
 ];
+
+const MATCH_NUMERIC_COLUMNS = [
+  ...MATCH_DATA_COLUMNS.filter((column) => column.type === "number").map((column) => column.key),
+  "match_order",
+  "stage_order",
+];
+
+function prepareMatchRows(rows) {
+  coerceNumericColumns(MATCH_NUMERIC_COLUMNS, rows);
+  return sortMatchesByTournamentStructure(rows).map((row, index) => ({
+    ...row,
+    __structureOrder: index,
+  }));
+}
 
 function MatchRosterDetail({ row, onEdit }) {
   const normalizePlayer = (value) => String(value || "").trim().toLowerCase();
@@ -182,8 +195,7 @@ export default function MatchDataTab({ active }) {
   useEffect(() => {
     if (active && !rows) {
       api.rawMatches().then((data) => {
-        coerceNumericColumns(MATCH_DATA_COLUMNS.map((c) => c.key), data.rows);
-        setRows(data.rows);
+        setRows(prepareMatchRows(data.rows));
       });
     }
   }, [active, rows]);
@@ -274,8 +286,7 @@ export default function MatchDataTab({ active }) {
           onClose={() => setEditingStructure(false)}
           onChanged={async () => {
             const data = await api.rawMatches();
-            coerceNumericColumns(MATCH_DATA_COLUMNS.map((column) => column.key), data.rows);
-            setRows(data.rows);
+            setRows(prepareMatchRows(data.rows));
           }}
         />
       )}

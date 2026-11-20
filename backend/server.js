@@ -32,7 +32,6 @@ const { createEditorRouter } = require("./src/lib/editor-routes");
 const {
   ensureDefaultStages,
   ensureTournamentStructureSchema,
-  readTeamPlacementOverrides,
   readAllStageGroups,
   structureForMatches,
 } = require("./src/lib/tournament-structure");
@@ -122,7 +121,7 @@ if (matchColumns.length) {
   db.exec("CREATE UNIQUE INDEX matches_match_key_unique ON matches(match_key)");
 }
 ensureMatchDetailsSchema(db); // (re)creates match_details and creates match_bans if missing
-ensureTournamentStructureSchema(db);
+ensureTournamentStructureSchema(db, loadIdentityMap(db));
 ensureDefaultStages(
   db,
   db
@@ -190,12 +189,10 @@ function getAllRows() {
 // breaks and every player still shows up, just ungrouped/unlinked until
 // resolved.
 function resolveIdentities(rows, identityMap) {
-  const placementOverrides = readTeamPlacementOverrides(db);
   return rows.map((row) => {
     const identity = lookupIdentity(identityMap, row.groupVal);
     const captainIdentityKey =
       identityMap.get(row.captain)?.identityKey || row.captain;
-    const placementKey = `${row.year}::${row.tournament}::${captainIdentityKey}`;
     return {
       ...row,
       identityKey: identity ? identity.identityKey : row.groupVal,
@@ -205,9 +202,6 @@ function resolveIdentities(rows, identityMap) {
         : opggLinkFromDisplayName(row.groupVal),
       identified: identity ? identity.resolved : false,
       captainIdentityKey,
-      rank: placementOverrides.has(placementKey)
-        ? placementOverrides.get(placementKey)
-        : row.rank,
     };
   });
 }
@@ -1542,6 +1536,8 @@ function getRawMatchRows() {
     row.stage_name = gameStructure?.stage?.stageName || null;
     row.stage_format = gameStructure?.stage?.stageFormat || null;
     row.stage_order = gameStructure?.stage?.stageOrder || null;
+    row.round = gameStructure?.round || null;
+    row.section = gameStructure?.section || null;
     row.series_id = gameStructure?.seriesId || null;
     row.series_round = gameStructure?.series?.roundLabel || null;
     row.best_of = gameStructure?.series?.bestOf || null;

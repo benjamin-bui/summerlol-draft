@@ -48,8 +48,8 @@ describe("TournamentStructureEditor", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Tournament structure" });
     await waitFor(() => expect(getStructure).toHaveBeenCalledWith(2026, "Summer"));
-    await user.click(within(dialog).getByRole("checkbox", { name: /#1 Alpha vs Beta/ }));
-    await user.click(within(dialog).getByRole("checkbox", { name: /#2 Beta vs Alpha/ }));
+    await user.click(within(dialog).getAllByRole("checkbox", { name: /Alpha vs Beta/ })[0]);
+    await user.click(within(dialog).getByRole("checkbox", { name: /Beta vs Alpha/ }));
     fireEvent.change(within(dialog).getByLabelText("Round label"), { target: { value: "Final" } });
     await user.selectOptions(within(dialog).getByLabelText("Best of"), "3");
     await user.click(within(dialog).getByRole("button", { name: "Group selected games" }));
@@ -88,9 +88,7 @@ describe("TournamentStructureEditor", () => {
     const dialog = await screen.findByRole("dialog", { name: "Tournament structure" });
     const stageFilter = within(dialog).getByLabelText("Show games");
     await user.selectOptions(stageFilter, "stage-2");
-    expect(within(dialog).getByText(/#3 Alpha vs Beta/)).toBeInTheDocument();
-    expect(within(dialog).queryByText(/#1 Alpha vs Beta/)).not.toBeInTheDocument();
-    expect(within(dialog).queryByText(/#2 Beta vs Alpha/)).not.toBeInTheDocument();
+    expect(within(dialog).getByText(/^Alpha vs Beta$/)).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Select all shown" }));
     expect(within(dialog).getByText("1 selected · 1 shown")).toBeInTheDocument();
@@ -330,7 +328,7 @@ describe("TournamentStructureEditor", () => {
     expect(within(dialog).queryByRole("group", { name: "Stage 1 groups" })).not.toBeInTheDocument();
   });
 
-  it("sets, auto-numbers and clears rounds on selected games", async () => {
+  it("sets and clears rounds on selected games", async () => {
     const user = userEvent.setup();
     const game = (key, order, team1, team2, round = null) => ({
       matchKey: key, matchOrder: order, team1, team2, stageId: "stage-1",
@@ -354,6 +352,7 @@ describe("TournamentStructureEditor", () => {
 
     expect(button("Set round on selected games")).toBeDisabled();
     expect(button("Clear round")).toBeDisabled();
+    expect(within(dialog).queryByRole("button", { name: "Number rounds from match order" })).not.toBeInTheDocument();
 
     // Set one name on two games.
     await pick(/Alpha vs Beta/);
@@ -366,25 +365,13 @@ describe("TournamentStructureEditor", () => {
       { matchKey: "m2", round: "Week 1" },
     ]);
 
-    // Selection is cleared after a save; auto-number all three from match order.
-    await pick(/Alpha vs Beta/);
-    await pick(/Gamma vs Delta/);
-    await pick(/Alpha vs Gamma/);
-    await user.click(button("Number rounds from match order"));
-    await waitFor(() => expect(rounds).toHaveBeenCalledTimes(2));
-    expect(rounds.mock.calls[1][2]).toEqual([
-      { matchKey: "m1", round: "Round 1" },
-      { matchKey: "m2", round: "Round 1" },
-      { matchKey: "m3", round: "Round 2" },
-    ]);
-
     // Clearing is only offered for a selection that has a round.
     await pick(/Alpha vs Beta/);
     expect(button("Clear round")).toBeDisabled();
     await pick(/Alpha vs Gamma/);
     await user.click(button("Clear round"));
-    await waitFor(() => expect(rounds).toHaveBeenCalledTimes(3));
-    expect(rounds.mock.calls[2][2]).toEqual([
+    await waitFor(() => expect(rounds).toHaveBeenCalledTimes(2));
+    expect(rounds.mock.calls[1][2]).toEqual([
       { matchKey: "m1", round: null },
       { matchKey: "m3", round: null },
     ]);

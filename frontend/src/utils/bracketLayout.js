@@ -215,3 +215,65 @@ export function layoutBracket(seriesGroups, overrides = {}) {
     metrics: m,
   };
 }
+
+export function suggestBracketPlacements(seriesGroups, format) {
+  if (!["single-elimination", "double-elimination"].includes(format)) return null;
+  const { nodes } = layoutBracket(seriesGroups);
+  if (!nodes.length || nodes.some((node) => node.winnerSide === null)) return null;
+
+  const teams = new Map();
+  for (const node of nodes) {
+    for (const team of node.teams) teams.set(team.key, team);
+  }
+  const placements = new Map();
+  const assign = (team, placement) => {
+    if (placements.has(team.key)) return false;
+    placements.set(team.key, { key: team.key, name: team.name, placement });
+    return true;
+  };
+  const losersByColumn = (matches) => {
+    const groups = new Map();
+    for (const node of matches) {
+      const loser = node.teams[1 - node.winnerSide];
+      if (!groups.has(node.col)) groups.set(node.col, new Map());
+      groups.get(node.col).set(loser.key, loser);
+    }
+    return [...groups.entries()].sort((a, b) => b[0] - a[0]).map(([, group]) => [...group.values()]);
+  };
+
+  if (format === "single-elimination") {
+    const finalColumn = Math.max(...nodes.map((node) => node.col));
+    const finalNodes = nodes.filter((node) => node.col === finalColumn);
+    if (finalNodes.length !== 1) return null;
+    const finalNode = finalNodes[0];
+    const champion = finalNode.teams[finalNode.winnerSide];
+    if (!assign(champion, 1)) return null;
+    let nextPlacement = 2;
+    for (const eliminated of losersByColumn(nodes)) {
+      for (const team of eliminated) {
+        if (!assign(team, nextPlacement)) return null;
+      }
+      nextPlacement += eliminated.length;
+    }
+  } else {
+    const finalNodes = nodes.filter((node) => node.section === "final");
+    const lowerNodes = nodes.filter((node) => node.section === "lower");
+    if (!finalNodes.length || !lowerNodes.length) return null;
+    const finalColumn = Math.max(...finalNodes.map((node) => node.col));
+    const lastFinalNodes = finalNodes.filter((node) => node.col === finalColumn);
+    if (lastFinalNodes.length !== 1) return null;
+    const finalNode = lastFinalNodes[0];
+    if (!assign(finalNode.teams[finalNode.winnerSide], 1)) return null;
+    if (!assign(finalNode.teams[1 - finalNode.winnerSide], 2)) return null;
+    let nextPlacement = 3;
+    for (const eliminated of losersByColumn(lowerNodes)) {
+      for (const team of eliminated) {
+        if (!assign(team, nextPlacement)) return null;
+      }
+      nextPlacement += eliminated.length;
+    }
+  }
+
+  if (placements.size !== teams.size) return null;
+  return [...placements.values()].sort((a, b) => a.placement - b.placement || a.name.localeCompare(b.name));
+}

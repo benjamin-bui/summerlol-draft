@@ -62,7 +62,9 @@ function ingestCsv(csvPath, { fresh = false, dbPath = DB_PATH } = {}) {
 
   const placeholders = columns.map(() => "?").join(", ");
   const upsertCols = columns
-    .filter((c) => c !== "id")
+    // Rank is initialized from CSV, then edited as a database-managed team
+    // placement. Preserve that value on ordinary ID-based re-imports.
+    .filter((c) => c !== "id" && !(hasIdCol && c === "Rank"))
     .map((c) => `${q(c)}=excluded.${q(c)}`)
     .join(", ");
 

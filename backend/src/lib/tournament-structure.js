@@ -28,7 +28,7 @@ class StructureNotFoundError extends Error {
   }
 }
 
-function ensureTournamentStructureSchema(db) {
+function ensureTournamentStructureSchema(db, identityMap) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS tournament_stages (
       stage_id TEXT PRIMARY KEY,
@@ -137,17 +137,6 @@ function ensureTournamentStructureSchema(db) {
       PRIMARY KEY (group_id, team)
     );
 
-    CREATE TABLE IF NOT EXISTS tournament_team_placement_overrides (
-      year INTEGER NOT NULL,
-      tournament TEXT NOT NULL,
-      captain_key TEXT NOT NULL,
-      placement INTEGER NOT NULL CHECK (placement >= 1),
-      edited_by_sub TEXT NOT NULL,
-      edited_by_email TEXT,
-      edited_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (year, tournament, captain_key)
-    );
-
     CREATE TABLE IF NOT EXISTS tournament_structure_audit (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       year INTEGER NOT NULL,
@@ -162,6 +151,61 @@ function ensureTournamentStructureSchema(db) {
   // game_rounds first shipped without `section`; add it to existing databases.
   const roundColumns = db.prepare("PRAGMA table_info(game_rounds)").all().map((column) => column.name);
   if (!roundColumns.includes("section")) db.exec("ALTER TABLE game_rounds ADD COLUMN section TEXT");
+  migrateLegacyPlacementOverrides(db, identityMap);
+}
+
+function migrateLegacyPlacementOverrides(db, identityMap) {
+  const legacyTable = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tournament_team_placement_overrides'")
+    .get();
+  const rowsTable = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'rows'")
+    .get();
+  if (!legacyTable || !rowsTable) return;
+
+  const legacyOverrides = db
+    .prepare(
+      `SELECT year, tournament, captain_key AS captainKey, placement
+       FROM tournament_team_placement_overrides`,
+    )
+    .all();
+  if (!legacyOverrides.length) {
+    db.exec("DROP TABLE tournament_team_placement_overrides");
+    return;
+  }
+
+  const update = db.prepare(
+    `UPDATE rows SET "Rank" = ?
+     WHERE CAST("Year" AS INTEGER) = ?
+       AND COALESCE("Tournament", 'Summer') = ?
+       AND "Captain" = ?`,
+  );
+  const remove = db.prepare(
+    `DELETE FROM tournament_team_placement_overrides
+     WHERE year = ? AND tournament = ? AND captain_key = ?`,
+  );
+  db.transaction(() => {
+    for (const override of legacyOverrides) {
+      const captains = db
+        .prepare(
+          `SELECT DISTINCT "Captain" AS captain
+           FROM rows
+           WHERE CAST("Year" AS INTEGER) = ?
+             AND COALESCE("Tournament", 'Summer') = ?
+             AND "Captain" IS NOT NULL AND "Captain" != ''`,
+        )
+        .all(override.year, override.tournament)
+        .filter((row) => (identityMap?.get(row.captain)?.identityKey || row.captain) === override.captainKey);
+      if (!captains.length) continue;
+      for (const { captain } of captains) {
+        update.run(String(override.placement), override.year, override.tournament, captain);
+      }
+      remove.run(override.year, override.tournament, override.captainKey);
+    }
+    if (!db.prepare("SELECT 1 FROM tournament_team_placement_overrides LIMIT 1").get()) {
+      db.exec("DROP TABLE tournament_team_placement_overrides");
+    }
+  })();
 }
 
 function structureForMatches(db, matches) {
@@ -427,17 +471,6 @@ function readTournamentTeams(db, year, tournament, matches, identityMap) {
     }
   }
 
-  const overrides = db
-    .prepare(
-      `SELECT captain_key AS captainKey, placement
-       FROM tournament_team_placement_overrides
-       WHERE year = ? AND tournament = ?`,
-    )
-    .all(year, tournament);
-  const overrideByKey = new Map(overrides.map((item) => [item.captainKey, item.placement]));
-  for (const team of teams.values()) {
-    if (overrideByKey.has(team.captainKey)) team.placement = overrideByKey.get(team.captainKey);
-  }
   return [...teams.values()].sort(
     (a, b) => (a.placement ?? Infinity) - (b.placement ?? Infinity) || a.captainName.localeCompare(b.captainName),
   );
@@ -511,6 +544,10 @@ function saveTeamPlacements(db, year, tournament, body, editor, identityMap) {
   if (!body || !Array.isArray(body.placements)) {
     throw new StructureValidationError("Placements must be a list");
   }
+  const rowsTable = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'rows'")
+    .get();
+  if (!rowsTable) throw new StructureValidationError("Draft placement data is not available");
   const teams = new Set(
     readTournamentStructure(db, year, tournament, identityMap).teams.map((team) => team.captainKey),
   );
@@ -532,40 +569,42 @@ function saveTeamPlacements(db, year, tournament, body, editor, identityMap) {
   }
 
   const before = snapshotStructure(db, year, tournament, identityMap);
+  const draftCaptains = db
+    .prepare(
+      `SELECT DISTINCT "Captain" AS captain
+       FROM rows
+       WHERE CAST("Year" AS INTEGER) = ?
+         AND COALESCE("Tournament", 'Summer') = ?
+         AND "Captain" IS NOT NULL AND "Captain" != ''`,
+    )
+    .all(year, tournament);
+  const captainsByKey = new Map();
+  for (const row of draftCaptains) {
+    const identity = identityMap?.get(row.captain);
+    const key = identity?.identityKey || row.captain;
+    if (!captainsByKey.has(key)) captainsByKey.set(key, []);
+    captainsByKey.get(key).push(row.captain);
+  }
+  for (const captainKey of requested.keys()) {
+    if (!captainsByKey.has(captainKey)) {
+      throw new StructureValidationError(`Team has no draft rows to store placement: ${captainKey}`);
+    }
+  }
   db.transaction(() => {
-    const remove = db.prepare(
-      `DELETE FROM tournament_team_placement_overrides
-       WHERE year = ? AND tournament = ? AND captain_key = ?`,
-    );
-    const upsert = db.prepare(
-      `INSERT INTO tournament_team_placement_overrides
-       (year, tournament, captain_key, placement, edited_by_sub, edited_by_email)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(year, tournament, captain_key) DO UPDATE SET
-         placement = excluded.placement,
-         edited_by_sub = excluded.edited_by_sub,
-         edited_by_email = excluded.edited_by_email,
-         edited_at = datetime('now')`,
+    const update = db.prepare(
+      `UPDATE rows SET "Rank" = ?
+       WHERE CAST("Year" AS INTEGER) = ?
+         AND COALESCE("Tournament", 'Summer') = ?
+         AND "Captain" = ?`,
     );
     for (const [captainKey, placement] of requested) {
-      if (placement == null) remove.run(year, tournament, captainKey);
-      else upsert.run(year, tournament, captainKey, placement, editor.sub, editor.email);
+      for (const captain of captainsByKey.get(captainKey)) {
+        update.run(placement == null ? null : String(placement), year, tournament, captain);
+      }
     }
     auditStructure(db, year, tournament, editor, before, identityMap);
   })();
   return readTournamentStructure(db, year, tournament, identityMap);
-}
-
-function readTeamPlacementOverrides(db) {
-  return new Map(
-    db
-      .prepare(
-        `SELECT year, tournament, captain_key AS captainKey, placement
-         FROM tournament_team_placement_overrides`,
-      )
-      .all()
-      .map((row) => [`${row.year}::${row.tournament}::${row.captainKey}`, row.placement]),
-  );
 }
 
 function snapshotStructure(db, year, tournament, identityMap) {
@@ -1050,7 +1089,6 @@ module.exports = {
   ensureDefaultStages,
   ensureTournamentStructureSchema,
   readAllStageGroups,
-  readTeamPlacementOverrides,
   readTournamentStructure,
   saveTeamPlacements,
   saveStages,

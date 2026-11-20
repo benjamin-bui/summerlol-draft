@@ -42,6 +42,19 @@ test("re-ingesting an id-bearing CSV unchanged leaves the table identical", () =
   assert.deepEqual(f.rows(), before);
 });
 
+test("id-based re-ingestion preserves database-managed placements", () => {
+  const f = fixture(WITH_IDS);
+  ingestCsv(f.first, { fresh: true, dbPath: f.dbPath });
+  const db = new Database(f.dbPath);
+  db.prepare('UPDATE "rows" SET "Rank" = ? WHERE id = ?').run("4", 1);
+  db.close();
+
+  const result = ingestCsv(f.first, { fresh: false, dbPath: f.dbPath });
+  assert.equal(result.deleted, 0);
+  assert.equal(f.rows().find((row) => row.id === 1).Rank, "4");
+  assert.equal(f.rows().find((row) => row.id === 2).Rank, "1");
+});
+
 test("edits apply by id and rows missing from the CSV are deleted", () => {
   const f = fixture(WITH_IDS);
   ingestCsv(f.first, { fresh: true, dbPath: f.dbPath });
